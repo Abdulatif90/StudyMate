@@ -13,7 +13,7 @@
 - [x] Continuity docs: `CLAUDE.md`, `docs/{plan,PROGRESS,DECISIONS,WORKLOG}.md`
 
 ## Next (Phase 0 remainder)
-- [ ] git init + `main`/`develop` branches + initial commit
+- [ ] **GitHub remote + push** (needs your GitHub auth — see below) — then push after every commit
 - [ ] `app/core/db.py` — SQLModel engine/session (Neon)
 - [ ] `app/core/auth.py` — Clerk JWT verification via JWKS
 - [ ] Alembic init

@@ -33,6 +33,7 @@ flashcards (SM-2), progress. Multilingual, global students.
 - Branches: `main` (prod) ← `develop` (integration) ← `feature/*`.
 - Atomic commits, **Conventional Commits** (`feat:`/`fix:`/`refactor:`/`test:`/`docs:`/`chore:`).
 - Never commit directly to `main` — merge from `develop`.
+- **Push after every increment** — `git push` to `origin` (GitHub) so the remote stays in sync.
 
 ## Commands (backend, from `backend/`)
 - Run: `uvicorn app.main:app --reload`
