@@ -28,8 +28,13 @@
   Verified live: `get_engine()` connects to Neon (Postgres 18, `pgvector` extension enabled);
   `get_jwks_client()` fetches Clerk's real JWKS (1 signing key returned).
 
+- [x] Alembic init (`backend/alembic/`): `env.py` reads `DATABASE_URL` from
+  `app.core.config` (no connection string duplicated in `alembic.ini`); `target_metadata =
+  SQLModel.metadata` (empty until Phase 1 domain models are imported there). First
+  migration `fb44afd7a3d6_enable_pgvector_extension` — `CREATE EXTENSION IF NOT EXISTS
+  vector`; applied to real Neon DB (`alembic upgrade head`), `alembic_version` confirmed.
+
 ## Next (Phase 0 remainder)
-- [ ] Alembic init (real `DATABASE_URL` now available to run first migration against)
 - [ ] pre-commit hooks (ruff + pytest) + CI workflow
 
 ## Blockers / needs from user

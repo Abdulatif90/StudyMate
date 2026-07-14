@@ -9,6 +9,7 @@ python-dotenv>=1.0
 # Database (Neon Postgres) — SQLModel wraps SQLAlchemy; psycopg2 is the driver
 sqlmodel>=0.0.22
 psycopg2-binary>=2.9
+alembic>=1.13
 
 # Auth (Clerk) — JWT verification via JWKS
 pyjwt[crypto]>=2.9

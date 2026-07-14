@@ -2,6 +2,20 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-14 — Phase 0: Alembic init
+- `requirements.txt`: added `alembic`.
+- `alembic init alembic`; `alembic.ini` sqlalchemy.url left unset (no connection string
+  duplicated in a committed file) — `env.py` reads `DATABASE_URL` from
+  `app.core.config.get_settings()` instead, raising the same clear `RuntimeError` as
+  `db.py`/`auth.py` if unset. `target_metadata = SQLModel.metadata`.
+- `script.py.mako` template modernized (`from __future__ import annotations`, `X | Y`
+  unions) so future auto-generated migrations pass ruff without hand-editing.
+- First migration `fb44afd7a3d6_enable_pgvector_extension`: `CREATE EXTENSION IF NOT
+  EXISTS vector` / `DROP EXTENSION IF EXISTS vector` — codifies what was done manually
+  in the Neon SQL editor earlier, so a fresh Neon DB can be set up from migrations alone.
+- Ran `alembic upgrade head` against the real Neon DB; confirmed `alembic_version` table
+  recorded `fb44afd7a3d6`. Full test suite still **8 passed**; ruff clean.
+
 ## 2026-07-14 — Phase 0: Neon + Clerk accounts verified live
 - User created real Neon + Clerk accounts and filled `backend/.env` (gitignored, uncommitted).
 - Caught secrets pasted into `backend/.env.example` (tracked by git, unlike `.env`) before
