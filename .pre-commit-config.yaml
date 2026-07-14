@@ -1,19 +1,39 @@
-# Local git hook: ruff + pytest on backend/, before every commit.
+# Portable hooks only: pre-commit manages its own tool environments (ruff
+# is downloaded/pinned by the ruff-pre-commit repo itself), so nothing here
+# depends on this machine's Python or an absolute venv path — clone +
+# `pre-commit install` is all a new checkout needs.
 #
-# `entry` is an absolute path to backend/.venv's own Python (not a system
-# `python` — there isn't a usable one on this machine's PATH), so the hook
-# always runs the exact ruff/pytest versions from requirements-dev.txt.
-# `language: system` only resolves `entry` via PATH or as a literal
-# absolute path — a relative path silently fails with WinError 2 (Windows
-# doesn't resolve it against pre-commit's cwd the way POSIX shells would).
-# If backend/.venv is ever moved/recreated, update the path below and
-# rerun `backend/.venv/Scripts/pre-commit.exe install` from repo root.
+# pytest is NOT run here — it needs the project's actual dependencies
+# (fastapi, sqlmodel, ...), which only exist in backend/.venv, and there's
+# no portable way to reference that from a committed config. It runs as a
+# pre-push hook instead (git push happens less often than git commit, and
+# by then your venv is normally active), with CI as the real safety net
+# regardless of whether the local venv is activated.
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: check-merge-conflict
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.21
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^backend/
+      - id: ruff-format
+        files: ^backend/
+
   - repo: local
     hooks:
-      - id: backend-checks
-        name: backend ruff + pytest
-        entry: C:/Users/Abdu_PC/Downloads/StudyMate/backend/.venv/Scripts/python.exe backend/scripts/precommit_check.py
+      - id: pytest
+        name: pytest (backend)
+        entry: pytest backend/tests
         language: system
         pass_filenames: false
         files: ^backend/
+        stages: [pre-push]

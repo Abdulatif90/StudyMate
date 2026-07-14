@@ -35,12 +35,23 @@ Inngest ingest, Ask/RAG, Conversations — see `docs/plan.md`).
   migration `fb44afd7a3d6_enable_pgvector_extension` — `CREATE EXTENSION IF NOT EXISTS
   vector`; applied to real Neon DB (`alembic upgrade head`), `alembic_version` confirmed.
 
-- [x] Pre-commit: `.pre-commit-config.yaml` (repo root) — local hook running
-  `backend/scripts/precommit_check.py` (ruff check + pytest) via `backend/.venv`'s own
-  Python directly (entry uses an **absolute** path — `language: system` on Windows doesn't
-  resolve a relative `entry` against pre-commit's cwd; a relative path silently fails with
-  `WinError 2`). Installed (`pre-commit install`) and smoke-tested
-  (`pre-commit run --all-files` → passed).
+- [x] Pre-commit: `.pre-commit-config.yaml` (repo root) — rewritten to be portable (no
+  absolute/machine-specific paths, works on any clone right after `pre-commit install`):
+  - `pre-commit-hooks` (v6.0.0): trailing-whitespace, end-of-file-fixer, check-yaml,
+    check-added-large-files, check-merge-conflict.
+  - `ruff-pre-commit` (v0.15.21): `ruff --fix` + `ruff-format`, scoped to `backend/`.
+    Both are pre-commit-managed (it downloads/pins its own ruff) — no dependency on this
+    machine's Python at all.
+  - `pytest` runs as a **pre-push** hook instead (`entry: pytest backend/tests`,
+    `language: system`, `stages: [pre-push]`) — it needs the project's real dependencies
+    (fastapi, sqlmodel, ...), which only exist in `backend/.venv`, so it relies on that
+    venv being active on `PATH` at push time. Verified both ways: fails with "Executable
+    `pytest` not found" when the venv isn't on `PATH`, passes when it is. CI is the real
+    safety net regardless of local `PATH` state.
+  - `backend/scripts/precommit_check.py` (the old absolute-path wrapper) deleted.
+  - Reinstalled (`pre-commit install --hook-type pre-commit --hook-type pre-push`) and
+    verified: `pre-commit run --all-files` → all green; `pre-commit run --hook-stage
+    pre-push --all-files` → green with venv active.
 - [x] CI: `.github/workflows/backend-ci.yml` — ruff + pytest on push/PR to `main`/`develop`,
   Ubuntu + Python 3.12, no secrets needed (db/auth tests mock `Settings`, never hit
   real Neon/Clerk).

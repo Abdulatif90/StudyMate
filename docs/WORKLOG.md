@@ -2,6 +2,34 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-14 — Fix pre-commit portability (absolute venv path → managed hooks)
+- Problem: `.pre-commit-config.yaml`'s `entry:` hardcoded this machine's absolute
+  `backend/.venv` path, so it would break on any other clone.
+- Rewrote it to use only portable, pre-commit-managed repos:
+  `pre-commit/pre-commit-hooks` v6.0.0 (trailing-whitespace, end-of-file-fixer,
+  check-yaml, check-added-large-files, check-merge-conflict) and
+  `astral-sh/ruff-pre-commit` v0.15.21 (`ruff --fix` + `ruff-format`, both scoped to
+  `files: ^backend/`). Pre-commit downloads/pins these tools itself — no reference to
+  any local Python at all.
+- Moved `pytest` out of the commit-time hook entirely: it needs the project's real
+  dependencies (fastapi, sqlmodel, ...) which only live in `backend/.venv`, and there's
+  no portable way to point a committed config at an arbitrary clone's venv. It's now a
+  **pre-push** local hook (`entry: pytest backend/tests`, `language: system`, `stages:
+  [pre-push]`) — relies on the venv being active on `PATH` at push time; CI remains the
+  safety net when it isn't.
+- Deleted `backend/scripts/precommit_check.py` (superseded — no longer needed now that
+  ruff runs via pre-commit's own managed environment and pytest moved to pre-push).
+- `pre-commit uninstall` then `pre-commit install --hook-type pre-commit --hook-type
+  pre-push`.
+- `ruff-format` reformatted one line in `alembic/env.py` (a call now fits on one line);
+  `end-of-file-fixer` added a trailing newline to the Alembic-generated `README`. Both
+  harmless, applied automatically.
+- Verified: `pre-commit run --all-files` → all 7 hooks pass. `pre-commit run
+  --hook-stage pre-push --all-files` → fails with "Executable `pytest` not found"
+  without the venv on `PATH`, passes with it prepended (confirms the precondition is
+  real and the hook behaves as designed either way). `ruff check .` and `pytest tests`
+  from `backend/` → still **8 passed**, ruff clean.
+
 ## 2026-07-14 — Phase 0 complete: pre-commit hooks + CI
 - `requirements-dev.txt`: added `pre-commit`.
 - `backend/scripts/precommit_check.py`: runs `ruff check .` then `pytest tests -q` from
