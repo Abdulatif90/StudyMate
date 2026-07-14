@@ -11,9 +11,9 @@
 - [x] `.venv` + deps (fastapi, uvicorn, pydantic-settings) + dev (pytest, httpx, ruff)
 - [x] First test `tests/test_health.py` — passing; ruff clean
 - [x] Continuity docs: `CLAUDE.md`, `docs/{plan,PROGRESS,DECISIONS,WORKLOG}.md`
+- [x] Git: `main` + `develop`; GitHub remote `origin` (Abdulatif90/StudyMate); both branches pushed
 
 ## Next (Phase 0 remainder)
-- [ ] **GitHub remote + push** (needs your GitHub auth — see below) — then push after every commit
 - [ ] `app/core/db.py` — SQLModel engine/session (Neon)
 - [ ] `app/core/auth.py` — Clerk JWT verification via JWKS
 - [ ] Alembic init

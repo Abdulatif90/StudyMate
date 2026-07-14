@@ -10,4 +10,5 @@ Log of completed work (newest first). Each entry: what was done, tests, commit.
   (pytest, httpx, ruff); `pyproject.toml` (pytest + ruff config).
 - Test `tests/test_health.py` → **1 passed**; `ruff check` → clean.
 - Continuity docs: `CLAUDE.md`, `README.md`, `docs/{plan,PROGRESS,DECISIONS,WORKLOG}.md`.
-- Commit: _(initial commit — see git log)_
+- Git: `main` + `develop` branches; commits `6e6ae33` (foundation), `7ee94b5` (push convention).
+- GitHub: repo `Abdulatif90/StudyMate`; both branches pushed with upstream tracking.
