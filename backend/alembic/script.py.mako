@@ -13,6 +13,7 @@ from collections.abc import Sequence
 from alembic import op
 import sqlalchemy as sa
 import sqlmodel  # noqa: F401 — used when autogenerate emits SQLModel column types
+import pgvector.sqlalchemy  # noqa: F401 — used when autogenerate emits pgvector column types
 ${imports if imports else ""}
 
 # revision identifiers, used by Alembic.

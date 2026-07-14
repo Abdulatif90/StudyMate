@@ -2,6 +2,96 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-15 — Cohere embeddings + pgvector storage (still no R2/Inngest)
+- User added `COHERE_API_KEY` to `backend/.env`. `requirements.txt`: added `cohere`,
+  `pgvector`. `Settings.cohere_api_key: str | None = None`. `.env.example` uncommented
+  the Cohere line.
+- Before writing any code against it, installed `cohere` (7.0.5) and introspected it
+  directly in the venv — same discipline that caught the `PyJWKClient` bug last
+  increment. Findings that shaped the design:
+  - `cohere.Client.embed(..., batching=True)` — the SDK itself splits large text
+    batches across multiple requests; no manual chunking-into-batches needed on our
+    side, just pass the flag.
+  - No single `CohereError` base class is exported at top level; the real common base
+    is `cohere.core.api_error.ApiError`, with `BadRequestError`/`UnauthorizedError`/etc.
+    all inheriting from it — but since network-level failures (timeouts, DNS) might
+    not even reach that hierarchy, `embed_texts` catches bare `Exception` around the
+    API call and wraps it in `EmbeddingError`, the same pattern already used in
+    `parsing.py` for third-party library exceptions.
+  - Response shape depends on whether `embedding_types` is passed: omitted (our case)
+    → `EmbeddingsFloatsEmbedResponse`, `.embeddings` is directly `list[list[float]]`.
+    Confirmed by inspecting the Pydantic model fields directly rather than guessing.
+- `app/modules/documents/embedding.py`: `embed_texts(texts) -> list[list[float]]` via
+  `embed-multilingual-v3.0`, `input_type="search_document"` (the future Ask endpoint's
+  query-side embedding must use `"search_query"` instead — Cohere's asymmetric model
+  needs both sides right for retrieval to actually work). Missing API key → bare
+  `RuntimeError` at point of use (config mistake, same as `db.py`/`auth.py`); any
+  Cohere/network failure → `EmbeddingError` (a data-processing failure, handled
+  gracefully by the caller). Validates response vector dimensions match
+  `EMBEDDING_DIM` before returning, so a future model/config drift surfaces as a clear
+  error here rather than a cryptic pgvector dimension-mismatch exception later.
+  **Live-verified directly against the real Cohere API** (3 sentences, multilingual)
+  before writing a single mocked test — confirmed 1024-dim vectors, confirmed the
+  empty-list short-circuit never calls the API, confirmed the missing-key
+  `RuntimeError` path.
+- `DocumentChunk.embedding`: `pgvector.sqlalchemy.Vector(1024)` — but SQLite (the whole
+  test suite's DB) has no vector type. Used `Vector(1024).with_variant(JSON(), "sqlite")`,
+  SQLAlchemy's built-in mechanism for "use this type normally, but swap in a different
+  one for a specific dialect." Did **not** trust this to just work — ran a throwaway
+  script creating a real table with this column type against both a fresh SQLite engine
+  and real Neon, inserting and reading back a `list[float]`, before touching the actual
+  model. Both round-tripped correctly. Along the way, noticed the Neon round-trip
+  doesn't come back byte-identical to the Python floats going in (~1e-16 max diff) —
+  pgvector stores vector components as 4-byte floats, so this is plain float32
+  precision loss, not a bug; worth remembering if anything ever asserts exact float
+  equality against a real Postgres-stored vector (SQLite's JSON fallback has no such
+  loss, since it's not actually a vector column).
+- `service.create_document`: after chunking, calls `embed_texts` and stores one vector
+  per chunk in the same transaction as the chunk rows. Catches
+  `(DocumentParseError, EmbeddingError)` together → `status: failed`, zero chunks —
+  extending the existing "failed → no chunks" contract from the chunking increment to
+  also cover embedding failures, so `status: ready` still means exactly "chunks with
+  embeddings exist," full stop. Deliberately does **not** catch the missing-key
+  `RuntimeError` — see embedding.py's docstring for why. `zip(chunks_text, embeddings,
+  strict=True)` when pairing them up, so a length-mismatched response from Cohere
+  fails loudly instead of silently pairing the wrong vector with the wrong text.
+- **Immediately re-ran the full test suite after wiring this in** (before writing any
+  new mocks) specifically to check whether existing document-upload tests would now
+  make real Cohere API calls — they would have. Added an autouse `_mock_cohere` fixture
+  to `tests/test_documents.py` (patches `documents_service.embed_texts`) before
+  proceeding any further, to avoid burning real API quota/cost during iteration.
+- Alembic: same missing-import gap as `sqlmodel` before — autogenerate rendered
+  `pgvector.sqlalchemy.vector.VECTOR(...)` in the migration without an `import
+  pgvector.sqlalchemy` line. Fixed in the generated migration and added to
+  `script.py.mako` so future migrations don't hit it either. Migration
+  `b31b86c196ef_add_embedding_column_to_document_chunks` applied to Neon; confirmed the
+  real column type is `vector` via `information_schema.columns`.
+- Tests, fully network-free:
+  - `tests/test_embedding.py` (5, new file): mocks `cohere.Client` itself (not our
+    wrapper), so this actually exercises `embed_texts`' own logic — empty list never
+    constructs a client at all, correct call shape/args for a real request, Cohere
+    failures wrapped as `EmbeddingError`, a wrong-dimension response rejected, missing
+    key raises `RuntimeError`.
+  - `tests/test_documents.py` (+4): mocks `embed_texts` instead, at the integration
+    level — an embedding is stored per chunk with the right dimension (and matches a
+    deterministic fake scheme so tests can tell which vector came from which chunk);
+    `list_chunks` for a different `owner_id` returns nothing (embeddings included,
+    since the whole row is scoped); an empty/whitespace document still calls
+    `embed_texts([])` — proving `service.py` relies on `embed_texts`' own short-circuit
+    rather than special-casing empty input itself — via a `Mock(side_effect=...)` spy
+    asserting the exact call; and a forced `EmbeddingError` correctly lands the
+    document at `status: failed` with zero chunks while the HTTP response itself is
+    still 201 (the *document* failed to process, the *request* didn't error).
+- **Live-verified the full pipeline against the real stack**: `create_document` with a
+  real short text, through real parsing → chunking → real Cohere embedding → real
+  Neon/pgvector storage, confirmed the stored chunk's embedding dimension and sample
+  values. Cleanup this time deleted `DocumentChunk` rows before their parent
+  `Document` (in FK order) — the previous increment's live test hit exactly this
+  ordering issue when cleaning up manually; fixed here from the start. Confirmed 0
+  rows left in `subjects`, `documents`, and `document_chunks` afterward.
+- Full suite: **43 passed** (9 new: 5 embedding unit tests + 4 documents integration
+  tests); `ruff check` → clean.
+
 ## 2026-07-15 — Chunking (text-only; still no R2/Cohere/Inngest)
 - `app/modules/documents/chunking.py`: `chunk_text(text, chunk_size=1000, overlap=150)`.
   Sliding window over character positions; each window's hard-cut end is nudged back

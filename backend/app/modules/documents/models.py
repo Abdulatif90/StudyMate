@@ -13,8 +13,12 @@ import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import JSON
 from sqlalchemy import Enum as SAEnum
 from sqlmodel import Column, Field, SQLModel
+
+from app.modules.documents.embedding import EMBEDDING_DIM
 
 
 class DocumentStatus(StrEnum):
@@ -43,10 +47,18 @@ class Document(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+# pgvector's Vector type only means something on Postgres; SQLite (used by the test
+# suite) has no vector type at all. `with_variant` swaps in a plain JSON column for the
+# "sqlite" dialect specifically — same rows, same list[float] values, just no actual
+# vector search capability, which the test suite never needs (it only exercises
+# storage/retrieval, never similarity search). Verified round-tripping correctly
+# against both a real SQLite engine and real Neon+pgvector before relying on this.
+_embedding_column_type = Vector(EMBEDDING_DIM).with_variant(JSON(), "sqlite")
+
+
 class DocumentChunk(SQLModel, table=True):
     """A chunk of a Document's extracted text (see chunking.py). `owner_id` is
     duplicated here too — same defense-in-depth reasoning as on `Document` itself.
-    No embedding column yet; that arrives with Cohere in a later increment.
     """
 
     __tablename__ = "document_chunks"
@@ -56,4 +68,5 @@ class DocumentChunk(SQLModel, table=True):
     owner_id: str = Field(index=True)
     chunk_index: int
     text: str
+    embedding: list[float] | None = Field(default=None, sa_column=Column(_embedding_column_type))
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

@@ -11,6 +11,7 @@ import uuid
 from sqlmodel import Session, select
 
 from app.modules.documents.chunking import chunk_text
+from app.modules.documents.embedding import EmbeddingError, embed_texts
 from app.modules.documents.models import Document, DocumentChunk, DocumentStatus
 from app.modules.documents.parsing import (
     SUPPORTED_CONTENT_TYPES,
@@ -54,11 +55,17 @@ def create_document(
     if len(raw) > MAX_UPLOAD_SIZE_BYTES:
         raise FileTooLargeError(f"File exceeds {MAX_UPLOAD_SIZE_BYTES} byte limit")
 
+    # A missing COHERE_API_KEY raises RuntimeError from embed_texts, deliberately NOT
+    # caught here — that's a deployment mistake, not a per-document problem, and should
+    # fail loudly rather than quietly marking documents "failed" (see embedding.py).
     try:
         text = extract_text(content_type, raw)
+        chunks_text = chunk_text(text)
+        embeddings = embed_texts(chunks_text)
         parse_status = DocumentStatus.READY
-    except DocumentParseError:
-        text = ""
+    except (DocumentParseError, EmbeddingError):
+        chunks_text = []
+        embeddings = []
         parse_status = DocumentStatus.FAILED
 
     document = Document(
@@ -72,16 +79,19 @@ def create_document(
     session.commit()
     session.refresh(document)
 
-    # chunk_text("") == [] for a failed parse or genuinely empty extraction (e.g. a
-    # scanned PDF with no text layer) — no special-casing needed, the loop is just a
-    # no-op and the document is still created with its status reflecting the outcome.
-    for index, chunk_content in enumerate(chunk_text(text)):
+    # Empty for a failed parse, a failed embedding call, or genuinely empty extraction
+    # (e.g. a scanned PDF with no text layer) — no special-casing needed, the loop is
+    # just a no-op and the document is still created with its status reflecting why.
+    # `strict=True` catches a mismatched-length response from Cohere immediately
+    # instead of silently pairing the wrong text with the wrong vector.
+    for index, (chunk_content, vector) in enumerate(zip(chunks_text, embeddings, strict=True)):
         session.add(
             DocumentChunk(
                 document_id=document.id,
                 owner_id=owner_id,
                 chunk_index=index,
                 text=chunk_content,
+                embedding=vector,
             )
         )
     session.commit()

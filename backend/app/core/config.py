@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     database_url: str | None = None
     clerk_jwks_url: str | None = None
     clerk_issuer: str | None = None
+    cohere_api_key: str | None = None
 
     @property
     def is_production(self) -> bool:

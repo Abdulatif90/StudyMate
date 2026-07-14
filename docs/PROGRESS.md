@@ -134,16 +134,68 @@ Inngest ingest, Ask/RAG, Conversations — see `docs/plan.md`).
     delete order and confirmed zero rows left in all three tables afterward.
   Full suite: **34 passed**; `ruff check` → clean.
 
+- [x] Embeddings (Cohere) + pgvector storage (**still no R2/Inngest**, next increment):
+  `embedding.py`: `embed_texts(texts) -> list[list[float]]` via `embed-multilingual-v3.0`
+  (1024-dim, `input_type="search_document"` — the future Ask endpoint must use
+  `"search_query"` on its side, Cohere's retrieval quality depends on getting this
+  asymmetry right), `batching=True` (the Cohere SDK itself splits large batches across
+  requests — confirmed by inspecting `Client.embed`'s signature before relying on it).
+  Two deliberately different failure modes: missing `COHERE_API_KEY` → bare
+  `RuntimeError` at point of use (same as `db.py`/`auth.py` — a deploy mistake, not a
+  per-document problem, so it fails loudly); any actual Cohere/network failure →
+  `EmbeddingError` (caught by `service.py`, degrades to `status: failed`).
+  `Settings.cohere_api_key` added; `.env.example` updated.
+  - **`DocumentChunk.embedding`**: `pgvector`'s `Vector(1024)` — but SQLite (the whole
+    test suite) has no vector type, so the column is
+    `Vector(1024).with_variant(JSON(), "sqlite")`: real `vector` column on Postgres,
+    plain JSON array on SQLite, same `list[float]` values either way. Verified this
+    actually round-trips correctly against both a live SQLite engine *and* real
+    Neon+pgvector with throwaway scratch tables before wiring it into the real model
+    (found, along the way, that pgvector stores components as 4-byte floats — a
+    `list[float]` round-tripped through real Postgres differs from the original at
+    ~1e-16, pure float32 precision, not a bug; SQLite's JSON path has no such loss).
+  - `service.create_document`: after chunking, calls `embed_texts` and stores one
+    vector per chunk in the same transaction. `DocumentParseError`/`EmbeddingError` are
+    caught together → `status: failed`, zero chunks persisted (extends the existing
+    "failed → no chunks" invariant from the chunking increment to also cover embedding
+    failures) — deliberately does **not** catch the missing-key `RuntimeError`, so a
+    misconfigured deployment still fails loudly instead of masquerading as a
+    per-document data problem.
+  - Migration `b31b86c196ef_add_embedding_column_to_document_chunks`, applied to Neon.
+    Autogenerate's rendered `pgvector.sqlalchemy.vector.VECTOR(...)` reference without
+    importing `pgvector` (same class of gap as the earlier missing `import sqlmodel`)
+    — fixed in the migration and added to `script.py.mako` so future migrations don't
+    hit it either.
+  - Tests, fully network-free (Cohere never actually called):
+    `tests/test_embedding.py` (5) mocks the **Cohere client itself** — empty list never
+    touches the client at all, a successful call's shape/args, API failures wrapped as
+    `EmbeddingError`, a wrong-dimension response rejected, missing key raises
+    `RuntimeError`. `tests/test_documents.py` (+4) mocks `embed_texts` instead, at the
+    integration level — an embedding stored per chunk (with the right dimension),
+    tenant-scoped (`list_chunks` for another owner sees nothing, including embeddings),
+    an empty document still calls `embed_texts([])` (proving `service.py` doesn't
+    special-case it — relies on `embed_texts`' own short-circuit instead) without
+    reaching Cohere, and a forced `EmbeddingError` correctly lands the document at
+    `status: failed` with zero chunks while the HTTP request itself still succeeds
+    (201 — the *document* failed to process, the *request* didn't error).
+  - Live-verified twice against the real stack: `embed_texts` directly against the
+    real Cohere API (3 sentences → 3× 1024-dim vectors); then the full pipeline
+    (`create_document` → parse → chunk → real Cohere embed → real Neon/pgvector store)
+    end-to-end, confirmed the stored vector's dimension and values, then cleaned up
+    (this time deleting chunks before their parent document, in FK order — see
+    WORKLOG for the delete-ordering issue that came up during the *previous*
+    increment's live test).
+  Full suite: **43 passed**; `ruff check` → clean.
+
 ## Next (Phase 1 — Core RAG)
 - [ ] R2 bucket + upload endpoint (store the actual file — right now only validated,
   not persisted anywhere)
-- [ ] Cohere embeddings for each `DocumentChunk` + pgvector column/index (chunking
-  already exists — this is "embed what we just chunked")
+- [ ] Ask endpoint: retrieve (pgvector similarity search) → Cohere Rerank → Claude
+  (streaming) — embeddings now exist to retrieve against
 - [ ] Inngest: move parsing/chunking/embedding off the request path into a background
   job (uploads currently do this synchronously, which is fine for small text files but
   won't scale to large PDFs or embedding API latency)
-- [ ] Ask endpoint: retrieve → Cohere Rerank → Claude (streaming)
 
 ## Blockers / needs from user
-- Accounts + API keys needed for Phase 1: **Anthropic, Cohere, R2**. Inngest/Polar can wait
+- Accounts + API keys needed for Phase 1: **Anthropic, R2**. Inngest/Polar can wait
   until their respective features (jobs, billing) are actually built.
