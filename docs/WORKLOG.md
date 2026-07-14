@@ -2,6 +2,27 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-14 — Phase 0 complete: pre-commit hooks + CI
+- `requirements-dev.txt`: added `pre-commit`.
+- `backend/scripts/precommit_check.py`: runs `ruff check .` then `pytest tests -q` from
+  `backend/`, using `sys.executable` (whichever Python launched it) so it stays in sync
+  with `backend/.venv` without hardcoding a path inside the script itself.
+- `.pre-commit-config.yaml` (repo root): one local hook, triggers only when a `backend/`
+  file is part of the commit. `entry` had to be an **absolute** path to
+  `backend/.venv/Scripts/python.exe` — a relative path failed with `WinError 2` because
+  pre-commit's `language: system` on Windows resolves `entry` via PATH or as a literal
+  absolute path, not relative to its cwd. (No usable system `python` exists on this
+  machine's PATH — only a broken Microsoft Store alias — which is why the hook can't just
+  bootstrap through a bare `python` command either.)
+- Installed the hook (`pre-commit install`) and confirmed via
+  `pre-commit run --all-files` → passed.
+- `.github/workflows/backend-ci.yml`: ruff + pytest on push/PR to `main`/`develop`,
+  Ubuntu + Python 3.12. Deliberately no `DATABASE_URL`/`CLERK_*` secrets configured — the
+  test suite mocks `Settings` rather than hitting real Neon/Clerk, so CI needs none.
+  Validated the YAML structure by parsing it with PyYAML.
+- Phase 0 is now done end-to-end: FastAPI skeleton, Neon+pgvector, Clerk auth, Alembic,
+  local pre-commit gate, CI. Next: Phase 1 (Subjects, upload/ingest, Ask/RAG).
+
 ## 2026-07-14 — Phase 0: Alembic init
 - `requirements.txt`: added `alembic`.
 - `alembic init alembic`; `alembic.ini` sqlalchemy.url left unset (no connection string

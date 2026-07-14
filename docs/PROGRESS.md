@@ -3,7 +3,8 @@
 > Current state of the StudyMate build. **Read this to resume work** after any break/reset.
 
 ## Current phase
-**Phase 0 — Setup** (in progress)
+**Phase 0 — Setup: complete.** Next up: **Phase 1 — Core RAG** (Subjects, upload → R2 →
+Inngest ingest, Ask/RAG, Conversations — see `docs/plan.md`).
 
 ## Done
 - [x] Repo skeleton + `.gitignore`
@@ -34,8 +35,23 @@
   migration `fb44afd7a3d6_enable_pgvector_extension` — `CREATE EXTENSION IF NOT EXISTS
   vector`; applied to real Neon DB (`alembic upgrade head`), `alembic_version` confirmed.
 
-## Next (Phase 0 remainder)
-- [ ] pre-commit hooks (ruff + pytest) + CI workflow
+- [x] Pre-commit: `.pre-commit-config.yaml` (repo root) — local hook running
+  `backend/scripts/precommit_check.py` (ruff check + pytest) via `backend/.venv`'s own
+  Python directly (entry uses an **absolute** path — `language: system` on Windows doesn't
+  resolve a relative `entry` against pre-commit's cwd; a relative path silently fails with
+  `WinError 2`). Installed (`pre-commit install`) and smoke-tested
+  (`pre-commit run --all-files` → passed).
+- [x] CI: `.github/workflows/backend-ci.yml` — ruff + pytest on push/PR to `main`/`develop`,
+  Ubuntu + Python 3.12, no secrets needed (db/auth tests mock `Settings`, never hit
+  real Neon/Clerk).
+
+## Next (Phase 1 — Core RAG)
+- [ ] `app/modules/subjects` — model + router + service (first domain module, first real
+  Alembic autogenerate migration once it exists)
+- [ ] R2 bucket + upload endpoint
+- [ ] Inngest ingest pipeline: chunk → Cohere embed → pgvector
+- [ ] Ask endpoint: retrieve → Cohere Rerank → Claude (streaming)
 
 ## Blockers / needs from user
-- Accounts + API keys still needed later: **Anthropic, Cohere, R2, Inngest, Polar**.
+- Accounts + API keys needed for Phase 1: **Anthropic, Cohere, R2**. Inngest/Polar can wait
+  until their respective features (jobs, billing) are actually built.

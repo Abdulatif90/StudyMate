@@ -1,0 +1,19 @@
+# Local git hook: ruff + pytest on backend/, before every commit.
+#
+# `entry` is an absolute path to backend/.venv's own Python (not a system
+# `python` — there isn't a usable one on this machine's PATH), so the hook
+# always runs the exact ruff/pytest versions from requirements-dev.txt.
+# `language: system` only resolves `entry` via PATH or as a literal
+# absolute path — a relative path silently fails with WinError 2 (Windows
+# doesn't resolve it against pre-commit's cwd the way POSIX shells would).
+# If backend/.venv is ever moved/recreated, update the path below and
+# rerun `backend/.venv/Scripts/pre-commit.exe install` from repo root.
+repos:
+  - repo: local
+    hooks:
+      - id: backend-checks
+        name: backend ruff + pytest
+        entry: C:/Users/Abdu_PC/Downloads/StudyMate/backend/.venv/Scripts/python.exe backend/scripts/precommit_check.py
+        language: system
+        pass_filenames: false
+        files: ^backend/
