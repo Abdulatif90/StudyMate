@@ -10,7 +10,8 @@ import uuid
 
 from sqlmodel import Session, select
 
-from app.modules.documents.models import Document, DocumentStatus
+from app.modules.documents.chunking import chunk_text
+from app.modules.documents.models import Document, DocumentChunk, DocumentStatus
 from app.modules.documents.parsing import (
     SUPPORTED_CONTENT_TYPES,
     DocumentParseError,
@@ -54,9 +55,10 @@ def create_document(
         raise FileTooLargeError(f"File exceeds {MAX_UPLOAD_SIZE_BYTES} byte limit")
 
     try:
-        extract_text(content_type, raw)
+        text = extract_text(content_type, raw)
         parse_status = DocumentStatus.READY
     except DocumentParseError:
+        text = ""
         parse_status = DocumentStatus.FAILED
 
     document = Document(
@@ -69,7 +71,32 @@ def create_document(
     session.add(document)
     session.commit()
     session.refresh(document)
+
+    # chunk_text("") == [] for a failed parse or genuinely empty extraction (e.g. a
+    # scanned PDF with no text layer) — no special-casing needed, the loop is just a
+    # no-op and the document is still created with its status reflecting the outcome.
+    for index, chunk_content in enumerate(chunk_text(text)):
+        session.add(
+            DocumentChunk(
+                document_id=document.id,
+                owner_id=owner_id,
+                chunk_index=index,
+                text=chunk_content,
+            )
+        )
+    session.commit()
+
     return document
+
+
+def list_chunks(session: Session, owner_id: str, document_id: uuid.UUID) -> list[DocumentChunk]:
+    return list(
+        session.exec(
+            select(DocumentChunk)
+            .where(DocumentChunk.document_id == document_id, DocumentChunk.owner_id == owner_id)
+            .order_by(DocumentChunk.chunk_index)
+        )
+    )
 
 
 def list_documents(session: Session, owner_id: str, subject_id: uuid.UUID) -> list[Document]:

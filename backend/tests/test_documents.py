@@ -8,6 +8,7 @@ are parsed synchronously in-request, so status resolves straight to ready/failed
 from __future__ import annotations
 
 import io
+import uuid
 
 import pytest
 from fastapi.testclient import TestClient
@@ -17,6 +18,7 @@ from sqlmodel import Session, SQLModel, create_engine
 from app.core.auth import get_current_user_id
 from app.core.db import get_session
 from app.main import app
+from app.modules.documents import service as documents_service
 
 _TEST_USER = "user_test_123"
 _engine = create_engine(
@@ -52,6 +54,13 @@ def _create_subject(name: str = "Biology") -> str:
 
 def _txt_file(content: bytes = b"hello world"):
     return {"file": ("notes.txt", io.BytesIO(content), "text/plain")}
+
+
+def _chunk_texts(owner_id: str, document_id: str) -> list[str]:
+    """Chunks have no HTTP endpoint yet, so tests read them straight from the DB."""
+    with Session(_engine) as session:
+        chunks = documents_service.list_chunks(session, owner_id, uuid.UUID(document_id))
+        return [chunk.text for chunk in chunks]
 
 
 def test_upload_and_list_documents():
@@ -125,3 +134,48 @@ def test_upload_marks_unparseable_pdf_as_failed():
     response = client.post(f"/subjects/{subject_id}/documents", files=files)
     assert response.status_code == 201
     assert response.json()["status"] == "failed"
+
+
+def test_upload_creates_a_single_chunk_for_short_text():
+    subject_id = _create_subject()
+    created = client.post(f"/subjects/{subject_id}/documents", files=_txt_file()).json()
+
+    assert _chunk_texts(_TEST_USER, created["id"]) == ["hello world"]
+
+
+def test_upload_creates_ordered_chunks_for_long_text():
+    subject_id = _create_subject()
+    long_text = " ".join(f"This is sentence number {i}." for i in range(200)).encode()
+    files = {"file": ("long.txt", io.BytesIO(long_text), "text/plain")}
+    created = client.post(f"/subjects/{subject_id}/documents", files=files).json()
+
+    chunks = _chunk_texts(_TEST_USER, created["id"])
+    assert len(chunks) > 1
+    # list_chunks orders by chunk_index — confirm that matches source order too
+    positions = [long_text.decode().index(chunk) for chunk in chunks]
+    assert positions == sorted(positions)
+
+
+def test_chunks_are_scoped_to_owner():
+    subject_id = _create_subject()
+    created = client.post(f"/subjects/{subject_id}/documents", files=_txt_file()).json()
+
+    assert len(_chunk_texts(_TEST_USER, created["id"])) == 1
+    assert _chunk_texts("someone_else", created["id"]) == []
+
+
+def test_unparseable_pdf_creates_no_chunks():
+    subject_id = _create_subject()
+    files = {"file": ("broken.pdf", io.BytesIO(b"not a real pdf"), "application/pdf")}
+    created = client.post(f"/subjects/{subject_id}/documents", files=files).json()
+
+    assert created["status"] == "failed"
+    assert _chunk_texts(_TEST_USER, created["id"]) == []
+
+
+def test_whitespace_only_text_file_creates_no_chunks():
+    subject_id = _create_subject()
+    created = client.post(f"/subjects/{subject_id}/documents", files=_txt_file(b"   \n  ")).json()
+
+    assert created["status"] == "ready"  # parses fine, just has no real content
+    assert _chunk_texts(_TEST_USER, created["id"]) == []

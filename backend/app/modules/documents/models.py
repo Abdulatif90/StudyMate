@@ -41,3 +41,19 @@ class Document(SQLModel, table=True):
         default=DocumentStatus.PENDING, sa_column=Column(_status_column_type, nullable=False)
     )
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class DocumentChunk(SQLModel, table=True):
+    """A chunk of a Document's extracted text (see chunking.py). `owner_id` is
+    duplicated here too — same defense-in-depth reasoning as on `Document` itself.
+    No embedding column yet; that arrives with Cohere in a later increment.
+    """
+
+    __tablename__ = "document_chunks"
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    document_id: uuid.UUID = Field(foreign_key="documents.id", index=True)
+    owner_id: str = Field(index=True)
+    chunk_index: int
+    text: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

@@ -2,6 +2,64 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-15 — Chunking (text-only; still no R2/Cohere/Inngest)
+- `app/modules/documents/chunking.py`: `chunk_text(text, chunk_size=1000, overlap=150)`.
+  Sliding window over character positions; each window's hard-cut end is nudged back
+  to the nearest `\n\n` / sentence-ending punctuation / plain space within a 200-char
+  lookback (`_find_boundary`), falling through to a hard cut only if nothing matches
+  (e.g. one giant unbroken token — verified with a dedicated test). Overlap is applied
+  by starting the next window `overlap` characters before the previous window's
+  (boundary-adjusted) end, so a sentence split across a chunk boundary still appears
+  whole in at least one chunk. `chunk_text("")` (after `.strip()`) returns `[]`.
+  Verified the algorithm's actual behavior empirically (a throwaway script printing
+  chunk positions/lengths against 200 unique numbered sentences) before writing formal
+  assertions against it, rather than assuming the design would behave as intended.
+- `DocumentChunk` model added to `documents/models.py`: `id`, `document_id` FK →
+  `documents.id`, `owner_id` (same defense-in-depth duplication as `Document.owner_id`),
+  `chunk_index`, `text`, `created_at`. No embedding column yet.
+- `service.create_document`: after the existing parse step, now chunks the extracted
+  text and inserts ordered `DocumentChunk` rows in the same transaction as the
+  `Document` row. No special-casing needed for "failed parse" or "empty parse" — both
+  naturally produce `text = ""` (or a parse that yields only whitespace), and
+  `chunk_text("")` already returns `[]`, so the insert loop is just a no-op.
+  `service.list_chunks(session, owner_id, document_id)` added for retrieval
+  (owner + document scoped, ordered by `chunk_index`) — no HTTP endpoint yet, since
+  nothing consumes chunks until the Ask/RAG endpoint exists.
+- Alembic: imported `DocumentChunk` in `alembic/env.py` (technically already registered
+  via the `Document` import from the same `models.py` file, but kept explicit for
+  readability, matching the existing per-model-import convention). Migration
+  `19324f4f8f37_add_document_chunks_table`, applied to real Neon; confirmed via
+  `information_schema.columns`.
+- Tests:
+  - `tests/test_chunking.py` (7): empty/whitespace-only → `[]`; short text → single
+    chunk; long text (200 unique numbered sentences) splits with source-order
+    preserved (using `.index()` against unique content, not brittle exact-position
+    assertions); consecutive chunks provably overlap
+    (`positions[i+1] < positions[i] + len(chunks[i])`); chunks end on sentence
+    boundaries for realistic prose; a single 500-char run of `"x"` (no boundary
+    anywhere) correctly falls back to a hard split.
+  - `tests/test_documents.py` (+5): a short upload produces exactly one chunk matching
+    its content; a long upload produces multiple chunks in source order; chunks are
+    owner-scoped (`list_chunks` with the wrong `owner_id` returns nothing even for a
+    real `document_id`); an unparseable file (`status: failed`) produces no chunks;
+    a whitespace-only text file (`status: ready`, but no real content) also produces
+    no chunks — the two distinct "no chunks" paths named in the task both covered.
+  - Chunks have no HTTP endpoint yet, so these tests read `DocumentChunk` rows
+    directly via `service.list_chunks` against the same in-memory SQLite engine the
+    `dependency_overrides` fixture already wires up — no new test infrastructure
+    needed.
+- Live-verified against real Neon (service layer directly — same reasoning as the
+  documents increment: a real Clerk JWT needs a frontend that doesn't exist yet):
+  created a document with 200 sentences, got back 7 correctly-ordered chunks, and
+  confirmed a different `owner_id` sees zero chunks for the same `document_id`
+  (genuine tenant-scoping check against actual Postgres, not just SQLite). Hit one
+  non-issue while cleaning up test data: a manual `DELETE` script tried to remove the
+  `Document` row before its `DocumentChunk` rows and hit the FK constraint (expected —
+  no ORM-level `relationship()`/cascade is defined, and there's no `DELETE` endpoint in
+  the app yet for this to actually matter). Fixed the cleanup script's delete order and
+  confirmed 0 rows left in `subjects`, `documents`, and `document_chunks` afterward.
+- Full suite: **34 passed** (12 new: 7 chunking + 5 documents); `ruff check` → clean.
+
 ## 2026-07-15 — Documents module (text-only; R2/Cohere/Inngest still to come)
 - `app/modules/documents/`, mirroring the subjects module's layering:
   - `models.py`: `Document` (`id`, `subject_id` FK → `subjects.id`, `owner_id`,

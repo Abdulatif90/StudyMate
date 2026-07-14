@@ -26,7 +26,7 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 
 # Each domain module's models must be imported here so its SQLModel classes register
 # on this metadata and `autogenerate` can see them.
-from app.modules.documents.models import Document  # noqa: E402, F401
+from app.modules.documents.models import Document, DocumentChunk  # noqa: E402, F401
 from app.modules.subjects.models import Subject  # noqa: E402, F401
 
 target_metadata = SQLModel.metadata

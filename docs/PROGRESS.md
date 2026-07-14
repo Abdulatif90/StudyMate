@@ -101,11 +101,47 @@ Inngest ingest, Ask/RAG, Conversations — see `docs/plan.md`).
     real service layer, confirmed the status round-trips correctly through actual
     Postgres, then cleaned up the test rows (verified 0 left in both tables).
 
+- [x] Chunking (text-only — **still no R2/Cohere/Inngest**, next increment):
+  `chunking.py`: `chunk_text(text, chunk_size=1000, overlap=150) -> list[str]` — sliding
+  window snapped back to the nearest paragraph/sentence/word boundary within a lookback
+  range (falls back to a hard cut only when no boundary exists, e.g. one giant
+  unbroken token). `DocumentChunk` model (`document_id` FK, `owner_id`-scoped like
+  `Document`, `chunk_index`, `text`) — no embedding column yet, that's Cohere's turn.
+  `service.create_document` now chunks the extracted text and inserts ordered
+  `DocumentChunk` rows after a successful parse; `chunk_text("")` naturally returns
+  `[]` for both a failed parse and a genuinely empty one (e.g. whitespace-only text
+  file), so no special-casing was needed for "no chunks" — it falls out of the same
+  code path. Added `service.list_chunks` (owner + document scoped, ordered by
+  `chunk_index`) — no HTTP endpoint yet, not needed until Ask/RAG retrieval.
+  Migration `19324f4f8f37_add_document_chunks_table`, applied to Neon.
+  - `tests/test_chunking.py` (7 tests): pure algorithm tests — empty/whitespace-only →
+    `[]`, short text → single chunk, long text splits with preserved order (verified via
+    unique-per-sentence fixture + `.index()`, not exact-position assertions), consecutive
+    chunks provably overlap, chunks land on sentence boundaries for realistic prose, and
+    a single giant unbreakable token correctly falls back to a hard split.
+  - `tests/test_documents.py` (+5 tests): chunk persistence on upload (single chunk for
+    short text, multiple ordered chunks for long text), tenant scoping (`list_chunks`
+    with the wrong `owner_id` returns nothing even for a real `document_id`), and both
+    "no chunks" cases — an unparseable file (`status: failed`) and a whitespace-only
+    one (`status: ready`, zero real content).
+  - Live-verified against real Neon (service layer directly, same reason as the
+    documents increment — no frontend yet for a real Clerk JWT): created a document
+    with 200 sentences, confirmed 7 ordered, tenant-scoped chunks came back correctly,
+    then cleaned up. Hit one non-issue along the way: manual cleanup script tried to
+    delete a `Document` before its `DocumentChunk` rows and hit the FK constraint —
+    expected, since no ORM-level `relationship()`/cascade exists (there's no `DELETE`
+    endpoint yet, so this doesn't affect any real code path); fixed the script's
+    delete order and confirmed zero rows left in all three tables afterward.
+  Full suite: **34 passed**; `ruff check` → clean.
+
 ## Next (Phase 1 — Core RAG)
 - [ ] R2 bucket + upload endpoint (store the actual file — right now only validated,
   not persisted anywhere)
-- [ ] Inngest ingest pipeline: chunk → Cohere embed → pgvector (this is where extracted
-  text finally gets used/stored — `parsing.py` from this increment is the seed of it)
+- [ ] Cohere embeddings for each `DocumentChunk` + pgvector column/index (chunking
+  already exists — this is "embed what we just chunked")
+- [ ] Inngest: move parsing/chunking/embedding off the request path into a background
+  job (uploads currently do this synchronously, which is fine for small text files but
+  won't scale to large PDFs or embedding API latency)
 - [ ] Ask endpoint: retrieve → Cohere Rerank → Claude (streaming)
 
 ## Blockers / needs from user
