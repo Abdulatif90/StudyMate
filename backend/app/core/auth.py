@@ -37,7 +37,7 @@ def decode_clerk_token(token: str, jwks_client: PyJWKClient) -> dict:
     wrong signature, wrong issuer. Callers turn that into an HTTP 401.
     """
     settings = get_settings()
-    signing_key = jwks_client.get_signing_key_from_kid(jwt.get_unverified_header(token)["kid"])
+    signing_key = jwks_client.get_signing_key(jwt.get_unverified_header(token)["kid"])
     return jwt.decode(
         token,
         signing_key.key,
