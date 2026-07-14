@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from app.core.config import get_settings
+from app.modules.documents.router import router as documents_router
 from app.modules.subjects.router import router as subjects_router
 
 settings = get_settings()
@@ -20,6 +21,7 @@ app = FastAPI(
 )
 
 app.include_router(subjects_router)
+app.include_router(documents_router)
 
 
 @app.get("/health")

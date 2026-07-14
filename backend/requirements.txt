@@ -13,3 +13,8 @@ alembic>=1.13
 
 # Auth (Clerk) — JWT verification via JWKS
 pyjwt[crypto]>=2.9
+
+# Document upload + text extraction (Documents module — PDF/DOCX/TXT)
+python-multipart>=0.0.12
+pypdf>=5.0
+python-docx>=1.1

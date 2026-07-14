@@ -76,9 +76,36 @@ Inngest ingest, Ask/RAG, Conversations — see `docs/plan.md`).
   immediately instead of silently matching a drifted fake. Re-verified live: bad token now
   correctly returns 401.
 
+- [x] `app/modules/documents` (text-only — **no R2/Cohere/Inngest yet**, that's next):
+  `models.py` (`Document` — `subject_id` FK, `owner_id`-scoped like `Subject`,
+  `DocumentStatus` enum `pending`/`ready`/`failed`), `parsing.py` (PDF/DOCX/TXT text
+  extraction, isolated behind one `DocumentParseError` regardless of the underlying
+  library), `service.py` (ownership check via `subjects.service.get_subject`, then
+  content-type + 20 MB size validation, then synchronous parse → `ready`/`failed`),
+  `router.py` (`POST`/`GET /subjects/{subject_id}/documents`,
+  `GET .../{document_id}`, thin exception→HTTP-status translation). Wired into
+  `app/main.py`. Added `pypdf`, `python-docx`, `python-multipart` to `requirements.txt`.
+  Migration `a3a3277e047c_add_documents_table`, applied to Neon.
+  - **Enum storage gotcha caught before applying**: SQLAlchemy's `Enum` type defaults
+    to storing a Python enum member's *name* (`'PENDING'`), not its *value*
+    (`'pending'`) — confirmed empirically, then fixed with `values_callable` so the DB
+    labels match what the JSON API actually returns (`'pending'`/`'ready'`/`'failed'`).
+    Verified directly against Neon's `pg_enum` catalog.
+  - `tests/test_documents.py` (9 tests): same isolated-SQLite pattern as
+    `test_subjects.py`; covers upload+list+get, ownership isolation, 404s (missing
+    subject and missing document), reject unsupported content-type (415), reject
+    oversize file (413), and an unparseable "PDF" correctly landing as `status:
+    failed` (not an error — the upload still succeeds, per the model's contract).
+  - Live-verified end-to-end against real Neon (bypassing HTTP, since a real Clerk JWT
+    needs a frontend that doesn't exist yet): created a subject + document through the
+    real service layer, confirmed the status round-trips correctly through actual
+    Postgres, then cleaned up the test rows (verified 0 left in both tables).
+
 ## Next (Phase 1 — Core RAG)
-- [ ] R2 bucket + upload endpoint
-- [ ] Inngest ingest pipeline: chunk → Cohere embed → pgvector
+- [ ] R2 bucket + upload endpoint (store the actual file — right now only validated,
+  not persisted anywhere)
+- [ ] Inngest ingest pipeline: chunk → Cohere embed → pgvector (this is where extracted
+  text finally gets used/stored — `parsing.py` from this increment is the seed of it)
 - [ ] Ask endpoint: retrieve → Cohere Rerank → Claude (streaming)
 
 ## Blockers / needs from user
