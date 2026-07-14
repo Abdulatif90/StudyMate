@@ -11,7 +11,7 @@ import uuid
 from sqlmodel import Session, select
 
 from app.modules.documents.chunking import chunk_text
-from app.modules.documents.embedding import EmbeddingError, embed_texts
+from app.modules.documents.embedding import EmbeddingError, embed_query, embed_texts
 from app.modules.documents.models import Document, DocumentChunk, DocumentStatus
 from app.modules.documents.parsing import (
     SUPPORTED_CONTENT_TYPES,
@@ -88,6 +88,7 @@ def create_document(
         session.add(
             DocumentChunk(
                 document_id=document.id,
+                subject_id=subject_id,
                 owner_id=owner_id,
                 chunk_index=index,
                 text=chunk_content,
@@ -128,3 +129,39 @@ def get_document(
             Document.owner_id == owner_id,
         )
     ).first()
+
+
+def search_chunks(
+    session: Session,
+    owner_id: str,
+    subject_id: uuid.UUID,
+    query: str,
+    top_k: int = 8,
+) -> list[tuple[DocumentChunk, float]]:
+    """Semantic search over one subject's chunks. Returns (chunk, similarity_score)
+    pairs, most similar first — `similarity_score` is `1 - cosine_distance` (higher is
+    more similar).
+
+    pgvector's `<=>` cosine-distance operator only exists on Postgres; off it (the
+    SQLite test engine), every filter below (owner, subject, embedding IS NOT NULL)
+    still applies — enough to unit-test tenant/subject scoping — but similarity
+    ordering/scoring is skipped since there's no equivalent to run. Real ranking is
+    verified against live Neon instead (see tests/test_search.py).
+    """
+    _require_owned_subject(session, owner_id, subject_id)
+
+    filters = (
+        DocumentChunk.owner_id == owner_id,
+        DocumentChunk.subject_id == subject_id,
+        DocumentChunk.embedding.is_not(None),
+    )
+
+    if session.get_bind().dialect.name != "postgresql":
+        chunks = session.exec(select(DocumentChunk).where(*filters).limit(top_k)).all()
+        return [(chunk, 0.0) for chunk in chunks]
+
+    query_vector = embed_query(query)
+    distance = DocumentChunk.embedding.cosine_distance(query_vector)
+    statement = select(DocumentChunk, distance).where(*filters).order_by(distance).limit(top_k)
+    results = session.exec(statement).all()
+    return [(chunk, 1 - dist) for chunk, dist in results]

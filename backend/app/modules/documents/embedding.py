@@ -37,11 +37,7 @@ def _get_client() -> cohere.Client:
     return cohere.Client(settings.cohere_api_key)
 
 
-def embed_texts(texts: list[str]) -> list[list[float]]:
-    """Embed a batch of texts as search documents, one 1024-dim vector per input text,
-    in the same order. `batching=True` lets the Cohere SDK split large batches across
-    multiple requests itself (its embed endpoint caps texts per call).
-    """
+def _embed(texts: list[str], input_type: str) -> list[list[float]]:
     if not texts:
         return []
 
@@ -50,7 +46,7 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
         response = client.embed(
             texts=texts,
             model=EMBEDDING_MODEL,
-            input_type="search_document",
+            input_type=input_type,
             batching=True,
         )
     except Exception as exc:
@@ -62,3 +58,20 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
             f"Cohere returned vectors of unexpected dimension (expected {EMBEDDING_DIM})"
         )
     return embeddings
+
+
+def embed_texts(texts: list[str]) -> list[list[float]]:
+    """Embed a batch of texts as search *documents* (indexed content), one 1024-dim
+    vector per input text, in the same order. `batching=True` lets the Cohere SDK
+    split large batches across multiple requests itself (its embed endpoint caps
+    texts per call).
+    """
+    return _embed(texts, input_type="search_document")
+
+
+def embed_query(text: str) -> list[float]:
+    """Embed a single search *query* — the other half of Cohere's asymmetric model.
+    Must use `input_type="search_query"`, not `"search_document"`, or retrieval
+    quality suffers even though both produce same-shaped vectors.
+    """
+    return _embed([text], input_type="search_query")[0]

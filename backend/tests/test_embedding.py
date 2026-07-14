@@ -73,3 +73,29 @@ def test_embed_texts_raises_runtime_error_when_key_unset(monkeypatch):
 
     with pytest.raises(RuntimeError, match="COHERE_API_KEY"):
         embedding.embed_texts(["hello"])
+
+
+def test_embed_query_returns_a_single_vector(monkeypatch):
+    fake_client = MagicMock()
+    fake_client.embed.return_value = SimpleNamespace(embeddings=[[0.3] * embedding.EMBEDDING_DIM])
+    monkeypatch.setattr(embedding.cohere, "Client", MagicMock(return_value=fake_client))
+
+    result = embedding.embed_query("what is mitosis?")
+
+    assert result == [0.3] * embedding.EMBEDDING_DIM
+    # the asymmetric half of the model — must NOT be "search_document" like embed_texts
+    fake_client.embed.assert_called_once_with(
+        texts=["what is mitosis?"],
+        model=embedding.EMBEDDING_MODEL,
+        input_type="search_query",
+        batching=True,
+    )
+
+
+def test_embed_query_wraps_api_failures(monkeypatch):
+    fake_client = MagicMock()
+    fake_client.embed.side_effect = RuntimeError("network exploded")
+    monkeypatch.setattr(embedding.cohere, "Client", MagicMock(return_value=fake_client))
+
+    with pytest.raises(embedding.EmbeddingError):
+        embedding.embed_query("what is mitosis?")

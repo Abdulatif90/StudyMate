@@ -2,6 +2,89 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-15 — Retrieval: service.search_chunks (no HTTP endpoint, no Claude yet)
+- `embedding.py`: refactored `embed_texts` to share a new private `_embed(texts,
+  input_type)` with a new `embed_query(text) -> list[float]` — the query-side of
+  Cohere's asymmetric model (`input_type="search_query"`, vs. `embed_texts`'
+  `"search_document"`). Live-verified directly against the real Cohere API before
+  trusting it (1024-dim vector back for a real question).
+- `DocumentChunk.subject_id` added — denormalized from `Document`, same reasoning as
+  the existing `owner_id` duplication: lets `search_chunks` filter by owner+subject
+  directly on this table, no join needed on the retrieval hot path. Confirmed
+  `document_chunks` was still empty on Neon (we've cleaned up every live test's rows
+  all along) before adding it as a straight `NOT NULL` column, no backfill needed.
+  Migration `ba1acb6a4b7c_add_subject_id_to_document_chunks`, applied to Neon;
+  `create_document`'s chunk-creation loop updated to populate it.
+- Before writing the query, read `pgvector.sqlalchemy.Vector`'s comparator source
+  directly (`inspect.getsource(Vector.comparator_factory)`) rather than assuming —
+  confirmed `.cosine_distance(other)` maps to the `<=>` operator exactly as the task
+  specified.
+- `service.search_chunks(session, owner_id, subject_id, query, top_k=8) ->
+  list[tuple[DocumentChunk, float]]`: `_require_owned_subject` first (same pattern as
+  every other function here — a bad `subject_id` should raise `SubjectNotFoundError`,
+  not silently return nothing), then filters `owner_id`, `subject_id`, `embedding IS
+  NOT NULL`. On Postgres, embeds the query and adds `ORDER BY
+  DocumentChunk.embedding.cosine_distance(query_vector) LIMIT top_k`; returned score is
+  `1 - cosine_distance` (higher = more similar). **Branches on
+  `session.get_bind().dialect.name`**: `<=>` doesn't exist on SQLite, so off Postgres
+  the function still applies every WHERE filter (making tenant/subject scoping
+  unit-testable there) but skips ordering/scoring entirely (score `0.0` for
+  everything) — confirmed the dialect name comes back as `"sqlite"` / `"postgresql"`
+  as expected before relying on the branch.
+- **Real bug, caught by the very first SQLite test I wrote for this**: a chunk stored
+  with `embedding=None` was still coming back from an `embedding IS NOT NULL` filter.
+  Traced it to `typeof(embedding)` returning `'text'` (not `'null'`) for that row —
+  SQLAlchemy's `JSON` type (the SQLite fallback from the previous increment's
+  `with_variant`) stores a Python `None` as the literal string `"null"` (a JSON null
+  value), not an actual SQL `NULL`, unless `none_as_null=True` is set. Fixed:
+  `JSON(none_as_null=True)` in `models.py`. Real Postgres's `Vector` type never had
+  this problem — a `None` there was already a genuine column `NULL` — so this was
+  purely a SQLite-fallback-specific gap that the previous increment's tests never
+  happened to exercise (they only ever stored real vectors, never `None`, on that
+  column).
+- **Second bug, this one in my own test helper, not production code**: after fixing
+  the above, one SQLite test still failed. `_make_chunk(embedding=None)` was silently
+  getting replaced by the helper's default 0.1-vector, because
+  `if embedding is None: embedding = <default>` can't tell "caller didn't pass this
+  argument" apart from "caller explicitly passed `None`" — both look identical to that
+  check. A throwaway reproduction script (constructing `DocumentChunk` directly,
+  bypassing the helper) had "confirmed the fix worked" earlier for exactly this
+  reason: it never went through the buggy helper at all. Lesson: when a test result
+  contradicts a manual reproduction, re-run the *actual* failing test path, not a
+  similar-looking substitute — the two aren't guaranteed equivalent, and weren't here.
+  Fixed with a proper `_UNSET` sentinel object as the parameter default instead of
+  `None`.
+- Tests:
+  - `tests/test_embedding.py` (+2): `embed_query`'s call args (`input_type=
+    "search_query"`, single-text list) and its own `EmbeddingError` wrapping path.
+  - `tests/test_search.py` (new, 5 SQLite tests + 1 live): owner+subject match
+    required (a sibling subject under the same owner is excluded; a different owner's
+    subject of the same *name* is excluded too — name collisions don't leak data);
+    chunks with no embedding excluded; `top_k` truncates; a nonexistent `subject_id`
+    raises `SubjectNotFoundError`. Cohere mocked throughout (`embed_query` patched at
+    the `documents_service` level), network-free.
+  - **Live test against real Neon**, gated with `@pytest.mark.skipif(not
+    get_settings().database_url, ...)` — deliberately checking `get_settings()`, not
+    `os.getenv("DATABASE_URL")` directly, since the latter wouldn't see a value that
+    only exists in `backend/.env` (pydantic-settings reads the file itself; it doesn't
+    populate `os.environ`). Creates 3 real documents on genuinely different topics
+    (photosynthesis / volcanoes / HTML) with real Cohere embeddings throughout, then
+    asserts a photosynthesis-themed query ranks the photosynthesis document's chunk
+    first with strictly descending similarity scores — this is a real semantic-ranking
+    assertion, not just a plumbing check. Passed on the first real run. Cleans up in a
+    `try`/`finally` (chunks → documents → subject, correct FK order) so it leaves
+    nothing behind in Neon whether it passes or fails.
+  - **Trade-off worth flagging**: since `DATABASE_URL` is configured in this dev
+    environment, this live test now runs on *every* `pytest tests` invocation,
+    including the local pre-push git hook — meaning routine test runs here make a
+    real Cohere + Neon round trip (slower, tiny real API cost, requires network). This
+    is exactly what the task asked for ("skip if no DATABASE_URL"), and CI has no
+    `DATABASE_URL` secret configured so it skips automatically there — but it's a
+    real behavior change from every previous increment's fully network-free test
+    suite, worth knowing if `pytest`/`git push` ever feels slower or fails on a
+    network blip unrelated to any actual code change.
+- Full suite: **50 passed** (7 new: 2 embedding + 5 search); `ruff check` → clean.
+
 ## 2026-07-15 — Cohere embeddings + pgvector storage (still no R2/Inngest)
 - User added `COHERE_API_KEY` to `backend/.env`. `requirements.txt`: added `cohere`,
   `pgvector`. `Settings.cohere_api_key: str | None = None`. `.env.example` uncommented

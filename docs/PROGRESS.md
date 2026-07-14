@@ -187,11 +187,61 @@ Inngest ingest, Ask/RAG, Conversations — see `docs/plan.md`).
     increment's live test).
   Full suite: **43 passed**; `ruff check` → clean.
 
+- [x] Retrieval — `service.search_chunks` (no HTTP endpoint yet; still no Claude/R2/Inngest):
+  `embed_query(text) -> list[float]` added to `embedding.py` (`input_type="search_query"`
+  — the retrieval half of the asymmetry `embed_texts`/`"search_document"` started;
+  both now share a private `_embed(texts, input_type)` to avoid duplicating the
+  try/except + dimension-check logic). `search_chunks(session, owner_id, subject_id,
+  query, top_k=8)`: embeds the query, then `ORDER BY embedding <=> :query_vec LIMIT
+  top_k` via pgvector's `cosine_distance()` comparator (confirmed it maps to `<=>` by
+  reading `Vector.comparator_factory`'s source before using it), filtered by
+  `owner_id AND subject_id AND embedding IS NOT NULL`. Returns `list[tuple[DocumentChunk,
+  float]]`, `float` = `1 - cosine_distance` (higher = more similar).
+  - **`DocumentChunk.subject_id` added** (denormalized from `Document`, same reasoning
+    as the existing `owner_id` duplication): lets retrieval filter by owner+subject
+    directly on the hot query path, no join. Confirmed `document_chunks` was still
+    empty on Neon before adding it `NOT NULL` directly (no backfill needed). Migration
+    `ba1acb6a4b7c_add_subject_id_to_document_chunks`, applied.
+  - **Dialect-branches on `<=>`**: it only exists on Postgres, so off it (the SQLite
+    test engine) `search_chunks` still applies every WHERE filter but skips the
+    similarity ordering/scoring entirely (returns `0.0` for every score) — confirmed
+    via `session.get_bind().dialect.name` before relying on it. This is what makes the
+    scoping logic unit-testable on SQLite at all; real ranking is Postgres-only.
+  - **Real bug caught by the first SQLite scoping test**: a chunk created with
+    `embedding=None` was still coming back from `embedding IS NOT NULL`. Root cause:
+    SQLAlchemy's `JSON` type (the SQLite variant fallback) stores Python `None` as the
+    literal text `"null"` (JSON null), not a real SQL `NULL`, unless told otherwise —
+    confirmed via `typeof(embedding)` returning `'text'` instead of `'null'` for that
+    row. Fixed with `JSON(none_as_null=True)`; Postgres's real `Vector` type never had
+    this problem (a `None` there is already a genuine column `NULL`).
+  - Tests: `tests/test_embedding.py` (+2, `embed_query`'s call shape/args and error
+    wrapping, Cohere client mocked). `tests/test_search.py` (new, 5 tests): SQLite-only
+    scoping (owner+subject match required, a sibling subject's chunks excluded, a
+    different owner's chunks excluded even under the same subject name, chunks
+    without embeddings excluded, `top_k` respected, missing subject raises
+    `SubjectNotFoundError`) — Cohere mocked, network-free. Plus one **live integration
+    test against real Neon**, `@pytest.mark.skipif` on `not
+    get_settings().database_url` (not a raw `os.getenv` check — that wouldn't see
+    `.env`-file-only values): creates 3 real documents on different topics, real
+    Cohere embeddings throughout, asserts a photosynthesis-themed query actually
+    ranks the photosynthesis document first with descending similarity scores —
+    genuine semantic-ranking verification, not just plumbing. Runs automatically in
+    this dev environment (`DATABASE_URL` is set) and will `SKIPPED` automatically in
+    CI (no secrets there) — meaning routine local `pytest`/pre-push runs now make a
+    real Cohere + Neon round trip; noted in WORKLOG as a deliberate trade-off per the
+    task's explicit instruction, not an oversight.
+  - Caught my own test-helper bug along the way, distinct from the production bug
+    above: `_make_chunk(embedding=None)` was silently replaced by the helper's default
+    vector, because `if embedding is None: embedding = <default>` can't distinguish
+    "caller didn't pass this" from "caller explicitly passed `None`". Fixed with a
+    proper `_UNSET` sentinel default instead of `None`.
+  Full suite: **50 passed** (7 new); `ruff check` → clean.
+
 ## Next (Phase 1 — Core RAG)
+- [ ] Ask HTTP endpoint: wraps `search_chunks` (now exists) + Claude generation
+  (streaming) — this increment was service-layer only, no route yet
 - [ ] R2 bucket + upload endpoint (store the actual file — right now only validated,
   not persisted anywhere)
-- [ ] Ask endpoint: retrieve (pgvector similarity search) → Cohere Rerank → Claude
-  (streaming) — embeddings now exist to retrieve against
 - [ ] Inngest: move parsing/chunking/embedding off the request path into a background
   job (uploads currently do this synchronously, which is fine for small text files but
   won't scale to large PDFs or embedding API latency)

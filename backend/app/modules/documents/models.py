@@ -53,18 +53,27 @@ class Document(SQLModel, table=True):
 # vector search capability, which the test suite never needs (it only exercises
 # storage/retrieval, never similarity search). Verified round-tripping correctly
 # against both a real SQLite engine and real Neon+pgvector before relying on this.
-_embedding_column_type = Vector(EMBEDDING_DIM).with_variant(JSON(), "sqlite")
+#
+# `none_as_null=True` matters: SQLAlchemy's JSON type otherwise stores a Python `None`
+# as the literal text "null" (JSON null), not a real SQL NULL — found by testing
+# `embedding IS NOT NULL` against SQLite and getting rows back that should've been
+# filtered out. Postgres/pgvector's Vector type doesn't have this quirk at all (a
+# `None` there is a real column NULL), so this only needs to be set on the variant.
+_embedding_column_type = Vector(EMBEDDING_DIM).with_variant(JSON(none_as_null=True), "sqlite")
 
 
 class DocumentChunk(SQLModel, table=True):
-    """A chunk of a Document's extracted text (see chunking.py). `owner_id` is
-    duplicated here too — same defense-in-depth reasoning as on `Document` itself.
+    """A chunk of a Document's extracted text (see chunking.py). `owner_id` and
+    `subject_id` are both duplicated here from `Document` — same defense-in-depth
+    reasoning, and it lets retrieval (`service.search_chunks`) filter by owner+subject
+    directly on this table, no join needed on the hot query path.
     """
 
     __tablename__ = "document_chunks"
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     document_id: uuid.UUID = Field(foreign_key="documents.id", index=True)
+    subject_id: uuid.UUID = Field(foreign_key="subjects.id", index=True)
     owner_id: str = Field(index=True)
     chunk_index: int
     text: str
