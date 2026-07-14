@@ -9,6 +9,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from app.core.config import get_settings
+from app.modules.subjects.router import router as subjects_router
 
 settings = get_settings()
 
@@ -17,6 +18,8 @@ app = FastAPI(
     version="0.1.0",
     description="AI study assistant — RAG over your own materials.",
 )
+
+app.include_router(subjects_router)
 
 
 @app.get("/health")

@@ -24,9 +24,10 @@ if not settings.database_url:
     )
 config.set_main_option("sqlalchemy.url", settings.database_url)
 
-# Each domain module (app/modules/<domain>/models.py) must be imported here once it
-# exists, so its SQLModel classes register on this metadata and `autogenerate` can see
-# them. No domain models exist yet (Phase 0) — target_metadata is empty until Phase 1.
+# Each domain module's models must be imported here so its SQLModel classes register
+# on this metadata and `autogenerate` can see them.
+from app.modules.subjects.models import Subject  # noqa: E402, F401
+
 target_metadata = SQLModel.metadata
 
 # other values from the config, defined by the needs of env.py,

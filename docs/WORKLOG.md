@@ -2,6 +2,50 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-14 — Phase 1 start: Subjects module + real auth bug found via live test
+- First domain module, `app/modules/subjects/`: `models.py` (`Subject` — `id`, `owner_id`,
+  `name`, `created_at`), `schemas.py` (`SubjectCreate`, `SubjectRead` — API shapes kept
+  separate from the ORM model), `service.py` (create/list/get/delete, every query filtered
+  by `owner_id` per CLAUDE.md rule 2), `router.py` (thin: just wires
+  `Depends(get_session)`/`Depends(get_current_user_id)` to `service.py`, raises 404 via
+  `HTTPException` when a subject isn't found or isn't owned by the caller). Registered in
+  `app/main.py` via `app.include_router(subjects_router)`.
+- Alembic: imported `Subject` in `alembic/env.py` so `SQLModel.metadata` (and therefore
+  autogenerate) sees it. `alembic revision --autogenerate -m "add subjects table"` →
+  `74f229e49637`. Had to hand-add `import sqlmodel` to the generated file — Alembic's
+  autogenerate emits `sqlmodel.sql.sqltypes.AutoString()` for SQLModel string columns but
+  doesn't import `sqlmodel` itself (a known SQLModel+Alembic gap). Added
+  `import sqlmodel  # noqa: F401` to `script.py.mako` so future migrations don't hit the
+  same missing-import bug (guarded with `noqa` since a raw-SQL-only migration, like the
+  pgvector one, wouldn't actually use it and would otherwise fail `ruff check` on an
+  unused import). Applied to real Neon (`alembic upgrade head`); confirmed the table
+  schema via `information_schema.columns`.
+- `tests/test_subjects.py` (5 tests): in-memory SQLite (`StaticPool` so all requests in a
+  test share one connection) + `app.dependency_overrides` for `get_session` and
+  `get_current_user_id`, set up and torn down by an `autouse` fixture (not at import time)
+  so the overrides don't leak into other test files sharing the same `app` object. Covers
+  create+list, 404 on missing subject, delete (+ 404 after), and — explicitly — that one
+  owner's subjects are invisible to another (`test_subjects_are_scoped_to_owner`).
+- **Live smoke test caught a real bug**: started the actual FastAPI app against the real
+  `backend/.env` (live Neon + Clerk), hit `/subjects` with no token → correct 401, then
+  with a garbage bearer token → **500**, not 401. Traceback: `app/core/auth.py` called
+  `jwks_client.get_signing_key_from_kid(kid)`, but `pyjwt` 2.13.0's `PyJWKClient` has no
+  such method — the real one is `get_signing_key(kid)`. `tests/test_auth.py`'s fake JWKS
+  client had been hand-written with that same wrong method name, so it happened to match
+  the buggy code instead of the real library and the unit tests passed anyway.
+  - Fixed `auth.py` to call `get_signing_key`.
+  - Hardened the test fixture: `_make_fake_jwks_client()` now builds the fake via
+    `unittest.mock.create_autospec(PyJWKClient, instance=True)` instead of a hand-rolled
+    class — `create_autospec` raises `AttributeError` for any method not on the real
+    class, so a fake that drifts from the real API fails the test immediately instead of
+    silently mirroring a bug.
+  - Re-ran the live smoke test after the fix: bad token now correctly returns 401.
+  - Lesson recorded here rather than just fixed silently: hand-written fakes/mocks for
+    third-party clients need to be checked against the real API (or spec'd via
+    `create_autospec`) — a fake that merely "looks plausible" can pass tests while hiding
+    a broken integration.
+- Full suite: **13 passed**; `ruff check` → clean; `pre-commit run --all-files` → clean.
+
 ## 2026-07-14 — Fix pre-commit portability (absolute venv path → managed hooks)
 - Problem: `.pre-commit-config.yaml`'s `entry:` hardcoded this machine's absolute
   `backend/.venv` path, so it would break on any other clone.

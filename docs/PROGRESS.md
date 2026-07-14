@@ -56,9 +56,27 @@ Inngest ingest, Ask/RAG, Conversations — see `docs/plan.md`).
   Ubuntu + Python 3.12, no secrets needed (db/auth tests mock `Settings`, never hit
   real Neon/Clerk).
 
+- [x] Phase 1 started — `app/modules/subjects`: `models.py` (`Subject`, `owner_id`-scoped),
+  `schemas.py` (`SubjectCreate`/`SubjectRead`, kept separate from the ORM model), `service.py`
+  (create/list/get/delete, every query filtered by `owner_id`), `router.py` (thin — auth/DB
+  wiring only), wired into `app/main.py`. First real Alembic autogenerate migration
+  `74f229e49637_add_subjects_table` — applied to Neon, schema confirmed via
+  `information_schema`. `tests/test_subjects.py` (5 tests): isolated in-memory SQLite +
+  `app.dependency_overrides` for `get_session`/`get_current_user_id` (set up/torn down per
+  test, not at import time, so nothing leaks into other test files); includes an explicit
+  ownership-isolation test (one user can't see another's subjects).
+- [x] **Bug found + fixed via live smoke test**: `app/core/auth.py` called
+  `jwks_client.get_signing_key_from_kid(kid)` — that method doesn't exist on `pyjwt`
+  2.13.0's `PyJWKClient` (real method: `get_signing_key(kid)`). `tests/test_auth.py`'s fake
+  JWKS client had the same wrong method name, so unit tests passed while the real endpoint
+  500'd on any malformed token. Caught by starting the real server against live Neon+Clerk
+  and hitting `/subjects` with a bogus bearer token. Fixed in `auth.py`, and hardened the
+  test: the fake is now built with `unittest.mock.create_autospec(PyJWKClient,
+  instance=True)`, so calling a method that doesn't exist on the real class fails the test
+  immediately instead of silently matching a drifted fake. Re-verified live: bad token now
+  correctly returns 401.
+
 ## Next (Phase 1 — Core RAG)
-- [ ] `app/modules/subjects` — model + router + service (first domain module, first real
-  Alembic autogenerate migration once it exists)
 - [ ] R2 bucket + upload endpoint
 - [ ] Inngest ingest pipeline: chunk → Cohere embed → pgvector
 - [ ] Ask endpoint: retrieve → Cohere Rerank → Claude (streaming)
