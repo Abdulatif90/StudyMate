@@ -24,13 +24,13 @@
 - [x] Ruff config: `extend-immutable-calls = ["fastapi.Depends"]` (stops false-positive B008
   on every FastAPI dependency)
 
+- [x] User created Neon + Clerk accounts; real values in `backend/.env` (gitignored).
+  Verified live: `get_engine()` connects to Neon (Postgres 18, `pgvector` extension enabled);
+  `get_jwks_client()` fetches Clerk's real JWKS (1 signing key returned).
+
 ## Next (Phase 0 remainder)
-- [ ] User: create Neon + Clerk accounts, fill real values into `backend/.env`
-      (see `.env.example` — `DATABASE_URL`, `CLERK_JWKS_URL`, `CLERK_ISSUER`)
-- [ ] Alembic init (needs real `DATABASE_URL` to run first migration against)
+- [ ] Alembic init (real `DATABASE_URL` now available to run first migration against)
 - [ ] pre-commit hooks (ruff + pytest) + CI workflow
 
 ## Blockers / needs from user
-- Neon + Clerk accounts + real values in `backend/.env` (guided this session; I cannot create
-  accounts or enter secrets myself).
 - Accounts + API keys still needed later: **Anthropic, Cohere, R2, Inngest, Polar**.

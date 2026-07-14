@@ -2,6 +2,14 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-14 — Phase 0: Neon + Clerk accounts verified live
+- User created real Neon + Clerk accounts and filled `backend/.env` (gitignored, uncommitted).
+- Caught secrets pasted into `backend/.env.example` (tracked by git, unlike `.env`) before
+  any commit — moved real values to `.env`, restored placeholders in `.env.example`.
+  `git status` confirmed clean; `git log` confirmed the secrets were never committed/pushed.
+- Verified live: `get_engine()` connects to Neon (Postgres 18.4, `pgvector` extension
+  confirmed enabled); `get_jwks_client()` fetches Clerk's real JWKS (1 key returned).
+
 ## 2026-07-14 — Phase 0: db.py + auth.py (Neon + Clerk wiring)
 - Guided Neon (Postgres + pgvector) and Clerk account setup (external — user-completed).
 - `requirements.txt`: added `sqlmodel`, `psycopg2-binary`, `pyjwt[crypto]`.
