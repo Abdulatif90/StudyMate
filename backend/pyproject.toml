@@ -13,3 +13,8 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's `Depends(...)` default-argument pattern is safe (not a mutable
+# default) — tell bugbear so it stops flagging B008 on every dependency.
+extend-immutable-calls = ["fastapi.Depends"]

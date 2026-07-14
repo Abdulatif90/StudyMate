@@ -5,3 +5,10 @@ uvicorn[standard]>=0.30
 # Settings / config
 pydantic-settings>=2.5
 python-dotenv>=1.0
+
+# Database (Neon Postgres) — SQLModel wraps SQLAlchemy; psycopg2 is the driver
+sqlmodel>=0.0.22
+psycopg2-binary>=2.9
+
+# Auth (Clerk) — JWT verification via JWKS
+pyjwt[crypto]>=2.9

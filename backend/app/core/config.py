@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     environment: str = "development"
     debug: bool = False
 
+    # Filled in once Neon/Clerk accounts exist (see backend/.env.example).
+    # Optional here so the app/tests can still boot before they're set;
+    # code that needs them raises a clear error at the point of use instead.
+    database_url: str | None = None
+    clerk_jwks_url: str | None = None
+    clerk_issuer: str | None = None
+
     @property
     def is_production(self) -> bool:
         return self.environment.lower() in {"production", "prod"}

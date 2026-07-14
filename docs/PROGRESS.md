@@ -13,12 +13,24 @@
 - [x] Continuity docs: `CLAUDE.md`, `docs/{plan,PROGRESS,DECISIONS,WORKLOG}.md`
 - [x] Git: `main` + `develop`; GitHub remote `origin` (Abdulatif90/StudyMate); both branches pushed
 
+- [x] `app/core/db.py` — SQLModel engine/session (Neon), lazy `RuntimeError` if `DATABASE_URL`
+  unset; `tests/test_db.py`
+- [x] `app/core/auth.py` — Clerk JWT verification via JWKS (`PyJWKClient` + `pyjwt`),
+  `get_current_user_id` FastAPI dependency; `tests/test_auth.py` (RSA keypair generated
+  locally, no network calls)
+- [x] `Settings` gained `database_url` / `clerk_jwks_url` / `clerk_issuer` (all optional —
+  code raises a clear error at point of use, not at import time, so the app/tests still
+  boot before accounts exist)
+- [x] Ruff config: `extend-immutable-calls = ["fastapi.Depends"]` (stops false-positive B008
+  on every FastAPI dependency)
+
 ## Next (Phase 0 remainder)
-- [ ] `app/core/db.py` — SQLModel engine/session (Neon)
-- [ ] `app/core/auth.py` — Clerk JWT verification via JWKS
-- [ ] Alembic init
+- [ ] User: create Neon + Clerk accounts, fill real values into `backend/.env`
+      (see `.env.example` — `DATABASE_URL`, `CLERK_JWKS_URL`, `CLERK_ISSUER`)
+- [ ] Alembic init (needs real `DATABASE_URL` to run first migration against)
 - [ ] pre-commit hooks (ruff + pytest) + CI workflow
 
 ## Blockers / needs from user
-- Accounts + API keys: **Neon, Clerk, Anthropic, Cohere, R2, Inngest, Polar** (user provides;
-  I cannot create accounts or enter secrets).
+- Neon + Clerk accounts + real values in `backend/.env` (guided this session; I cannot create
+  accounts or enter secrets myself).
+- Accounts + API keys still needed later: **Anthropic, Cohere, R2, Inngest, Polar**.
