@@ -9,12 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useApiClient } from "@/lib/api/useApiClient";
-
-function friendlyUploadError(status: number): string {
-  if (status === 415) return "That file type isn't supported. Upload a PDF, DOCX, or TXT file.";
-  if (status === 413) return "That file is too large — the limit is 20 MB.";
-  return "Couldn't upload the file. Please try again.";
-}
+import { documentStatusVariant } from "@/lib/documentStatus";
+import { friendlyUploadError } from "@/lib/uploadError";
 
 export default function SubjectDetailPage() {
   const { subjectId } = useParams<{ subjectId: string }>();
@@ -123,15 +119,7 @@ export default function SubjectDetailPage() {
             <Card>
               <CardContent className="flex items-center justify-between gap-4 py-4">
                 <p className="font-medium">{document.filename}</p>
-                <Badge
-                  variant={
-                    document.status === "ready"
-                      ? "default"
-                      : document.status === "failed"
-                        ? "destructive"
-                        : "secondary"
-                  }
-                >
+                <Badge variant={documentStatusVariant(document.status)}>
                   {document.status}
                 </Badge>
               </CardContent>
