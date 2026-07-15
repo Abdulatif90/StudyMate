@@ -27,9 +27,19 @@ class Settings(BaseSettings):
     cohere_api_key: str | None = None
     anthropic_api_key: str | None = None
 
+    # Comma-separated (not JSON) so a plain `.env` value like
+    # `CORS_ORIGINS=http://localhost:3000,https://app.example.com` just works —
+    # pydantic-settings expects JSON for genuine list-typed fields, which is more
+    # friction than this needs for something this simple.
+    cors_origins: str = "http://localhost:3000"
+
     @property
     def is_production(self) -> bool:
         return self.environment.lower() in {"production", "prod"}
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
 
 @lru_cache

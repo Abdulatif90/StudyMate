@@ -7,6 +7,7 @@ Docs:         http://localhost:8000/docs
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.modules.ask.router import conversations_router
@@ -20,6 +21,13 @@ app = FastAPI(
     title="StudyMate API",
     version="0.1.0",
     description="AI study assistant — RAG over your own materials.",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origin_list,
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 app.include_router(subjects_router)
