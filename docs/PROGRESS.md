@@ -3,8 +3,9 @@
 > Current state of the StudyMate build. **Read this to resume work** after any break/reset.
 
 ## Current phase
-**Phase 0 — Setup: complete.** Next up: **Phase 1 — Core RAG** (Subjects, upload → R2 →
-Inngest ingest, Ask/RAG, Conversations — see `docs/plan.md`).
+**Phase 0 — Setup: complete.** **Phase 1 — Core RAG: in progress** (Subjects, documents,
+Ask/RAG, Conversations, and a first frontend slice are done; streaming, R2, and Inngest
+are still open — see "Next" below and `docs/plan.md`).
 
 ## Done
 - [x] Repo skeleton + `.gitignore`
@@ -388,6 +389,52 @@ Inngest ingest, Ask/RAG, Conversations — see `docs/plan.md`).
   - Backend: 70 passed (3 new CORS tests), `ruff check` → clean. Frontend:
     `tsc --noEmit` clean, `eslint` clean.
 
+- [x] Frontend: Subject detail page (`/subjects/[subjectId]`) — list + upload
+  documents, the second frontend increment.
+  - `app/subjects/[subjectId]/page.tsx`: client component reading the dynamic
+    segment via `useParams()` (consistent with `/subjects` already being a client
+    component — no server/client split needed just for this). `GET
+    /subjects/{subject_id}` for the name, `GET /subjects/{subject_id}/documents`
+    for the list, both via the typed client + React Query.
+  - Upload: a native `<input type="file">` (shadcn `Input`, which already forwards
+    arbitrary `<input>` props/ref) drives a `useMutation` that builds a `FormData`
+    and calls `POST /subjects/{subject_id}/documents`. **openapi-fetch multipart
+    workaround**: the generated request-body type is `{ file: string }` (
+    `openapi-typescript` renders OpenAPI's `format: binary` as `string`, it has no
+    `File`/`Blob` type), but `openapi-fetch`'s default `bodySerializer` passes a
+    `FormData` instance straight through to `fetch` untouched (confirmed by
+    reading its source before relying on it — `defaultBodySerializer` checks
+    `body instanceof FormData` first) and the browser sets the multipart
+    `Content-Type` boundary itself. So the real `FormData` is built by hand and
+    passed as `body`, cast to the generated (technically wrong, but
+    openapi-typescript's known limitation) `{ file: string }` type. On success,
+    invalidates the documents query so the list refreshes.
+  - Upload states: `uploadDocument.isPending` disables the input and shows a
+    "processing" note (uploads are still synchronous end-to-end — parse → chunk →
+    Cohere embed — so this can take a few seconds, matching the backend's current
+    architecture, not yet Inngest-backed). Errors read the response's real HTTP
+    status (`response.status`, not the typed `error` shape — the OpenAPI schema
+    only documents 201/422 for this route, since FastAPI doesn't auto-document
+    hand-raised `HTTPException`s, so 404/415/413 aren't in the generated types even
+    though the backend does return them) and map 415/413 to friendly messages;
+    anything else falls back to a generic "couldn't upload" message.
+  - Each document shown with filename + a status `Badge` (added via `npx shadcn add
+    badge`, matching the existing Base-UI-variant components): default (ready),
+    destructive (failed), secondary (pending).
+  - `/subjects/page.tsx`: each subject card now links to its detail page. Already
+    covered by the existing `/subjects(.*)` middleware matcher — no route
+    protection change needed.
+  - **Live-verified past just "shows ready" in the UI**: after the user confirmed
+    upload + ready status in the browser, queried Neon directly (service layer,
+    same reasoning as every other live check this project does) — confirmed the
+    uploaded PDF actually produced 34 `DocumentChunk` rows, each with a real
+    1024-dim Cohere embedding, not just a document row that happened to flip to
+    `ready`.
+  - Frontend: `tsc --noEmit` clean, `eslint` clean (one unused-import warning
+    caught and fixed before commit). Backend unchanged this increment (no new
+    endpoints — reused `GET .../documents` and `POST .../documents`, both already
+    existed and tested).
+
 ## Next (Phase 1 — Core RAG)
 - [ ] Streaming: convert the Ask endpoint to SSE (explicitly deferred twice now)
 - [ ] R2 bucket + upload endpoint (store the actual file — right now only validated,
@@ -395,8 +442,8 @@ Inngest ingest, Ask/RAG, Conversations — see `docs/plan.md`).
 - [ ] Inngest: move parsing/chunking/embedding off the request path into a background
   job (uploads currently do this synchronously, which is fine for small text files but
   won't scale to large PDFs or embedding API latency)
-- [ ] Frontend: documents (upload UI + status polling), Ask/RAG chat UI, conversations
-  list — the backend for all three already exists, only `/subjects` has a page so far
+- [ ] Frontend: Ask/RAG chat UI + conversations list — the backend for both already
+  exists; subjects and documents (list + upload) now have pages
 
 ## Blockers / needs from user
 - Accounts + API keys needed for Phase 1: **R2**. Inngest/Polar can wait until their

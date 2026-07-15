@@ -2,6 +2,70 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-16 — Frontend: Subject detail page (documents list + upload)
+- New route `app/subjects/[subjectId]/page.tsx`, second frontend increment (after
+  `/subjects` list+create). Client component (matches `/subjects`'s existing
+  pattern), reads the dynamic segment via `useParams()` rather than splitting into
+  a server-component wrapper just to get typed `params` — not worth the extra
+  indirection for a single string param. `GET /subjects/{subject_id}` (name) and
+  `GET /subjects/{subject_id}/documents` (list), both already-existing backend
+  endpoints, both via the typed client + React Query — no backend changes this
+  increment.
+- Upload: shadcn `Input` with `type="file"` drives a `useMutation` that builds a
+  real `FormData` and calls `POST /subjects/{subject_id}/documents`. Before
+  writing this, read `openapi-fetch`'s source (`node_modules/openapi-fetch/dist/
+  index.mjs`) rather than guessing how it handles multipart: confirmed
+  `defaultBodySerializer` special-cases `body instanceof FormData` and returns it
+  untouched (skipping `JSON.stringify`), and that it deliberately omits a
+  `Content-Type` header in that case so the browser can set the multipart boundary
+  itself. The generated request-body type is `{ file: string }` (
+  `openapi-typescript` has no way to render OpenAPI's `format: binary` as
+  `File`/`Blob`, only `string`) — this is a known upstream limitation, not
+  something to fix here, so the real `FormData` is cast to that type when passed
+  as `body`. On success, invalidates the `["subjects", subjectId, "documents"]`
+  query so the list refreshes without a manual refetch.
+- Upload UX: `isPending` disables the file input and shows a "processing…" note
+  (uploads are still fully synchronous — parse → chunk → real Cohere embed calls —
+  so a multi-second wait is expected until Inngest exists). Errors read the
+  **actual response status** (`response.status` off `openapi-fetch`'s return
+  value) rather than trusting the generated `error` type — the OpenAPI schema only
+  documents 201/422 for this route (FastAPI doesn't auto-document hand-raised
+  `HTTPException`s unless you declare `responses={}`), so 404/415/413 exist at
+  runtime but aren't in the generated types. Mapped 415 → "unsupported file type,
+  use PDF/DOCX/TXT", 413 → "too large, 20 MB limit" (both messages matched to the
+  backend's real `SUPPORTED_CONTENT_TYPES`/`MAX_UPLOAD_SIZE_BYTES`, read from
+  `documents/parsing.py`/`service.py` rather than guessed), anything else → a
+  generic retry message.
+- Each document row: filename + a status `Badge` (added via `npx shadcn add
+  badge`, the same Base-UI-variant component style as the existing
+  button/card/input/label) — `default` for `ready`, `destructive` for `failed`,
+  `secondary` for `pending`.
+- `/subjects/page.tsx`: wrapped each subject `Card` in a `next/link` to its detail
+  page. No middleware change needed — `/subjects(.*)` already matches the new
+  nested route.
+- Regenerated `lib/api/schema.d.ts` against the live backend before starting
+  (`npm run generate-api-types`) to make sure the typed client reflected current
+  reality rather than assuming the documents endpoints were still shaped the same
+  as when the schema was last generated; diffed as unchanged, confirming they
+  were.
+- Tests/verification: `tsc --noEmit` clean; `eslint` caught one real issue (unused
+  `Button` import left over from an earlier draft) before commit, fixed. No new
+  backend tests — both endpoints hit here (`GET`/`POST .../documents`) were
+  already covered by `tests/test_documents.py`.
+- **User confirmed live in the browser**: opened a subject, uploaded a file, saw
+  it reach `status: ready`. Went one step further before calling this done — the
+  task explicitly asked to confirm chunks/embeddings actually get created, not
+  just that the status flips — so queried Neon directly afterward (service layer,
+  same reasoning as every other live check this project does: a real Clerk JWT
+  would need scripting a browser session) and confirmed the uploaded PDF produced
+  **34 real `DocumentChunk` rows, each with a genuine 1024-dim Cohere embedding**,
+  not just a document row that happened to say `ready`.
+- Also fixed `docs/PROGRESS.md`'s stale "Phase 0 — Setup: complete. Next up: Phase
+  1" header — Phase 1 has been underway for many increments now (Subjects,
+  Documents, Ask, Conversations, and two frontend increments all shipped under
+  it); it now reads "Phase 1 — Core RAG: in progress" with a one-line summary of
+  what's done vs. still open.
+
 ## 2026-07-16 — CORS + first frontend increment (Next.js, Clerk, Subjects page)
 - **CORS** (`79d4359`): `CORSMiddleware` in `app/main.py`, origins from the new
   `Settings.cors_origins` (comma-separated string, `cors_origin_list` property
