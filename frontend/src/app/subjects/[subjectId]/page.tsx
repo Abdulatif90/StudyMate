@@ -1,0 +1,144 @@
+"use client";
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useRef, useState } from "react";
+import { ArrowLeft } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { useApiClient } from "@/lib/api/useApiClient";
+
+function friendlyUploadError(status: number): string {
+  if (status === 415) return "That file type isn't supported. Upload a PDF, DOCX, or TXT file.";
+  if (status === 413) return "That file is too large — the limit is 20 MB.";
+  return "Couldn't upload the file. Please try again.";
+}
+
+export default function SubjectDetailPage() {
+  const { subjectId } = useParams<{ subjectId: string }>();
+  const api = useApiClient();
+  const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const subjectQuery = useQuery({
+    queryKey: ["subjects", subjectId],
+    queryFn: async () => {
+      const { data, error } = await api.GET("/subjects/{subject_id}", {
+        params: { path: { subject_id: subjectId } },
+      });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const documentsQuery = useQuery({
+    queryKey: ["subjects", subjectId, "documents"],
+    queryFn: async () => {
+      const { data, error } = await api.GET("/subjects/{subject_id}/documents", {
+        params: { path: { subject_id: subjectId } },
+      });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const uploadDocument = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const { data, error, response } = await api.POST("/subjects/{subject_id}/documents", {
+        params: { path: { subject_id: subjectId } },
+        // openapi-fetch passes FormData straight through to fetch (letting the
+        // browser set the multipart boundary) — the generated type expects a
+        // `{ file: string }` JSON body since openapi-typescript renders
+        // `format: binary` as `string`, so this cast is the documented workaround.
+        body: formData as unknown as { file: string },
+      });
+      if (error) throw new Error(friendlyUploadError(response.status));
+      return data;
+    },
+    onSuccess: () => {
+      setUploadError(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      queryClient.invalidateQueries({ queryKey: ["subjects", subjectId, "documents"] });
+    },
+    onError: (error: Error) => {
+      setUploadError(error.message);
+    },
+  });
+
+  return (
+    <div className="mx-auto max-w-2xl p-8">
+      <Link
+        href="/subjects"
+        className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="size-4" />
+        Subjects
+      </Link>
+
+      <h1 className="mb-8 text-2xl font-semibold">
+        {subjectQuery.isLoading && "Loading…"}
+        {subjectQuery.isError && "Subject not found"}
+        {subjectQuery.data?.name}
+      </h1>
+
+      <Card className="mb-8">
+        <CardHeader>
+          <CardTitle>Upload a document</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+            disabled={uploadDocument.isPending}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) uploadDocument.mutate(file);
+            }}
+          />
+          {uploadDocument.isPending && (
+            <p className="mt-2 text-sm text-muted-foreground">
+              Uploading and processing… this can take a few seconds.
+            </p>
+          )}
+          {uploadError && <p className="mt-2 text-sm text-destructive">{uploadError}</p>}
+        </CardContent>
+      </Card>
+
+      {documentsQuery.isLoading && <p>Loading…</p>}
+      {documentsQuery.isError && (
+        <p className="text-destructive">Couldn&apos;t load documents.</p>
+      )}
+      {documentsQuery.data?.length === 0 && (
+        <p className="text-muted-foreground">No documents yet — upload one above.</p>
+      )}
+      <ul className="flex flex-col gap-2">
+        {documentsQuery.data?.map((document) => (
+          <li key={document.id}>
+            <Card>
+              <CardContent className="flex items-center justify-between gap-4 py-4">
+                <p className="font-medium">{document.filename}</p>
+                <Badge
+                  variant={
+                    document.status === "ready"
+                      ? "default"
+                      : document.status === "failed"
+                        ? "destructive"
+                        : "secondary"
+                  }
+                >
+                  {document.status}
+                </Badge>
+              </CardContent>
+            </Card>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

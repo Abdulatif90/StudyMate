@@ -2,6 +2,7 @@
 
 import { UserButton } from "@clerk/nextjs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -90,14 +91,16 @@ export default function SubjectsPage() {
       <ul className="flex flex-col gap-2">
         {subjectsQuery.data?.map((subject) => (
           <li key={subject.id}>
-            <Card>
-              <CardContent className="py-4">
-                <p className="font-medium">{subject.name}</p>
-                <p className="text-muted-foreground text-xs">
-                  Created {new Date(subject.created_at).toLocaleDateString()}
-                </p>
-              </CardContent>
-            </Card>
+            <Link href={`/subjects/${subject.id}`}>
+              <Card className="transition-colors hover:bg-muted/50">
+                <CardContent className="py-4">
+                  <p className="font-medium">{subject.name}</p>
+                  <p className="text-muted-foreground text-xs">
+                    Created {new Date(subject.created_at).toLocaleDateString()}
+                  </p>
+                </CardContent>
+              </Card>
+            </Link>
           </li>
         ))}
       </ul>
