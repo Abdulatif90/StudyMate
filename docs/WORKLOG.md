@@ -2,6 +2,56 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-16 — CORS + first frontend increment (Next.js, Clerk, Subjects page)
+- **CORS** (`79d4359`): `CORSMiddleware` in `app/main.py`, origins from the new
+  `Settings.cors_origins` (comma-separated string, `cors_origin_list` property
+  splits it — chosen over pydantic-settings' native list-typed fields, which expect
+  JSON in `.env`, more friction than this needs). Defaults to
+  `http://localhost:3000`. `.env.example` documents the override.
+  `tests/test_cors.py` (3): the comma-split itself, an allowed origin gets
+  `access-control-allow-origin` back, a disallowed one doesn't.
+- **Frontend scaffold** (`75c58f9`): Next.js 15 (App Router + TS + Tailwind) in
+  `frontend/`. `@clerk/nextjs` (`ClerkProvider` + `clerkMiddleware` protecting
+  `/subjects(.*)`, sign-in/sign-up pages), `@tanstack/react-query`, typed API client
+  (`openapi-typescript` generates `schema.d.ts` from the backend's live
+  `/openapi.json`, wrapped by `openapi-fetch`), shadcn/ui (Base UI variant:
+  button/card/input/label). `useApiClient()` hook attaches the caller's Clerk
+  session token as `Authorization: Bearer` via an `openapi-fetch` request
+  middleware, registered once per mount through a ref so a token refresh doesn't
+  need re-registration. First protected page, `/subjects`: list + create, wired to
+  the typed client + React Query.
+  - This work had actually already been done in a prior session but was never
+    committed or logged — found on resuming (`frontend/` was untracked, fully
+    built, with no mention in this file or PROGRESS.md). Verified it thoroughly
+    before trusting it: `tsc --noEmit` clean, `eslint` clean, backend suite still
+    70 passed (67 existing + 3 new CORS tests) with `ruff check` clean, then started
+    both `uvicorn` and `npm run dev` and drove the real flow.
+  - **Real bug caught during that live check, fixed before committing**: Base UI's
+    `Button` primitive (the shadcn variant this project uses, not Radix) defaults to
+    `nativeButton={true}` and throws a console error when the rendered root isn't an
+    actual `<button>` — triggered by the homepage's two CTA buttons, which render as
+    `next/link` via Base UI's `render` prop. Fixed by adding `nativeButton={false}`
+    alongside `render` on both.
+  - **`frontend/.gitignore` bug caught before committing**: its `.env*` line (meant
+    to keep real secrets out of git) also matched `.env.local.example`, the
+    committed template file — same role as `backend/.env.example`, which the root
+    `.gitignore`'s narrower `.env`/`.env.local`/`.env.*.local` patterns don't touch.
+    `git check-ignore -v` confirmed the exact matching line before fixing. Added
+    `!.env*.example` so the template stays tracked; confirmed with `git status`
+    that no real `frontend/.env` (which holds the actual Clerk keys) was ever staged.
+  - **Live-verified the full stack together, for the first time on this project**:
+    the user signed in through the real Clerk UI, created a subject via the
+    `/subjects` page, and confirmed both that FastAPI's JWKS-based
+    `get_current_user_id` accepted the real Clerk-issued JWT and that the subject
+    row landed in Neon — the first end-to-end confirmation that the frontend's
+    Clerk app (publishable/secret keys) and the backend's
+    (`CLERK_JWKS_URL`/`CLERK_ISSUER`) are genuinely the same Clerk instance, not
+    just independently configured to look right.
+  - Split into two commits on `develop` (CORS first, since the frontend depends on
+    it working; frontend second) per the task's instructions, both pushed.
+- Full backend suite: **70 passed, 2 deselected** (3 new CORS tests); `ruff check`
+  → clean. Frontend: `tsc --noEmit` clean, `eslint` clean.
+
 ## 2026-07-15 — Conversations: multi-turn chat history for Ask
 - `app/modules/ask/models.py` (new): `Conversation` (`subject_id` FK — a conversation
   belongs to exactly one subject, `owner_id`, `title?`, `created_at`) and

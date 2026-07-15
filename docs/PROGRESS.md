@@ -347,6 +347,47 @@ Inngest ingest, Ask/RAG, Conversations — see `docs/plan.md`).
   Full suite: **69 passed** (10 new default + existing 2 live extended),
   `ruff check` → clean.
 
+- [x] CORS: `CORSMiddleware` added to `app/main.py`, allowing the frontend's origin
+  to call the API cross-origin. `Settings.cors_origins` — comma-separated (not
+  JSON), defaults to `http://localhost:3000` — with a `cors_origin_list` property
+  splitting it; comma-separated instead of pydantic-settings' usual JSON-for-lists
+  requirement, since that's more friction than this needs. `tests/test_cors.py` (3):
+  the split itself, an allowed origin gets the CORS header, a disallowed one doesn't.
+
+- [x] Frontend scaffolded — first working end-to-end slice (Clerk sign-in → FastAPI
+  JWT verification → real DB write), closing the loop Phase 1 has been building
+  toward. `frontend/`: Next.js 15 (App Router, TS, Tailwind).
+  - `@clerk/nextjs`: `ClerkProvider` in `app/layout.tsx`, `clerkMiddleware` in
+    `middleware.ts` protecting `/subjects(.*)`, `/sign-in` and `/sign-up` pages.
+  - Typed API client: `openapi-typescript` generates `lib/api/schema.d.ts` from the
+    live backend's `/openapi.json` (`npm run generate-api-types`); `lib/api/client.ts`
+    wraps it with `openapi-fetch`. `lib/api/useApiClient.ts` attaches the caller's
+    Clerk session token as `Authorization: Bearer` on every request via an
+    `openapi-fetch` middleware (registered once per mount via a ref, so token
+    refreshes are picked up without re-registering).
+  - `@tanstack/react-query` (`Providers` in `app/providers.tsx`) for data
+    fetching/mutation state.
+  - shadcn/ui, **Base UI variant** (not Radix) — `components/ui/{button,card,input,
+    label}.tsx`. Caught one real issue: Base UI's `Button` defaults to
+    `nativeButton={true}` and warns loudly in the console when rendered as something
+    other than a real `<button>` (here, as a `next/link` via the `render` prop, on the
+    homepage's two CTA buttons) — fixed by passing `nativeButton={false}` alongside
+    `render`.
+  - First protected page, `/subjects` (`app/subjects/page.tsx`): list + create,
+    using the typed client + React Query end-to-end.
+  - `frontend/.gitignore` bug caught before committing: its blanket `.env*` pattern
+    was also swallowing `.env.local.example` (the committed template, same role as
+    `backend/.env.example`) — added `!.env*.example` so the template stays tracked
+    while real `.env`/`.env.local` files stay ignored.
+  - **Live-verified the full stack together for the first time**: started
+    `uvicorn` + `npm run dev`, signed in through the real Clerk UI, created a subject
+    through the `/subjects` page, confirmed FastAPI's `get_current_user_id`
+    (JWKS-based) verified the real Clerk-issued JWT and the row landed in Neon —
+    the first real confirmation that Clerk (frontend) and Clerk (backend JWKS/issuer
+    config) are actually the same app end-to-end, not just independently configured.
+  - Backend: 70 passed (3 new CORS tests), `ruff check` → clean. Frontend:
+    `tsc --noEmit` clean, `eslint` clean.
+
 ## Next (Phase 1 — Core RAG)
 - [ ] Streaming: convert the Ask endpoint to SSE (explicitly deferred twice now)
 - [ ] R2 bucket + upload endpoint (store the actual file — right now only validated,
@@ -354,6 +395,8 @@ Inngest ingest, Ask/RAG, Conversations — see `docs/plan.md`).
 - [ ] Inngest: move parsing/chunking/embedding off the request path into a background
   job (uploads currently do this synchronously, which is fine for small text files but
   won't scale to large PDFs or embedding API latency)
+- [ ] Frontend: documents (upload UI + status polling), Ask/RAG chat UI, conversations
+  list — the backend for all three already exists, only `/subjects` has a page so far
 
 ## Blockers / needs from user
 - Accounts + API keys needed for Phase 1: **R2**. Inngest/Polar can wait until their
