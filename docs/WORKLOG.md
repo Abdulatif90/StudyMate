@@ -2,6 +2,96 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-15 — Conversations: multi-turn chat history for Ask
+- `app/modules/ask/models.py` (new): `Conversation` (`subject_id` FK — a conversation
+  belongs to exactly one subject, `owner_id`, `title?`, `created_at`) and
+  `ConversationTurn` (`conversation_id` FK, `owner_id`, `question`, `answer`,
+  `sources` as JSON, `created_at`). `sources` stores exactly what was shown to the
+  user at the time (filename, chunk index, text, similarity score) rather than
+  re-deriving it later — the chunks a turn cited could be re-embedded or deleted
+  afterward, and the transcript should stay accurate to what was actually said.
+- `documents/service.py`: renamed `_require_owned_subject` → public
+  `require_owned_subject` (dropped the leading underscore) so `ask/service.py` could
+  reuse the exact same ownership check before creating or loading a conversation,
+  instead of duplicating the one-line None-check across modules.
+- `AskRequest` gains optional `conversation_id`; `AskResponse` gains `conversation_id`
+  (always present in the response — a new conversation is created whenever none is
+  given, so single-shot callers who never pass it keep working unchanged, just with a
+  conversation silently created behind the scenes for them).
+- `service.ask_question` rewired: verify subject ownership first, then either load
+  the given conversation or create a new one. Loading checks **both** that the
+  conversation is owned by the caller **and** that it belongs to the subject in the
+  URL — a conversation_id from a different subject 404s rather than silently mixing
+  context across subjects. Loads the conversation's full history via `list_turns`,
+  then caps it to the most recent `MAX_CONTEXT_TURNS` (10) for what actually gets
+  sent to Claude — `list_turns` itself (used by `GET /conversations/{id}`) still
+  returns the complete transcript for display. **Always saves a turn**, including
+  both graceful-degradation paths (no relevant material, Claude failure) — the
+  transcript should show what was actually asked and answered regardless of outcome,
+  matching the task's explicit "always save the new turn" instruction literally.
+- `llm.ask_claude` gains `prior_turns: list[dict] | None`: built as genuine prior
+  turns in Claude's native multi-turn `messages` list (alternating `user`/
+  `assistant` entries), not text stuffed into the system prompt — this is the
+  idiomatic way to give the Messages API conversation continuity. Only the
+  *current* question's message carries retrieved excerpts; earlier turns carry just
+  their original question and answer, so a follow-up like "can you give an example?"
+  can be resolved using conversation context without re-supplying old source
+  material verbatim.
+- New endpoints, two `APIRouter`s in `ask/router.py` now (different path prefixes —
+  one router can't serve both `/subjects/{id}/ask` and `/conversations`): `GET
+  /conversations` (owner-scoped list, newest first), `GET /conversations/{id}` (with
+  the full turn history), `DELETE /conversations/{id}` (optional per the task,
+  included for CRUD completeness matching subjects/documents). Both wired into
+  `app/main.py`.
+- Migration `ee395363541a_add_conversations_and_conversation_turns_tables`. Caught
+  before applying (not after): autogenerate rendered `ConversationTurn.sources` as
+  nullable, but it should never actually be `NULL` — the Python-side default is
+  `default_factory=list` (an empty list, never `None`), so a nullable DB column was
+  looser than what the application actually guarantees. Tightened to
+  `Column(JSON, nullable=False)` in the model, deleted the not-yet-applied migration,
+  regenerated it, and confirmed `sources` came out `NOT NULL` this time before
+  applying to Neon.
+- **Real bug, caught by the live end-to-end test — in production service code this
+  time, not a one-off test cleanup script**: `service.delete_conversation` deleted
+  every `ConversationTurn` first, then the `Conversation`, in that order — and still
+  hit a `ForeignKeyViolation` on the conversation delete. Same root cause as the
+  Document/DocumentChunk cleanup surprise from the chunking increment: there's no
+  ORM-level `relationship()`/cascade between these models (consistent with this
+  codebase's plain-FK-column style everywhere), so SQLAlchemy's flush doesn't know
+  the two deletes are order-dependent — calling `session.delete()` in the "right"
+  order is not sufficient on its own to guarantee the "right" order of DELETE
+  statements at flush time. Fixed with an explicit `session.flush()` between the
+  turn deletes and the conversation delete, forcing the child rows to actually be
+  removed from the DB before the parent delete is even attempted. This is worth
+  remembering as a general rule for this codebase specifically: **any function that
+  deletes a parent row with FK-referencing children, without an ORM relationship
+  defined, needs an explicit `session.flush()` between the child deletes and the
+  parent delete** — this is the second time this exact shape of bug has appeared,
+  and the fix pattern is now established. Verified by re-running the live test after
+  the fix, not just reasoning about it — it failed clearly before, passed cleanly
+  after.
+- Tests:
+  - `tests/test_ask.py` (+10 default): a follow-up question reuses the same
+    conversation, and the *exact* prior question/answer pair is asserted in the
+    `prior_turns` kwarg actually passed to the (mocked) `ask_claude` call — not just
+    that conversation_id matched, but that the right context was actually
+    constructed and forwarded; a conversation_id from a different subject 404s;
+    turns are saved even when there's no relevant material or Claude fails, verified
+    by re-fetching the conversation afterward and checking its saved transcript (not
+    just the immediate HTTP response); `GET`/`DELETE /conversations` are
+    owner-scoped (another owner gets 404 / an empty list, matching the pattern used
+    everywhere else in this codebase).
+  - Live test extended (same `@pytest.mark.live` + `DATABASE_URL` `skipif` as
+    before) with a genuine second turn in the same conversation against real
+    Claude — confirms `conversation_id` stays stable across both calls and both
+    turns actually persist — then uses `delete_conversation` itself for cleanup,
+    which is exactly what surfaced the FK-ordering bug above (a good reminder that
+    exercising real cleanup code paths in live tests, not just ad hoc scripts, is
+    what caught this).
+- Full suite: plain `pytest` → **67 passed, 2 deselected** (fast, offline);
+  `pytest -m live` → **2 passed** (this one extended + retrieval's), confirmed Neon
+  left clean (0 rows across all five tables) afterward. `ruff check` → clean.
+
 ## 2026-07-15 — Ask endpoint: RAG, non-streaming (Claude + search_chunks)
 - User added `ANTHROPIC_API_KEY` to `backend/.env`. `requirements.txt`: added
   `anthropic`. `Settings.anthropic_api_key`; `.env.example` uncommented.

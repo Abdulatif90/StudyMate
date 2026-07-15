@@ -35,7 +35,11 @@ class FileTooLargeError(Exception):
     """Raised when the upload exceeds MAX_UPLOAD_SIZE_BYTES."""
 
 
-def _require_owned_subject(session: Session, owner_id: str, subject_id: uuid.UUID) -> None:
+def require_owned_subject(session: Session, owner_id: str, subject_id: uuid.UUID) -> None:
+    """Raise `SubjectNotFoundError` unless `subject_id` exists and is owned by
+    `owner_id`. Public (not `_`-prefixed): also used by `app.modules.ask.service`,
+    which needs the same check before creating/loading a conversation.
+    """
     if get_subject(session, owner_id, subject_id) is None:
         raise SubjectNotFoundError(subject_id)
 
@@ -48,7 +52,7 @@ def create_document(
     content_type: str,
     raw: bytes,
 ) -> Document:
-    _require_owned_subject(session, owner_id, subject_id)
+    require_owned_subject(session, owner_id, subject_id)
 
     if content_type not in SUPPORTED_CONTENT_TYPES:
         raise UnsupportedFileTypeError(f"Unsupported content type: {content_type}")
@@ -111,7 +115,7 @@ def list_chunks(session: Session, owner_id: str, document_id: uuid.UUID) -> list
 
 
 def list_documents(session: Session, owner_id: str, subject_id: uuid.UUID) -> list[Document]:
-    _require_owned_subject(session, owner_id, subject_id)
+    require_owned_subject(session, owner_id, subject_id)
     return list(
         session.exec(
             select(Document).where(Document.subject_id == subject_id, Document.owner_id == owner_id)
@@ -163,7 +167,7 @@ def search_chunks(
     ordering/scoring is skipped since there's no equivalent to run. Real ranking is
     verified against live Neon instead (see tests/test_search.py).
     """
-    _require_owned_subject(session, owner_id, subject_id)
+    require_owned_subject(session, owner_id, subject_id)
 
     filters = (
         DocumentChunk.owner_id == owner_id,

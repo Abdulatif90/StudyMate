@@ -90,6 +90,7 @@ def test_ask_returns_answer_and_sources(monkeypatch):
     assert response.status_code == 200
     body = response.json()
     assert body["answer"] == "Plants use sunlight via photosynthesis."
+    assert body["conversation_id"]
     assert len(body["sources"]) == 1
     assert body["sources"][0]["filename"] == "notes.txt"
     assert body["sources"][0]["chunk_index"] == 0
@@ -147,6 +148,151 @@ def test_ask_gracefully_handles_llm_failure(monkeypatch):
     assert "try again" in body["answer"].lower()
 
 
+def test_ask_without_conversation_id_creates_a_new_conversation(monkeypatch):
+    subject_id = _create_subject()
+    _upload_txt(subject_id)
+    monkeypatch.setattr(ask_service, "ask_claude", MagicMock(return_value="An answer."))
+
+    response = client.post(f"/subjects/{subject_id}/ask", json={"question": "Q1"})
+    conversation_id = response.json()["conversation_id"]
+
+    conversation = client.get(f"/conversations/{conversation_id}")
+    assert conversation.status_code == 200
+    body = conversation.json()
+    assert body["subject_id"] == subject_id
+    assert len(body["turns"]) == 1
+    assert body["turns"][0]["question"] == "Q1"
+    assert body["turns"][0]["answer"] == "An answer."
+
+
+def test_ask_follow_up_reuses_conversation_and_passes_prior_context(monkeypatch):
+    subject_id = _create_subject()
+    _upload_txt(subject_id)
+    mock_ask_claude = MagicMock(side_effect=["First answer.", "Second answer."])
+    monkeypatch.setattr(ask_service, "ask_claude", mock_ask_claude)
+
+    first = client.post(f"/subjects/{subject_id}/ask", json={"question": "What is photosynthesis?"})
+    conversation_id = first.json()["conversation_id"]
+
+    second = client.post(
+        f"/subjects/{subject_id}/ask",
+        json={"question": "Can you give an example?", "conversation_id": conversation_id},
+    )
+
+    assert second.status_code == 200
+    assert second.json()["conversation_id"] == conversation_id
+
+    # the second call must have received the first Q&A as prior context
+    second_call = mock_ask_claude.call_args_list[1]
+    assert second_call.args[0] == "Can you give an example?"
+    assert second_call.kwargs["prior_turns"] == [
+        {"question": "What is photosynthesis?", "answer": "First answer."}
+    ]
+
+    conversation = client.get(f"/conversations/{conversation_id}").json()
+    assert [t["question"] for t in conversation["turns"]] == [
+        "What is photosynthesis?",
+        "Can you give an example?",
+    ]
+    assert [t["answer"] for t in conversation["turns"]] == ["First answer.", "Second answer."]
+
+
+def test_ask_returns_404_for_conversation_from_a_different_subject(monkeypatch):
+    subject_a = _create_subject(name="Bio")
+    subject_b = _create_subject(name="Chem")
+    _upload_txt(subject_a)
+    _upload_txt(subject_b)
+    monkeypatch.setattr(ask_service, "ask_claude", MagicMock(return_value="An answer."))
+
+    first = client.post(f"/subjects/{subject_a}/ask", json={"question": "Q1"})
+    conversation_id = first.json()["conversation_id"]
+
+    response = client.post(
+        f"/subjects/{subject_b}/ask",
+        json={"question": "Q2", "conversation_id": conversation_id},
+    )
+    assert response.status_code == 404
+
+
+def test_turn_is_saved_even_when_no_relevant_material(monkeypatch):
+    subject_id = _create_subject()  # no documents uploaded
+    monkeypatch.setattr(ask_service, "ask_claude", MagicMock())
+
+    response = client.post(f"/subjects/{subject_id}/ask", json={"question": "anything?"})
+    conversation_id = response.json()["conversation_id"]
+
+    conversation = client.get(f"/conversations/{conversation_id}").json()
+    assert len(conversation["turns"]) == 1
+    assert conversation["turns"][0]["question"] == "anything?"
+    assert "couldn't find" in conversation["turns"][0]["answer"].lower()
+    assert conversation["turns"][0]["sources"] == []
+
+
+def test_turn_is_saved_even_when_llm_fails(monkeypatch):
+    subject_id = _create_subject()
+    _upload_txt(subject_id)
+    monkeypatch.setattr(
+        ask_service, "ask_claude", MagicMock(side_effect=ask_service.LLMError("boom"))
+    )
+
+    response = client.post(f"/subjects/{subject_id}/ask", json={"question": "anything?"})
+    conversation_id = response.json()["conversation_id"]
+
+    conversation = client.get(f"/conversations/{conversation_id}").json()
+    assert len(conversation["turns"]) == 1
+    assert "try again" in conversation["turns"][0]["answer"].lower()
+
+
+def test_list_conversations_is_owner_scoped(monkeypatch):
+    subject_id = _create_subject()
+    _upload_txt(subject_id)
+    monkeypatch.setattr(ask_service, "ask_claude", MagicMock(return_value="An answer."))
+    client.post(f"/subjects/{subject_id}/ask", json={"question": "Q1"})
+
+    own_list = client.get("/conversations")
+    assert own_list.status_code == 200
+    assert len(own_list.json()) == 1
+
+    app.dependency_overrides[get_current_user_id] = lambda: "someone_else"
+    other_list = client.get("/conversations")
+    assert other_list.json() == []
+
+
+def test_get_conversation_returns_404_for_another_owner(monkeypatch):
+    subject_id = _create_subject()
+    _upload_txt(subject_id)
+    monkeypatch.setattr(ask_service, "ask_claude", MagicMock(return_value="An answer."))
+    response = client.post(f"/subjects/{subject_id}/ask", json={"question": "Q1"})
+    conversation_id = response.json()["conversation_id"]
+
+    app.dependency_overrides[get_current_user_id] = lambda: "someone_else"
+    get_response = client.get(f"/conversations/{conversation_id}")
+    assert get_response.status_code == 404
+
+
+def test_get_conversation_returns_404_when_missing():
+    response = client.get(f"/conversations/{_MISSING_ID}")
+    assert response.status_code == 404
+
+
+def test_delete_conversation_removes_it_and_its_turns(monkeypatch):
+    subject_id = _create_subject()
+    _upload_txt(subject_id)
+    monkeypatch.setattr(ask_service, "ask_claude", MagicMock(return_value="An answer."))
+    response = client.post(f"/subjects/{subject_id}/ask", json={"question": "Q1"})
+    conversation_id = response.json()["conversation_id"]
+
+    delete_response = client.delete(f"/conversations/{conversation_id}")
+    assert delete_response.status_code == 204
+
+    assert client.get(f"/conversations/{conversation_id}").status_code == 404
+
+
+def test_delete_conversation_returns_404_when_missing():
+    response = client.delete(f"/conversations/{_MISSING_ID}")
+    assert response.status_code == 404
+
+
 _HAS_REAL_DB = bool(get_settings().database_url)
 
 
@@ -156,7 +302,7 @@ _HAS_REAL_DB = bool(get_settings().database_url)
 )
 def test_ask_end_to_end_against_real_neon_and_claude():
     from app.core.db import get_engine
-    from app.modules.ask.service import ask_question
+    from app.modules.ask.service import ask_question, delete_conversation
     from app.modules.subjects import service as subjects_service
     from app.modules.subjects.schemas import SubjectCreate
 
@@ -185,7 +331,21 @@ def test_ask_end_to_end_against_real_neon_and_claude():
             assert "photosynthesis.txt" in [source.filename for source in response.sources]
             assert len(response.answer) > 0
             assert "n't find" not in response.answer.lower()  # actually grounded, not a refusal
+
+            # a real follow-up, in the same conversation, with real Claude context
+            follow_up = ask_question(
+                session,
+                owner_id,
+                subject.id,
+                "Can you say that in one short sentence?",
+                conversation_id=response.conversation_id,
+            )
+            assert follow_up.conversation_id == response.conversation_id
+
+            turns = ask_service.list_turns(session, owner_id, response.conversation_id)
+            assert len(turns) == 2
         finally:
+            delete_conversation(session, owner_id, response.conversation_id)
             for chunk in documents_service.list_chunks(session, owner_id, document.id):
                 session.delete(chunk)
             session.commit()

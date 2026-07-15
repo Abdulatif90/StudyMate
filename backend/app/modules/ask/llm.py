@@ -40,9 +40,18 @@ def _get_client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 
-def ask_claude(question: str, chunks: list[dict]) -> str:
+def ask_claude(
+    question: str,
+    chunks: list[dict],
+    prior_turns: list[dict] | None = None,
+) -> str:
     """Ask Claude to answer `question` using only `chunks` — each a dict with
-    `filename`, `chunk_index`, and `text`. Returns Claude's answer text.
+    `filename`, `chunk_index`, and `text`. `prior_turns` (each a dict with `question`/
+    `answer`) becomes real conversation history in Claude's native multi-turn
+    `messages` list, not text stuffed into the prompt — only the *current* question
+    carries retrieved excerpts; earlier turns carry just their original question and
+    answer, giving Claude continuity for follow-ups without re-supplying old sources.
+    Returns Claude's answer text.
     """
     client = _get_client()
     excerpts = "\n\n".join(
@@ -50,12 +59,18 @@ def ask_claude(question: str, chunks: list[dict]) -> str:
     )
     user_message = f"Excerpts:\n\n{excerpts}\n\nQuestion: {question}"
 
+    messages = []
+    for turn in prior_turns or []:
+        messages.append({"role": "user", "content": turn["question"]})
+        messages.append({"role": "assistant", "content": turn["answer"]})
+    messages.append({"role": "user", "content": user_message})
+
     try:
         response = client.messages.create(
             model=CLAUDE_MODEL,
             max_tokens=MAX_TOKENS,
             system=_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
+            messages=messages,
         )
     except Exception as exc:
         raise LLMError(f"Claude request failed: {exc}") from exc

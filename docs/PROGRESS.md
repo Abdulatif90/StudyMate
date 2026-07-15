@@ -285,8 +285,70 @@ Inngest ingest, Ask/RAG, Conversations — see `docs/plan.md`).
     is actually grounded (not a refusal) with the right source file cited.
   Full suite: **59 passed** (8 new: 6 in default run + 2 live), `ruff check` → clean.
 
+- [x] Conversations (multi-turn chat history for Ask). `app/modules/ask/models.py`
+  (new): `Conversation` (`subject_id` FK, `owner_id`, `title?`, `created_at`) —
+  one conversation belongs to exactly one subject — and `ConversationTurn`
+  (`conversation_id` FK, `owner_id`, `question`, `answer`, `sources` as JSON,
+  `created_at`). `sources` stores what was actually shown at the time (filename,
+  chunk index, text, similarity score) rather than re-deriving it later, since the
+  underlying chunks could change (re-embedded, deleted) after the fact.
+  - `AskRequest` gains optional `conversation_id`; `AskResponse` gains
+    `conversation_id` (always present — a new conversation is created when none is
+    given). `documents.service._require_owned_subject` renamed to public
+    `require_owned_subject` (dropped the underscore) so `ask.service` can reuse the
+    exact same ownership check before creating/loading a conversation.
+  - `service.ask_question`: verifies subject ownership, then either loads the given
+    conversation (verifying it's both owned by the caller **and** belongs to this
+    subject — a conversation from a different subject 404s, not silently mixes
+    context) or creates a new one. Loads that conversation's full history via
+    `list_turns`, caps it to the most recent `MAX_CONTEXT_TURNS` (10) for what
+    actually gets sent to Claude, then **always** saves a `ConversationTurn` —
+    including both graceful-degradation paths (no relevant material, Claude failure)
+    — since the chat transcript should show what was actually asked and answered
+    either way, not just the successful cases.
+  - `llm.ask_claude` gains `prior_turns`: built as real prior turns in Claude's
+    native multi-turn `messages` list (alternating user/assistant), not stuffed into
+    the system prompt — idiomatic use of the Messages API for conversation
+    continuity. Only the *current* question carries retrieved excerpts; earlier
+    turns carry just their original question/answer.
+  - New endpoints: `GET /conversations` (owner-scoped list), `GET
+    /conversations/{id}` (with full turn history), `DELETE /conversations/{id}`
+    (optional per the task, included for CRUD completeness). Two `APIRouter`s in
+    `ask/router.py` now (different prefixes — one can't serve both
+    `/subjects/{id}/ask` and `/conversations`), both wired into `app/main.py`.
+  - Migration `ee395363541a_add_conversations_and_conversation_turns_tables`.
+    Caught before applying: `ConversationTurn.sources` came out of autogenerate as
+    nullable, but it should never actually be `NULL` (always a list, possibly
+    empty) — tightened to `Column(JSON, nullable=False)`, deleted and regenerated
+    the not-yet-applied migration. Applied to Neon; confirmed via
+    `information_schema.columns`.
+  - **Real bug, caught by the live end-to-end test, in production code this time
+    (not just a test cleanup script)**: `service.delete_conversation` deleted every
+    turn, then the conversation, in that order — but hit the exact same
+    FK-ordering surprise as the earlier Document/DocumentChunk cleanup issue,
+    because there's still no ORM-level `relationship()`/cascade (consistent with
+    this codebase's plain-FK-column style everywhere else), so SQLAlchemy's flush
+    doesn't know the deletes are order-dependent. Fixed with an explicit
+    `session.flush()` between the turn deletes and the conversation delete —
+    forces the child deletes to actually hit the DB before the parent delete is
+    even attempted. Re-ran the live test to confirm the fix, not just reasoned
+    about it.
+  - Tests: `tests/test_ask.py` (+10 default, live test extended): a follow-up
+    question reuses the same conversation and the *exact* prior Q&A is asserted in
+    the `prior_turns` argument passed to the (mocked) `ask_claude` call; a
+    conversation from a different subject 404s; turns are saved even when there's
+    no relevant material or Claude fails (both asserted by re-fetching the
+    conversation and checking its transcript, not just the immediate response);
+    `GET`/`DELETE /conversations` are owner-scoped (404 for another owner, empty
+    list for another owner). Live test extended with a real follow-up turn in the
+    same conversation (confirms `conversation_id` stays stable and both turns
+    persist), using `delete_conversation` itself for cleanup — which is exactly
+    what surfaced the FK-ordering bug above.
+  Full suite: **69 passed** (10 new default + existing 2 live extended),
+  `ruff check` → clean.
+
 ## Next (Phase 1 — Core RAG)
-- [ ] Streaming: convert the Ask endpoint to SSE (explicitly deferred this increment)
+- [ ] Streaming: convert the Ask endpoint to SSE (explicitly deferred twice now)
 - [ ] R2 bucket + upload endpoint (store the actual file — right now only validated,
   not persisted anywhere)
 - [ ] Inngest: move parsing/chunking/embedding off the request path into a background
