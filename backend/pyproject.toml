@@ -6,6 +6,10 @@ requires-python = ">=3.12"
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+# Default run is offline: tests marked `live` (real Neon/Cohere) are deselected unless
+# explicitly requested with `pytest -m live`.
+addopts = "-m 'not live'"
+markers = ["live: hits real Neon/Cohere, opt-in"]
 
 [tool.ruff]
 line-length = 100

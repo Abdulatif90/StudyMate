@@ -225,17 +225,30 @@ Inngest ingest, Ask/RAG, Conversations — see `docs/plan.md`).
     `.env`-file-only values): creates 3 real documents on different topics, real
     Cohere embeddings throughout, asserts a photosynthesis-themed query actually
     ranks the photosynthesis document first with descending similarity scores —
-    genuine semantic-ranking verification, not just plumbing. Runs automatically in
-    this dev environment (`DATABASE_URL` is set) and will `SKIPPED` automatically in
-    CI (no secrets there) — meaning routine local `pytest`/pre-push runs now make a
-    real Cohere + Neon round trip; noted in WORKLOG as a deliberate trade-off per the
-    task's explicit instruction, not an oversight.
+    genuine semantic-ranking verification, not just plumbing. (Originally this ran
+    automatically whenever `DATABASE_URL` was set, hitting real Neon+Cohere on every
+    local `pytest`/pre-push — fixed in the very next increment below with an explicit
+    `live` marker.)
   - Caught my own test-helper bug along the way, distinct from the production bug
     above: `_make_chunk(embedding=None)` was silently replaced by the helper's default
     vector, because `if embedding is None: embedding = <default>` can't distinguish
     "caller didn't pass this" from "caller explicitly passed `None`". Fixed with a
     proper `_UNSET` sentinel default instead of `None`.
   Full suite: **50 passed** (7 new); `ruff check` → clean.
+
+- [x] Test-infra fix — gate live tests behind an explicit `pytest -m live` opt-in.
+  Problem: the live Neon+Cohere test from the retrieval increment ran on *every*
+  `pytest`/pre-push (it only checked `DATABASE_URL` being set, which it is in this
+  dev environment), making the "default" test run silently network-dependent again.
+  `pyproject.toml`: registered a `live` marker (`markers = ["live: hits real
+  Neon/Cohere, opt-in"]`) and set `addopts = "-m 'not live'"` so the default run
+  always deselects it. `tests/test_search.py`'s live test gained
+  `@pytest.mark.live` (kept the existing `skipif` on `DATABASE_URL` too, so
+  `pytest -m live` still skips cleanly rather than erroring in an environment with
+  no real DB configured at all). Verified both invocations directly: plain `pytest`
+  → **49 passed, 1 deselected** (fast, offline); `pytest -m live` → **1 passed, 49
+  deselected** (hits real Neon+Cohere). Confirmed Neon left clean (0 rows in all
+  three tables) after the `-m live` run.
 
 ## Next (Phase 1 — Core RAG)
 - [ ] Ask HTTP endpoint: wraps `search_chunks` (now exists) + Claude generation

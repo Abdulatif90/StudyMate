@@ -2,6 +2,33 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-15 — Test-infra: gate live tests behind `pytest -m live`
+- Problem: the retrieval increment's live Neon+Cohere test only checked whether
+  `DATABASE_URL` was configured (via `get_settings()`, not raw `os.getenv`) — since it
+  is, in this dev environment, that test ran on *every* plain `pytest` invocation and
+  every local pre-push, silently making the "default" test run network-dependent
+  again (slower, real Cohere API cost per run, fails on any network blip unrelated to
+  actual code correctness). Flagged as a known trade-off in the previous entry;
+  fixed properly here rather than left as a standing footgun.
+- `backend/pyproject.toml`: registered a `live` marker
+  (`markers = ["live: hits real Neon/Cohere, opt-in"]`) and set
+  `addopts = "-m 'not live'"`, so the default `pytest` run always deselects anything
+  marked `live` — no need to remember a flag every time.
+- `tests/test_search.py`: added `@pytest.mark.live` to the real-Neon test, on top of
+  (not instead of) its existing `@pytest.mark.skipif(not
+  get_settings().database_url, ...)` — the marker controls whether it's *selected* by
+  default, the skipif still guards against running in an environment with the `live`
+  marker requested but no real `DATABASE_URL` at all (fails closed either way, rather
+  than erroring).
+- Verified both invocations directly rather than trusting the config: plain
+  `pytest tests -q` → **49 passed, 1 deselected** (confirmed fast and offline — no
+  Neon/Cohere connection attempted); `pytest -m live -q` → **1 passed, 49
+  deselected** (confirmed it actually reaches real Neon + Cohere and passes).
+  Confirmed Neon left clean (0 rows in `subjects`/`documents`/`document_chunks`)
+  after the `-m live` run, same as every other live check this project has done.
+- `ruff check` → clean (no code changes outside test/config files, so no behavior
+  change to `app/` — this is purely how the test suite is invoked).
+
 ## 2026-07-15 — Retrieval: service.search_chunks (no HTTP endpoint, no Claude yet)
 - `embedding.py`: refactored `embed_texts` to share a new private `_embed(texts,
   input_type)` with a new `embed_query(text) -> list[float]` — the query-side of

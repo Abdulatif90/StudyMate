@@ -3,9 +3,13 @@
 pgvector's `<=>` cosine-distance operator only exists on Postgres, so search_chunks
 skips similarity ordering entirely off it (see service.py). The SQLite tests below
 only verify the WHERE-clause filtering — tenant scoping, subject scoping, and
-excluding chunks with no embedding — with Cohere mocked (no network, runs by default).
-Actual similarity *ordering* is verified separately against real Neon, skipped
-automatically when DATABASE_URL isn't configured.
+excluding chunks with no embedding — with Cohere mocked (no network), and run in the
+default `pytest` invocation.
+
+Actual similarity *ordering* is verified separately against real Neon — marked `live`
+(deselected by default; run explicitly with `pytest -m live`) and additionally guarded
+with `skipif` on `DATABASE_URL` being configured at all, so `pytest -m live` still
+skips cleanly rather than erroring in an environment with no real DB.
 """
 
 from __future__ import annotations
@@ -170,6 +174,7 @@ def test_search_chunks_raises_for_missing_subject():
 _HAS_REAL_DB = bool(get_settings().database_url)
 
 
+@pytest.mark.live
 @pytest.mark.skipif(not _HAS_REAL_DB, reason="requires DATABASE_URL (real Postgres/pgvector)")
 def test_search_chunks_orders_by_similarity_against_real_neon():
     from app.core.db import get_engine
