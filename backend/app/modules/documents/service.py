@@ -131,6 +131,21 @@ def get_document(
     ).first()
 
 
+def get_documents_by_ids(
+    session: Session, owner_id: str, document_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, Document]:
+    """Batched lookup for callers that already have a set of document ids (e.g. the
+    Ask endpoint citing sources from search_chunks results) and just need each one's
+    metadata (filename, ...) — one query instead of one per document.
+    """
+    if not document_ids:
+        return {}
+    documents = session.exec(
+        select(Document).where(Document.owner_id == owner_id, Document.id.in_(document_ids))
+    ).all()
+    return {document.id: document for document in documents}
+
+
 def search_chunks(
     session: Session,
     owner_id: str,

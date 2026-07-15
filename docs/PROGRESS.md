@@ -250,9 +250,43 @@ Inngest ingest, Ask/RAG, Conversations — see `docs/plan.md`).
   deselected** (hits real Neon+Cohere). Confirmed Neon left clean (0 rows in all
   three tables) after the `-m live` run.
 
+- [x] Ask endpoint — `POST /subjects/{subject_id}/ask` (RAG, non-streaming; SSE is a
+  follow-up). New domain module `app/modules/ask/` (per CLAUDE.md's planned structure:
+  router + service + schemas, no models — Ask doesn't persist anything of its own).
+  - `llm.py`: `ask_claude(question, chunks) -> str` via `claude-haiku-4-5-20251001`.
+    System prompt: answer only from provided excerpts, cite `(filename, chunk N)`,
+    match the question's language, refuse plainly when excerpts don't cover it.
+    Missing `ANTHROPIC_API_KEY` → bare `RuntimeError` at point of use (same pattern as
+    `db.py`/`auth.py`/`embedding.py`); any Claude API/network failure → `LLMError`.
+    `Settings.anthropic_api_key` added; `.env.example` updated.
+  - `service.ask_question`: `search_chunks` (already built) → `get_documents_by_ids`
+    (new batched owner-scoped lookup in `documents/service.py`, for citing filenames)
+    → `ask_claude`. **All graceful degradation lives here, not the router**: empty
+    retrieval and a Claude failure both return a normal 200 `AskResponse` with an
+    explanatory `answer` and empty `sources`, rather than an HTTP error — the only
+    exception that reaches the router is `SubjectNotFoundError` (from `search_chunks`
+    itself), translated to 404.
+  - `router.py`: thin, just the 404 translation. Wired into `app/main.py`.
+  - Live-verified `ask_claude` directly against the real Anthropic API before writing
+    any tests: confirmed the citation format `(filename, chunk N)` appears in real
+    output, confirmed it refuses an unrelated question instead of answering from
+    outside knowledge, confirmed it responds in Spanish to a Spanish question.
+  - Tests: `tests/test_llm.py` (3, Anthropic client mocked directly — call
+    shape/system-prompt/response-parsing, error wrapping, missing-key
+    `RuntimeError`). `tests/test_ask.py` (5 SQLite + 1 live): answer+sources returned
+    with the right context actually passed to Claude; 404 for a missing subject and
+    for another owner's subject; empty-material and Claude-failure cases both
+    gracefully degrade (200, explanatory answer, empty sources) instead of erroring.
+    On SQLite, `search_chunks` never calls Cohere at all (see the retrieval
+    increment), so only document upload needed Cohere mocked here — the ask flow
+    itself only needed Claude mocked. Live test (`@pytest.mark.live`, `skipif` on
+    `DATABASE_URL`) runs the real pipeline end-to-end — real Neon storage, real
+    Cohere embeddings (both sides), real Claude generation — and asserts the answer
+    is actually grounded (not a refusal) with the right source file cited.
+  Full suite: **59 passed** (8 new: 6 in default run + 2 live), `ruff check` → clean.
+
 ## Next (Phase 1 — Core RAG)
-- [ ] Ask HTTP endpoint: wraps `search_chunks` (now exists) + Claude generation
-  (streaming) — this increment was service-layer only, no route yet
+- [ ] Streaming: convert the Ask endpoint to SSE (explicitly deferred this increment)
 - [ ] R2 bucket + upload endpoint (store the actual file — right now only validated,
   not persisted anywhere)
 - [ ] Inngest: move parsing/chunking/embedding off the request path into a background
@@ -260,5 +294,5 @@ Inngest ingest, Ask/RAG, Conversations — see `docs/plan.md`).
   won't scale to large PDFs or embedding API latency)
 
 ## Blockers / needs from user
-- Accounts + API keys needed for Phase 1: **Anthropic, R2**. Inngest/Polar can wait
-  until their respective features (jobs, billing) are actually built.
+- Accounts + API keys needed for Phase 1: **R2**. Inngest/Polar can wait until their
+  respective features (jobs, billing) are actually built.

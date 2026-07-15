@@ -2,6 +2,76 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-15 — Ask endpoint: RAG, non-streaming (Claude + search_chunks)
+- User added `ANTHROPIC_API_KEY` to `backend/.env`. `requirements.txt`: added
+  `anthropic`. `Settings.anthropic_api_key`; `.env.example` uncommented.
+- Before writing any code, installed `anthropic` (0.116.0) and introspected it
+  directly — same discipline as `cohere`/`pgvector` earlier this project. Confirmed:
+  `Anthropic(api_key=...)`, `.messages.create(model=, max_tokens=, system=,
+  messages=[...])`, response shape `Message.content` → list of `TextBlock` (`.text`),
+  and the common exception base is `anthropic.AnthropicError` (this SDK does have one,
+  unlike Cohere's — still catch bare `Exception` in `ask_claude` for consistency with
+  `embedding.py`/`parsing.py`'s established pattern, since network-layer failures
+  might not reach even a well-designed SDK exception hierarchy).
+- New domain module `app/modules/ask/` — per CLAUDE.md's structure, already named as a
+  planned module (`subjects, documents, ask, quiz, flashcards, progress, billing`).
+  No `models.py`: Ask doesn't persist anything of its own, it only orchestrates
+  subjects/documents services plus Claude.
+  - `llm.py`: `ask_claude(question, chunks) -> str` via `claude-haiku-4-5-20251001`.
+    System prompt requires: answer only from the given excerpts (never outside
+    knowledge), cite every claim as `(filename, chunk N)`, refuse plainly when the
+    excerpts don't cover the question, match the question's language regardless of
+    what language the excerpts are in. Missing `ANTHROPIC_API_KEY` → bare
+    `RuntimeError` at point of use (deploy mistake, same as `db.py`/`auth.py`/
+    `embedding.py`); any Claude API/network failure → `LLMError` (a per-request
+    problem, handled gracefully by the caller).
+  - **Live-verified `ask_claude` against the real Anthropic API before writing a
+    single test**: confirmed the exact citation format `(filename, chunk N)` shows up
+    in real output; confirmed it refuses a question the excerpts don't cover instead
+    of answering from outside knowledge ("I can't answer that question based on the
+    excerpts provided..."); confirmed it responds in Spanish to a Spanish question
+    even though the source excerpt was in English.
+  - `documents/service.py`: added `get_documents_by_ids(session, owner_id,
+    document_ids) -> dict[uuid.UUID, Document]` — one batched query instead of one
+    per document, for looking up filenames to cite as sources.
+  - `service.ask_question(session, owner_id, subject_id, question) -> AskResponse`:
+    `search_chunks` (built in the retrieval increment) → `get_documents_by_ids` for
+    filenames → `ask_claude`. **All graceful degradation lives here, not the
+    router**: an empty retrieval result and a Claude `LLMError` both return a normal
+    200 `AskResponse` with an explanatory `answer` and empty `sources` — deliberately
+    not HTTP errors, so a frontend never needs a special-case branch for "the AI
+    couldn't answer" vs. "something actually broke". The only exception that reaches
+    the router is `SubjectNotFoundError` (raised inside `search_chunks` itself),
+    translated to 404 there.
+  - `router.py`: `POST /subjects/{subject_id}/ask`, thin — just the 404 translation.
+    Wired into `app/main.py`.
+- Tests:
+  - `tests/test_llm.py` (3): mocks the Anthropic client itself (not our wrapper) —
+    call shape (model, system prompt, excerpt formatting, question) matches exactly
+    what's sent; Claude/network failures wrapped as `LLMError`; missing key raises
+    `RuntimeError`.
+  - `tests/test_ask.py` (5 default + 1 live): answer+sources returned correctly, with
+    an assertion that the *actual* retrieved chunk content was what got passed to the
+    (mocked) Claude call — not just that some answer came back; 404 for a subject
+    that doesn't exist and for another owner's subject (the same tenant-scoping
+    pattern as every other endpoint); no-documents-yet returns the graceful
+    "couldn't find" message with zero sources and never even calls Claude
+    (`assert_not_called()` — confirms the short-circuit, not just the message text);
+    a forced `LLMError` still returns 200 with the graceful "try again" message.
+    On SQLite, `search_chunks` never calls Cohere at all for the query side (already
+    true from the retrieval increment — the `<=>` branch is Postgres-only), so these
+    tests only needed to mock document-upload's `embed_texts`, not anything
+    query-related — the ask flow itself only needed Claude mocked.
+  - Live test (`@pytest.mark.live`, plus the existing `DATABASE_URL` `skipif` as a
+    second guard): runs the real pipeline end-to-end — real Neon storage, real Cohere
+    embeddings on both the document and query side, real Claude generation — and
+    asserts the answer is actually grounded in the material (not a refusal) with the
+    right filename cited as a source. Passed on the first real run.
+- Full suite: plain `pytest` → **57 passed, 2 deselected** (fast, offline — both new
+  live tests correctly excluded by the marker gating set up in the previous
+  increment); `pytest -m live` → **2 passed** (this one + retrieval's), confirmed
+  Neon left clean (0 rows in all three tables) afterward. `ruff check` → clean.
+
 ## 2026-07-15 — Test-infra: gate live tests behind `pytest -m live`
 - Problem: the retrieval increment's live Neon+Cohere test only checked whether
   `DATABASE_URL` was configured (via `get_settings()`, not raw `os.getenv`) — since it
