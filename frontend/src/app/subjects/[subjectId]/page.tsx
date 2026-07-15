@@ -63,23 +63,35 @@ export default function SubjectDetailPage() {
     },
     onError: (error: Error) => {
       setUploadError(error.message);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     },
   });
 
+  const backLink = (
+    <Link
+      href="/subjects"
+      className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+    >
+      <ArrowLeft className="size-4" />
+      Subjects
+    </Link>
+  );
+
+  if (subjectQuery.isError) {
+    return (
+      <div className="mx-auto max-w-2xl p-8">
+        {backLink}
+        <p className="text-destructive">Subject not found.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-2xl p-8">
-      <Link
-        href="/subjects"
-        className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="size-4" />
-        Subjects
-      </Link>
+      {backLink}
 
       <h1 className="mb-8 text-2xl font-semibold">
-        {subjectQuery.isLoading && "Loading…"}
-        {subjectQuery.isError && "Subject not found"}
-        {subjectQuery.data?.name}
+        {subjectQuery.isLoading ? "Loading…" : subjectQuery.data?.name}
       </h1>
 
       <Card className="mb-8">
@@ -114,14 +126,12 @@ export default function SubjectDetailPage() {
         <p className="text-muted-foreground">No documents yet — upload one above.</p>
       )}
       <ul className="flex flex-col gap-2">
-        {documentsQuery.data?.map((document) => (
-          <li key={document.id}>
+        {documentsQuery.data?.map((doc) => (
+          <li key={doc.id}>
             <Card>
               <CardContent className="flex items-center justify-between gap-4 py-4">
-                <p className="font-medium">{document.filename}</p>
-                <Badge variant={documentStatusVariant(document.status)}>
-                  {document.status}
-                </Badge>
+                <p className="font-medium">{doc.filename}</p>
+                <Badge variant={documentStatusVariant(doc.status)}>{doc.status}</Badge>
               </CardContent>
             </Card>
           </li>
