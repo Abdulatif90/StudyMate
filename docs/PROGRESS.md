@@ -435,6 +435,26 @@ are still open — see "Next" below and `docs/plan.md`).
     endpoints — reused `GET .../documents` and `POST .../documents`, both already
     existed and tested).
 
+- [x] Frontend now has a real test suite (CLAUDE.md rule 4 gap closed — the two
+  frontend increments above had shipped on manual `tsc`/`eslint`/browser checks
+  only, no automated tests). `vitest` + `@vitejs/plugin-react` + `jsdom` +
+  `@testing-library/react` + `@testing-library/jest-dom`; `vitest.config.ts`
+  (jsdom, resolves `@/` → `./src`), `vitest.setup.ts` (imports
+  `@testing-library/jest-dom/vitest` — the plain, non-Vitest-specific entry point
+  needs a Jest-style global `expect` Vitest doesn't provide). `npm run test` /
+  `test:watch` scripts. Extracted the Subject-detail page's two pure helpers into
+  `lib/uploadError.ts` (`friendlyUploadError`) and `lib/documentStatus.ts`
+  (`documentStatusVariant`) so they're independently testable; 8 tests total
+  (both helpers' branches + a `Badge` render smoke test proving the
+  component-testing path works for later pages). Also fixed while in the file:
+  `onError` now resets the file input too (previously only `onSuccess`, so
+  retrying the same file after a transient failure silently no-op'd — browsers
+  don't re-fire `onChange` for reselecting an unchanged input value), the
+  documents `.map()` param renamed `document` → `doc` (was shadowing the global
+  `document`), and a 404/unowned subject now shows "Subject not found" and
+  returns early instead of still rendering the upload card underneath it.
+  `tsc --noEmit` clean, `eslint` clean.
+
 ## Next (Phase 1 — Core RAG)
 - [ ] Streaming: convert the Ask endpoint to SSE (explicitly deferred twice now)
 - [ ] R2 bucket + upload endpoint (store the actual file — right now only validated,

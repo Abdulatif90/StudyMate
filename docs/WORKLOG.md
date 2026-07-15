@@ -2,6 +2,73 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-16 — Frontend: Vitest test suite + review fixes from Subject detail page
+- An overseer review of commit `c5474ec` (Subject detail page + upload) flagged
+  one real deviation from CLAUDE.md rule 4 ("every change ships with a test") —
+  the frontend had zero automated tests across both increments so far
+  (`75c58f9`, `c5474ec`), shipped on manual `tsc`/`eslint`/browser checks only —
+  plus a few minor nits in the same file. Fixed both, split into two commits.
+- **`test(frontend)` — `c292ea5`**: bootstrapped Vitest.
+  - `npm install -D vitest @vitejs/plugin-react jsdom @testing-library/react
+    @testing-library/jest-dom` initially failed: the latest `@vitejs/plugin-react`
+    (6.x) pulls in `@rolldown/plugin-babel`, which peer-depends on a Babel 8
+    release candidate — conflicting with `shadcn`'s Babel 7 dependency tree.
+    Pinned `@vitejs/plugin-react@^4` (landed on 4.7.0) instead, which installed
+    cleanly with no `--legacy-peer-deps` hack needed.
+  - `vitest.config.ts`: `environment: "jsdom"`, `@vitejs/plugin-react`, and a
+    `resolve.alias` mapping `"@"` → `./src` — without this, every test importing
+    `@/components/...` or `@/lib/...` (which is all of them, matching the app's
+    own import style) would fail to resolve.
+  - `vitest.setup.ts` imports `@testing-library/jest-dom/vitest` specifically,
+    not the bare `@testing-library/jest-dom` package root. First attempt used the
+    bare import and every test file failed immediately with `ReferenceError:
+    expect is not defined` — traced to jest-dom's default entry point assuming a
+    Jest-style global `expect`, which Vitest doesn't inject unless
+    `test.globals: true` is set. The package ships a dedicated
+    `@testing-library/jest-dom/vitest` entry that calls `expect.extend` using
+    Vitest's own `expect` import instead; switching to it fixed all three
+    suites immediately.
+  - `package.json`: `"test": "vitest run"`, `"test:watch": "vitest"`.
+  - Extracted the Subject-detail page's two pure helpers so they're testable in
+    isolation, per the task's design: `friendlyUploadError(status)` →
+    `lib/uploadError.ts`, and the inline `document.status === "ready" ? ... :
+    ...` ternary → `documentStatusVariant(status)` in `lib/documentStatus.ts`
+    (typed against the generated `components["schemas"]["DocumentStatus"]` union
+    and the `Badge` component's own `VariantProps`, so it can't drift from either
+    without a type error).
+  - Tests (8, all passing): `uploadError.test.ts` (415/413/other-status
+    branches), `documentStatus.test.ts` (ready/failed/pending), and a
+    `Badge` render smoke test (`badge.test.tsx`) — deliberately chosen as the
+    first component test since `Badge` needs no providers (no Clerk/Router/
+    QueryClient), proving the component-testing setup itself works correctly
+    before any future page needs heavier test scaffolding.
+  - To land this as a clean, reviewable "test" commit separate from the "fix"
+    commit below (same file, same review), staged an intermediate version of
+    `page.tsx` with *only* the extraction change (swap the two inline helpers
+    for imports) — none of the nit fixes yet — verified it independently
+    (`tsc`/`eslint`/`vitest` all clean), committed and pushed that first, then
+    layered the nit fixes on top as their own commit.
+- **`fix(frontend)` — `846fd1d`**: the three minor nits.
+  - `onError` on the upload mutation now resets the file input too (previously
+    only `onSuccess` did) — without this, retrying the exact same file after a
+    transient failure silently did nothing, since browsers don't re-fire
+    `onChange` when the input's value hasn't actually changed.
+  - Renamed the documents `.map()` callback param `document` → `doc` — it was
+    shadowing the global `document` object (harmless today since nothing in that
+    closure touches the real DOM `document`, but worth not leaving as a latent
+    footgun).
+  - When `subjectQuery.isError` (the subject doesn't exist or isn't owned by the
+    caller — the backend already enforces this), the page now shows "Subject not
+    found" and returns early, instead of still rendering the upload card and an
+    empty documents list underneath a broken header. Extracted the back-link
+    into a small `backLink` local so both the error and normal render paths
+    share it rather than duplicating the JSX.
+- Verified before each commit: `npx tsc --noEmit` clean, `npm run lint` clean
+  (confirmed via `eslint --format json` that the new test/config files were
+  actually linted, not silently skipped by an ignore pattern), `npm run test` →
+  **8 passed** both times (the intermediate extraction-only state and the final
+  state).
+
 ## 2026-07-16 — Frontend: Subject detail page (documents list + upload)
 - New route `app/subjects/[subjectId]/page.tsx`, second frontend increment (after
   `/subjects` list+create). Client component (matches `/subjects`'s existing
