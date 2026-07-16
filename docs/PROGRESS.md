@@ -3,10 +3,11 @@
 > Current state of the StudyMate build. **Read this to resume work** after any break/reset.
 
 ## Current phase
-**Phase 0 — Setup: complete.** **Phase 1 — Core RAG: in progress** (Subjects, documents
-(now async-processed via Inngest), Ask/RAG (now streaming), Conversations, and the
-frontend for all of it are done; R2 is the last open item — see "Next" below and
-`docs/plan.md`).
+**Phase 0 — Setup: complete.** **Phase 1 — Core RAG: essentially complete** — Subjects,
+documents (uploaded to R2, async-processed via Inngest), Ask/RAG (streaming),
+Conversations, and the frontend for all of it are done. Remaining Phase 1 polish is
+optional (a delete-document endpoint); the core RAG loop is fully built. See "Next"
+and `docs/plan.md`.
 
 ## Done
 - [x] Repo skeleton + `.gitignore`
@@ -640,14 +641,12 @@ frontend for all of it are done; R2 is the last open item — see "Next" below a
     invariant: `DocumentParseError`/`EmbeddingError` → `status: failed`, zero chunks
     (never left stuck on `pending`); a missing `COHERE_API_KEY` still raises loudly
     (RuntimeError) rather than masquerading as a per-document failure.
-  - **Where the bytes live (deliberate interim, needed a migration despite the task's
-    "likely none")**: the job runs in a *separate* request (Inngest calls back over
-    HTTP, possibly a different app instance), so it needs the file bytes from a shared
-    store — but the actual file isn't persisted yet (R2 is the next increment), and an
-    Inngest event can't carry a 20 MB PDF. So a temporary nullable `documents.raw_content`
-    (BYTEA) column stashes the bytes until the job consumes them, then clears them back
-    to NULL. Migration `7877073ae76d_add_raw_content_to_documents`, applied to Neon.
-    R2 will replace this stash later.
+  - **Where the bytes live** (interim, **since replaced by R2 — see the R2 entry
+    below**): the job runs in a *separate* request (Inngest calls back over HTTP), so
+    it needs the file bytes from a shared store, but there was no file store yet and an
+    Inngest event can't carry a 20 MB PDF. A temporary nullable `documents.raw_content`
+    (BYTEA) column stashed the bytes until the job consumed them. Migration
+    `7877073ae76d`. This column was removed once R2 landed.
   - **Frontend**: the subject-detail page now polls the documents list while any
     document is `pending` (`lib/documentsPolling.ts` → `documentsRefetchInterval`,
     TanStack Query `refetchInterval`), so a badge flips pending → ready/failed on its
@@ -673,11 +672,60 @@ frontend for all of it are done; R2 is the last open item — see "Next" below a
     clean. (Throwaway scripts, not committed.) Not browser-tested with real Clerk auth
     — the poll/badge UX still wants a manual pass.
 
+- [x] R2 (Cloudflare, S3-compatible) file storage — uploaded files now persist to R2
+  instead of the interim `documents.raw_content` BYTEA stash (which is removed).
+  - `app/core/r2_client.py`: one shared boto3 S3 client against
+    `https://<account_id>.r2.cloudflarestorage.com` (built once, same pattern as
+    `inngest_client.py`); `put_object`/`get_object`/`delete_object` +
+    `build_object_key`. Missing/partial R2 creds → `R2ConfigError` (a `RuntimeError`)
+    at point of use, listing exactly which vars are missing — same loud-failure
+    pattern as db.py/embedding.py/llm.py/inngest_client. `Settings` gains
+    `r2_account_id`/`r2_access_key_id`/`r2_secret_access_key`/`r2_bucket_name`
+    (optional so the app/tests boot without them); `.env.example` documents all four;
+    `boto3>=1.34` added.
+  - **Owner-scoped keys**: `build_object_key(owner_id, document_id, filename)` →
+    `{owner_id}/{document_id}/{filename}`. The owner prefix namespaces tenants; the
+    document_id makes it unique per upload. Ownership is still verified at the DB layer
+    (`require_owned_subject` / `get_document_by_id` are owner-scoped) *before* R2 is
+    ever touched — the key isn't itself an authz check, just a derived path.
+  - `service.create_document`: after validating (incl. the 20 MB limit — **before**
+    the upload, never upload-then-reject), builds the row + key and uploads to R2
+    *before* committing the pending row, so a failed upload leaves nothing persisted
+    (no pending row pointing at a missing object). `process_document`: fetches the
+    bytes from R2 (`r2_object_key`) instead of the old column. `models.py`:
+    `r2_object_key` column added, `raw_content` removed. Migration
+    `4220579b8fb6_swap_documents_raw_content_for_r2_key`, applied to Neon (confirmed
+    the column swap via `information_schema`).
+  - **Object lifecycle**: the R2 object is **kept** after processing (R2 is the file
+    store now, not a temp stash) — it stays available for re-processing and future
+    "download original". Idempotency invariant is intact: `process_document` still
+    deletes prior-attempt chunks before re-inserting, so re-running (Inngest retry,
+    now re-fetching the same bytes from R2) never duplicates chunks. No delete-document
+    endpoint exists yet, so nothing deletes objects — that's not a *new* leak (one
+    object per document), and a future delete endpoint should call
+    `r2_client.delete_object`. Parse/embed failures still → `status: failed`; an R2
+    fetch failure (like a missing Cohere key) raises loudly and lets Inngest retry
+    rather than masquerading as a per-document `failed`.
+  - Tests: `test_r2_client.py` (new) — key builder (owner-scoped, no cross-owner
+    collision), `R2ConfigError` when any of the four creds is missing (parametrized),
+    put/get/delete call boto3 with the right Bucket/Key, plus a **live** round-trip
+    (`-m live`) that puts/gets/deletes a real object through the real bucket and
+    confirms the delete. `test_documents.py`/`test_ask.py`/`test_search.py` gained an
+    in-memory R2 fake (autouse) so the default suite stays offline; new document tests
+    assert the upload stores the file under the owner-scoped key and that the object is
+    kept after processing. Backend **97 passed** (4 deselected live), `ruff` clean.
+  - **Live-verified end-to-end** twice: (1) the `-m live` suite (4 passed, incl. the
+    real-R2 round-trip); (2) the full real pipeline against the real Inngest Dev Server
+    + real R2 + real Neon/Cohere — HTTP upload → file confirmed present in **real R2**
+    immediately (95 bytes) → `pending` → Inngest job fetched it back from real R2 →
+    `ready` in ~1.5s with 1 chunk. R2 object + Neon rows cleaned up; confirmed 0 test
+    objects left in the bucket. (Throwaway scripts, not committed.)
+
 ## Next (Phase 1 — Core RAG)
-- [ ] R2 bucket + upload endpoint (store the actual file — right now only validated,
-  not persisted anywhere). Will also replace the interim `documents.raw_content` byte
-  stash that the async job currently reads from.
+- [ ] (Optional polish) DELETE document endpoint — remove the DB row, its chunks, and
+  its R2 object (`r2_client.delete_object`). Not built yet; until it exists nothing
+  deletes documents, so no orphan objects accumulate beyond one-per-document.
 
 ## Blockers / needs from user
-- Accounts + API keys needed for Phase 1: **R2**. Polar can wait until billing is
-  actually built. (Inngest is now wired — keys are in `backend/.env`.)
+- None for the core RAG loop — Neon, Clerk, Cohere, Anthropic, Inngest, and R2 keys
+  are all in `backend/.env`. Polar can wait until billing is actually built.

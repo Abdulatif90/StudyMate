@@ -2,6 +2,38 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-17 — Cloudflare R2 file storage (replaces the raw_content stash)
+- Uploaded files now persist to Cloudflare R2 (S3-compatible) instead of the interim
+  `documents.raw_content` BYTEA column the Inngest increment added; that column is
+  removed.
+- **Precondition checked first**: `backend/.env` had no R2 creds — reported it as a
+  blocker; the user added `R2_ACCOUNT_ID`/`R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY`/
+  `R2_BUCKET_NAME` (bucket var is `_NAME`, matched that), verified present, proceeded.
+- **`feat(backend)`**: `app/core/r2_client.py` — one shared boto3 S3 client against
+  the R2 endpoint (`https://<account_id>.r2.cloudflarestorage.com`), `put/get/delete_object`
+  + owner-scoped `build_object_key` (`{owner_id}/{document_id}/{filename}`). Missing
+  creds → `R2ConfigError` at point of use (lists which vars are missing). `boto3>=1.34`;
+  Settings + `.env.example` updated.
+  - `create_document` uploads to R2 *before* committing the pending row (failed upload
+    → nothing persisted), after the 20 MB check (never upload-then-reject).
+    `process_document` fetches bytes from R2. `models.py`: `r2_object_key` added,
+    `raw_content` removed. Migration `4220579b8fb6`, applied to Neon.
+  - Object kept after processing (R2 is the file store now). Idempotency intact —
+    delete-then-reinsert still guards against duplicate chunks on a retry that
+    re-fetches the same bytes. No delete-document endpoint yet, so no new orphan path
+    (one object per document); a future endpoint should call `delete_object`.
+  - Ownership verified at the DB layer before touching R2; keys are owner-prefixed so
+    one owner's document_id can't resolve to another's object.
+- Tests: `test_r2_client.py` (key builder, `R2ConfigError` per missing cred, boto3
+  call args, + live real-bucket round-trip). Document/ask/search suites gained an
+  in-memory R2 fake (autouse) so the default run stays offline. **97 passed** (4
+  deselected live), ruff clean.
+- **Live-verified end-to-end**: `-m live` (4 passed, incl. real-R2 round-trip); plus
+  the full real pipeline (real Inngest Dev Server + real R2 + Neon/Cohere) — HTTP
+  upload → file in real R2 immediately → `pending` → job fetched from real R2 →
+  `ready` in ~1.5s, 1 chunk. R2 + Neon cleaned up (0 test objects left). Throwaway
+  scripts, not committed.
+
 ## 2026-07-16 — Async document processing via Inngest
 - Moved document processing (parse → chunk → Cohere embed → persist) off the
   request path into an Inngest background job. Upload returns `pending`
