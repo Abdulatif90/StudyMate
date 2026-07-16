@@ -39,7 +39,7 @@ export default function SubjectsPage() {
   });
 
   return (
-    <div className="mx-auto max-w-2xl p-8">
+    <div className="mx-auto max-w-2xl p-4 sm:p-8">
       <div className="mb-8 flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Subjects</h1>
         <UserButton />
