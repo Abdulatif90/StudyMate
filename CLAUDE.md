@@ -28,6 +28,8 @@ flashcards (SM-2), progress. Multilingual, global students.
 4. Every change ships with a **test** (pytest/Vitest) that passes.
 5. **Secrets in env only** — never in code, logs, or responses.
 6. DRY · SOLID (single responsibility) · KISS · YAGNI. Small, focused functions.
+7. **Frontend must be responsive (mobile-first) and use semantic color tokens** —
+   follow `docs/FRONTEND.md` for every page/component.
 
 ## Git
 - Branches: `main` (prod) ← `develop` (integration) ← `feature/*`.
