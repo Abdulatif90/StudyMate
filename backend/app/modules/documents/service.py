@@ -271,6 +271,36 @@ def list_chunks(session: Session, owner_id: str, document_id: uuid.UUID) -> list
     )
 
 
+def sample_subject_chunk_texts(
+    session: Session, owner_id: str, subject_id: uuid.UUID, limit: int = 30
+) -> list[str]:
+    """A broad, owner+subject-scoped sample of a subject's chunk *texts* — for
+    whole-subject tasks like quiz generation that want representative coverage of the
+    material rather than relevance to a specific query (so, unlike `search_chunks`, no
+    query and no embedding: this selects only the `text` column, never loading the
+    1024-dim vectors, and makes no Cohere call).
+
+    When there are more chunks than `limit`, takes an evenly-spaced stride sample across
+    the material (ordered by document then chunk position) so the sample spans multiple
+    documents and sections rather than just the opening of the first document.
+    """
+    require_owned_subject(session, owner_id, subject_id)
+    texts = list(
+        session.exec(
+            select(DocumentChunk.text)
+            .where(
+                DocumentChunk.owner_id == owner_id,
+                DocumentChunk.subject_id == subject_id,
+            )
+            .order_by(DocumentChunk.document_id, DocumentChunk.chunk_index)
+        )
+    )
+    if len(texts) <= limit:
+        return texts
+    step = len(texts) / limit
+    return [texts[int(i * step)] for i in range(limit)]
+
+
 def list_documents(session: Session, owner_id: str, subject_id: uuid.UUID) -> list[Document]:
     require_owned_subject(session, owner_id, subject_id)
     return list(
