@@ -4,9 +4,11 @@
 
 ## Current phase
 **Phase 0 — Setup: complete.** **Phase 1 — Core RAG: complete** — Subjects, documents
-(uploaded to R2, async-processed via Inngest, deletable), Ask/RAG (streaming),
-Conversations, and the frontend for all of it are done. See "Next" (Phase 2+) and
-`docs/plan.md`.
+(uploaded to R2, async-processed via Inngest with an auto-summary, deletable), Ask/RAG
+(streaming), Conversations, and the frontend for all of it are done. See "Next"
+(Phase 2+) and `docs/plan.md`. (This phase was previously marked complete without
+auto-summary, which `docs/plan.md` calls for as part of ingest — that gap is now
+closed; see the entry below. Cohere Rerank is the next increment.)
 
 ## Done
 - [x] Repo skeleton + `.gitignore`
@@ -794,9 +796,45 @@ Conversations, and the frontend for all of it are done. See "Next" (Phase 2+) an
     → real Neon) in the increment that added it, and this call is a thin, typed
     wrapper mirroring the already-proven `deleteConversation` pattern on the ask page.
 
+- [x] Auto-summary on document upload — closes a Phase 1 gap (`docs/plan.md`'s ingest
+  step is "chunk → Cohere embed → pgvector + auto-summary"; auto-summary had never
+  actually been built despite Phase 1 being marked complete).
+  - `Document.summary: str | None` (nullable). `documents/summarization.py` (new):
+    `summarize_document(text) -> str` via Claude (`claude-haiku-4-5-20251001`), same
+    Anthropic SDK/error pattern as `ask/llm.py` — multilingual (responds in the
+    excerpt's own language), input capped at 12,000 chars (a background-job step, not
+    worth summarizing a full 20 MB upload), missing `ANTHROPIC_API_KEY` → bare
+    `RuntimeError`, any API failure → `SummarizationError`.
+  - `service.process_document`: after a successful chunk+embed, generates and stores
+    the summary — **best-effort**, unlike the parse/embed step before it: a
+    `SummarizationError` is caught/logged and leaves `summary` NULL rather than
+    failing the document (still resolves `ready` with its chunks intact). A missing
+    API key still raises loudly, same as the missing-Cohere-key case.
+  - `DocumentRead` gained `summary`; subject-detail page shows it (muted text) under
+    each `ready` document.
+  - Migration `35c81d01e21d_add_summary_column_to_documents`, applied to Neon,
+    confirmed via `information_schema`.
+  - Tests: `test_summarization.py` (4, offline, Anthropic client mocked directly).
+    `test_documents.py` (+3): summary written on success, left NULL on a forced
+    `SummarizationError` (chunks still intact, still `ready`), left NULL on a parse
+    failure. Plus 1 live test against real Claude. Backend **112 passed** (6
+    deselected live), `ruff` clean. Frontend: `tsc`/`eslint` clean, `npm run build`
+    succeeds, **51 passed** (14 files).
+  - **Live-verified end-to-end** three ways: the `-m live` suite (6 passed, Neon
+    confirmed clean afterward); the full real pipeline — real HTTP upload (auth
+    dependency overridden, no real Clerk JWT available outside a browser) against the
+    real app + real Inngest Dev Server + real R2/Cohere/Claude — `pending` → `ready`
+    in ~4s with a genuine Claude-generated summary, then cleaned up via real `DELETE`
+    calls, Neon confirmed clean afterward. Not click-tested in a real browser (no
+    browser/Clerk auth available in this environment — same standing gap as every
+    other frontend page here).
+
 ## Next (Phase 2+)
-- R2/Inngest/streaming/delete round out Phase 1 Core RAG. Next up per `docs/plan.md`:
-  quizzes, flashcards (SM-2), progress tracking, multilingual polish, billing (Polar).
+- Cohere Rerank (search_chunks → Cohere Rerank → Claude) in the Ask retrieval path —
+  next increment.
+- R2/Inngest/streaming/delete/auto-summary round out Phase 1 Core RAG. Next up per
+  `docs/plan.md`: quizzes, flashcards (SM-2), progress tracking, multilingual polish,
+  billing (Polar).
 - Still owed from this session: a real-browser click-through of the async
   upload/poll/delete flow with live Clerk auth (noted in the last several increments,
   never yet done — no browser available in this environment).

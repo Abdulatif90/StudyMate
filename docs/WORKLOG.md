@@ -2,6 +2,65 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-17 — Auto-summary on document upload (Phase 1 gap closed)
+- `docs/plan.md`'s Phase 1 ingest step was "chunk → Cohere embed → pgvector +
+  auto-summary", but auto-summary was never actually built — `PROGRESS.md`'s "Phase 1
+  complete" claim was wrong on this point. Closes that gap; adds it to the Inngest
+  ingest job.
+- **`feat(backend)`**: `Document.summary: str | None` (nullable — stays NULL for
+  legacy rows, `failed` documents, and a `ready` document whose summarization step
+  itself failed). Migration `35c81d01e21d_add_summary_column_to_documents`, applied to
+  Neon, confirmed via `information_schema`.
+  - `documents/summarization.py` (new, documents' own concern — not `ask/llm.py`):
+    `summarize_document(text) -> str` via Claude (`claude-haiku-4-5-20251001`), same
+    Anthropic SDK pattern as `ask/llm.py`. Multilingual: system prompt instructs
+    "respond in the same language the excerpt itself is written in" (same approach as
+    the Ask prompt). Input capped at `MAX_INPUT_CHARS` (12,000 chars) — summarizing a
+    full 20 MB upload in one background-job step would be slow/expensive; the opening
+    portion is representative enough for a short recall summary. Missing
+    `ANTHROPIC_API_KEY` → bare `RuntimeError` at point of use (same deployment-mistake
+    pattern as `db.py`/`embedding.py`/`ask/llm.py`); any Claude API/network failure →
+    `SummarizationError`.
+  - `service.process_document`: after a successful chunk+embed (`status: ready`),
+    calls `summarize_document` and writes the result to `document.summary`. **Best-effort
+    by design, unlike the parse/embed step it follows**: a `SummarizationError` is
+    caught and logged, leaving `summary` NULL — the document still resolves to `ready`
+    with its chunks/embeddings intact. A missing `ANTHROPIC_API_KEY` is *not* caught
+    (same loud-failure reasoning as the missing-`COHERE_API_KEY` case above it) — an
+    infra/deployment problem should fail the job and let Inngest retry, not silently
+    masquerade as "no summary available".
+  - `DocumentRead` gained `summary: str | None`.
+- **`feat(frontend)`**: subject-detail page shows the summary as muted text under the
+  filename/status/delete row, only when `status === "ready"` and a summary exists.
+  `schema.d.ts` regenerated (`npm run generate-api-types`) — picked up the new
+  `summary` field; fixed a stale test fixture in `documentsPolling.test.ts` that TS
+  then correctly flagged as missing the new required field.
+- Tests: offline (`test_summarization.py`, 4 — call shape/system prompt, input
+  truncation at `MAX_INPUT_CHARS`, API failures wrapped as `SummarizationError`,
+  missing-key `RuntimeError`; Anthropic client mocked directly, same pattern as
+  `test_llm.py`). `test_documents.py` (+3, autouse `_mock_summarization` fixture so
+  every existing `process_document` test gets a deterministic summary for free):
+  a successful process writes the summary; a forced `SummarizationError` still
+  resolves to `ready` with chunks intact and `summary` NULL; a parse failure also
+  leaves `summary` NULL. Plus 1 live test (`-m live`) hitting real Claude, asserting a
+  real non-empty summary comes back. Backend **112 passed** (6 deselected live, up
+  from 105/5), `ruff check` clean. Frontend: `tsc`/`eslint` clean, `npm run build`
+  succeeds, **51 passed** (14 files, unchanged count — no new pure helper, the display
+  is a direct JSX conditional).
+- **Live-verified end-to-end** three ways: (1) `-m live` suite (6 passed, incl. the
+  new real-Claude summarization test) — Neon confirmed clean afterward (0 rows for the
+  test owner across all three tables). (2) The full real pipeline: real HTTP upload
+  against the real app (auth dependency overridden — no real Clerk JWT available
+  outside a browser, same technique as prior live-HTTP scripts) + the real Inngest Dev
+  Server + real R2/Cohere/Claude — `pending` immediately, resolved to `ready` in ~4s
+  with a genuine Claude-generated summary populated, then cleaned up via real `DELETE`
+  calls; Neon confirmed clean afterward. Throwaway script, not committed. Not
+  click-tested in a real browser (no browser/Clerk auth available here) — same
+  standing gap as every other frontend page in this project.
+- `docs/PROGRESS.md`'s "Phase 1 — Core RAG: complete" line corrected: auto-summary was
+  the missing piece, now shipped here. Cohere Rerank (search_chunks → Rerank → Claude
+  in the Ask retrieval path) is the next increment, not yet started.
+
 ## 2026-07-17 — Frontend: delete-document button (closes out Phase 1 Core RAG)
 - Wires a delete button into the subject-detail page for the `DELETE
   /subjects/{subject_id}/documents/{document_id}` endpoint added last increment —
