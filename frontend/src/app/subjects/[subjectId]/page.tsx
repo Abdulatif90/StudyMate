@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useApiClient } from "@/lib/api/useApiClient";
 import { documentStatusVariant } from "@/lib/documentStatus";
+import { documentsRefetchInterval } from "@/lib/documentsPolling";
 import { friendlyUploadError } from "@/lib/uploadError";
 
 export default function SubjectDetailPage() {
@@ -40,6 +41,9 @@ export default function SubjectDetailPage() {
       if (error) throw error;
       return data;
     },
+    // Processing is async (Inngest) — a just-uploaded document sits on `pending`
+    // until the job resolves it, so poll while any are pending, then stop.
+    refetchInterval: (query) => documentsRefetchInterval(query.state.data),
   });
 
   const uploadDocument = useMutation({
@@ -118,10 +122,12 @@ export default function SubjectDetailPage() {
             }}
           />
           {uploadDocument.isPending && (
-            <p className="mt-2 text-sm text-muted-foreground">
-              Uploading and processing… this can take a few seconds.
-            </p>
+            <p className="mt-2 text-sm text-muted-foreground">Uploading…</p>
           )}
+          <p className="mt-2 text-xs text-muted-foreground">
+            Processing (parsing, chunking, embedding) runs in the background — a new
+            document shows as “pending” until it’s ready.
+          </p>
           {uploadError && <p className="mt-2 text-sm text-destructive">{uploadError}</p>}
         </CardContent>
       </Card>
