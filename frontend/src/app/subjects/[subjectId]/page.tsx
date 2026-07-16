@@ -119,11 +119,17 @@ export default function SubjectDetailPage() {
         <h1 className="min-w-0 text-2xl font-semibold break-words">
           {subjectQuery.isLoading ? "Loading…" : subjectQuery.data?.name}
         </h1>
-        <Button
-          className="shrink-0"
-          nativeButton={false}
-          render={<Link href={`/subjects/${subjectId}/ask`}>Ask</Link>}
-        />
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={<Link href={`/subjects/${subjectId}/quizzes`}>Quizzes</Link>}
+          />
+          <Button
+            nativeButton={false}
+            render={<Link href={`/subjects/${subjectId}/ask`}>Ask</Link>}
+          />
+        </div>
       </div>
 
       <Card className="mb-8">
