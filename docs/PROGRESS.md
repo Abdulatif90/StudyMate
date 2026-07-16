@@ -3,9 +3,10 @@
 > Current state of the StudyMate build. **Read this to resume work** after any break/reset.
 
 ## Current phase
-**Phase 0 — Setup: complete.** **Phase 1 — Core RAG: in progress** (Subjects, documents,
-Ask/RAG (now streaming), Conversations, and the frontend for all of it are done; R2 and
-Inngest are still open — see "Next" below and `docs/plan.md`).
+**Phase 0 — Setup: complete.** **Phase 1 — Core RAG: in progress** (Subjects, documents
+(now async-processed via Inngest), Ask/RAG (now streaming), Conversations, and the
+frontend for all of it are done; R2 is the last open item — see "Next" below and
+`docs/plan.md`).
 
 ## Done
 - [x] Repo skeleton + `.gitignore`
@@ -615,13 +616,68 @@ Inngest are still open — see "Next" below and `docs/plan.md`).
   during this work serving stale code (missing the new route) — needs a manual
   restart before the browser pass.
 
+- [x] Inngest: moved document processing (parse → chunk → Cohere embed → persist) off
+  the request path into a background job. Upload now returns `pending` immediately; the
+  job resolves it to `ready`/`failed`. (The `Document.status` enum already existed for
+  exactly this.)
+  - **Config/wiring**: `inngest>=0.5` dependency; `Settings.inngest_event_key` /
+    `inngest_signing_key` (optional, so the app/tests boot without them);
+    `app/core/inngest_client.py` holds the one shared client + `require_event_key()`
+    (bare `RuntimeError` at point of use if the key's unset — same loud-failure
+    pattern as db.py/embedding.py/llm.py, so events can't silently vanish leaving
+    documents stuck on `pending`). `.env.example` documents both vars.
+  - **service.py split**: `create_document` is now sync/on-request — validate
+    ownership + content-type + size, insert a `pending` row, return. The heavy work
+    moved to `process_document` (the job's target). `enqueue_document_processing`
+    emits the `document/uploaded` event. `documents/jobs.py` is the thin Inngest
+    function (pulls ids off the event, opens a session, calls `process_document`,
+    wrapped in one `ctx.step.run` for retry durability); `app/main.py` serves it at
+    `/api/inngest` via `inngest.fast_api.serve`.
+  - **Idempotency (Inngest retries on failure)**: `process_document` deletes any
+    chunks from a prior attempt before re-inserting, and no-ops if `raw_content` is
+    already cleared (a retry after a successful-but-unacked run) — a retried
+    parse+embed can't leave duplicate `DocumentChunk` rows. Preserves the old
+    invariant: `DocumentParseError`/`EmbeddingError` → `status: failed`, zero chunks
+    (never left stuck on `pending`); a missing `COHERE_API_KEY` still raises loudly
+    (RuntimeError) rather than masquerading as a per-document failure.
+  - **Where the bytes live (deliberate interim, needed a migration despite the task's
+    "likely none")**: the job runs in a *separate* request (Inngest calls back over
+    HTTP, possibly a different app instance), so it needs the file bytes from a shared
+    store — but the actual file isn't persisted yet (R2 is the next increment), and an
+    Inngest event can't carry a 20 MB PDF. So a temporary nullable `documents.raw_content`
+    (BYTEA) column stashes the bytes until the job consumes them, then clears them back
+    to NULL. Migration `7877073ae76d_add_raw_content_to_documents`, applied to Neon.
+    R2 will replace this stash later.
+  - **Frontend**: the subject-detail page now polls the documents list while any
+    document is `pending` (`lib/documentsPolling.ts` → `documentsRefetchInterval`,
+    TanStack Query `refetchInterval`), so a badge flips pending → ready/failed on its
+    own; polling stops once all are settled. Upload copy updated (upload is fast now;
+    processing is background). Chose to add polling here rather than defer it —
+    otherwise the async change would silently break the upload UX (docs would sit on
+    `pending` forever without a manual refresh).
+  - Tests: `test_documents.py` restructured — upload tests assert `pending` + that the
+    event was enqueued + that nothing was processed on the request path; the
+    parse/chunk/embed assertions moved to tests that call `process_document` directly,
+    plus idempotency (retry-after-success no-op, retry-after-partial delete-then-reinsert
+    → no dupes) and a missing-document no-op. `test_inngest.py` (new): missing-key
+    RuntimeError + the event-send shape. `test_ask.py`/`test_search.py` updated to
+    `process_document` after `create_document` (their live tests need the chunks).
+    Backend: **89 passed** (3 deselected live), `ruff` clean. Frontend:
+    `documentsPolling.test.ts` (4); **49 passed** (13 files), `tsc`/`eslint` clean.
+  - **Live-verified end-to-end** against real Neon + Cohere + the real Inngest Dev
+    Server (`npx inngest-cli dev`): started the app + dev server, uploaded a document
+    through the real HTTP API → response was `pending` immediately → the Inngest job
+    (dev server callback → `process_document` → real Cohere embed → Neon) resolved it
+    to `ready` in ~3s with 1 chunk persisted. Also ran the `-m live` suite (3 passed —
+    `create_document`+`process_document` against real Neon/Cohere/Claude). Neon left
+    clean. (Throwaway scripts, not committed.) Not browser-tested with real Clerk auth
+    — the poll/badge UX still wants a manual pass.
+
 ## Next (Phase 1 — Core RAG)
 - [ ] R2 bucket + upload endpoint (store the actual file — right now only validated,
-  not persisted anywhere)
-- [ ] Inngest: move parsing/chunking/embedding off the request path into a background
-  job (uploads currently do this synchronously, which is fine for small text files but
-  won't scale to large PDFs or embedding API latency)
+  not persisted anywhere). Will also replace the interim `documents.raw_content` byte
+  stash that the async job currently reads from.
 
 ## Blockers / needs from user
-- Accounts + API keys needed for Phase 1: **R2**. Inngest/Polar can wait until their
-  respective features (jobs, billing) are actually built.
+- Accounts + API keys needed for Phase 1: **R2**. Polar can wait until billing is
+  actually built. (Inngest is now wired — keys are in `backend/.env`.)

@@ -2,6 +2,51 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-16 — Async document processing via Inngest
+- Moved document processing (parse → chunk → Cohere embed → persist) off the
+  request path into an Inngest background job. Upload returns `pending`
+  immediately; the job resolves it to `ready`/`failed`.
+- **Precondition checked first**: `backend/.env` had no `INNGEST_*` keys —
+  reported it as a blocker and stopped; the user added `INNGEST_EVENT_KEY` +
+  `INNGEST_SIGNING_KEY`, verified present (non-empty), then proceeded.
+- **`feat(backend)`**: `inngest>=0.5`; `Settings.inngest_event_key/_signing_key`;
+  `app/core/inngest_client.py` (one shared client + `require_event_key()` →
+  RuntimeError at point of use if unset). `service.create_document` split into a
+  sync path (validate + insert `pending`, return) and `process_document` (the
+  job's parse/chunk/embed/persist work); `enqueue_document_processing` emits the
+  `document/uploaded` event; `documents/jobs.py` is the thin Inngest function
+  (wrapped in one `ctx.step.run` for retry durability); `main.py` serves it at
+  `/api/inngest`.
+  - Idempotent for retries: deletes prior-attempt chunks before re-inserting,
+    no-ops once `raw_content` is cleared. Keeps the failed-parse/embed →
+    `status: failed`, zero-chunks invariant; missing `COHERE_API_KEY` still
+    raises loudly rather than marking the document failed.
+  - **Migration despite the task's "likely none"**: the job runs in a separate
+    request (Inngest calls back over HTTP), so it needs the file bytes from a
+    shared store — but the file isn't persisted yet (R2 is next) and an event
+    can't carry a 20 MB PDF. Added a temporary nullable `documents.raw_content`
+    (BYTEA) column that stashes the bytes until the job consumes them, then
+    clears to NULL. Migration `7877073ae76d`, applied to Neon. R2 replaces it later.
+- **`feat(frontend)`**: subject-detail page polls the documents list while any
+  document is `pending` (`lib/documentsPolling.ts` → TanStack Query
+  `refetchInterval`), stopping once all settle. Upload copy updated. Chose to add
+  polling here, not defer — otherwise the async change would leave documents
+  stuck on `pending` in the UI with no refresh.
+- Tests: `test_documents.py` restructured (upload → pending + enqueued + nothing
+  processed on-request; parse/chunk/embed moved to direct `process_document`
+  tests; idempotency: retry-after-success no-op, retry-after-partial
+  delete-then-reinsert; missing-doc no-op). `test_inngest.py` (new: missing-key
+  RuntimeError + event-send shape). `test_ask.py`/`test_search.py` process the
+  document after create so their live tests still have chunks. Backend **89
+  passed** (3 deselected live), ruff clean. Frontend `documentsPolling.test.ts`
+  (4); **49 passed** (13 files), tsc/eslint clean.
+- **Live-verified end-to-end** with the real Inngest Dev Server
+  (`npx inngest-cli dev`) + real Neon + real Cohere: uploaded a doc through the
+  real HTTP API → `pending` immediately → the job resolved it to `ready` in ~3s
+  with 1 chunk persisted. Plus `-m live` suite (3 passed). Neon left clean.
+  Throwaway scripts, not committed. Not browser-tested with real Clerk auth —
+  the poll/badge UX wants a manual pass.
+
 ## 2026-07-16 — Ask endpoint streaming (SSE), backend + frontend
 - Converts the Ask endpoint to SSE — explicitly deferred twice before this
   (see PROGRESS.md). Non-stream `POST /subjects/{subject_id}/ask` kept as-is;
