@@ -52,6 +52,12 @@ class Document(SQLModel, table=True):
     # Nullable only to tolerate a row that existed before this column; new uploads
     # always set it.
     r2_object_key: str | None = Field(default=None)
+    # Auto-generated on successful processing (see service.process_document /
+    # summarization.py). Nullable: stays NULL for legacy rows that predate this
+    # column, for `failed` documents, and — deliberately — even for a `ready`
+    # document whose summarization step itself failed (best-effort, doesn't fail
+    # the whole job).
+    summary: str | None = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
