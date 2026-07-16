@@ -2,6 +2,38 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-17 — DELETE document endpoint (closes the R2 object-lifecycle gap)
+- `DELETE /subjects/{subject_id}/documents/{document_id}` — removes a document's
+  `DocumentChunk` rows, its R2 object, and the `Document` row. Files were never
+  removed once uploaded before this.
+- **`feat(backend)`**: `service.delete_document` (owner+subject scoped, same lookup
+  as `get_document`) + a thin router DELETE (204, mirrors `ask.router`'s
+  `delete_conversation` pattern: `if not service.delete_document(...): raise 404`).
+  - Chunks deleted + flushed before the Document row (no ORM cascade in this
+    codebase — same fix pattern as the Document/DocumentChunk and
+    `delete_conversation` cleanups before it).
+  - R2 delete happens *after* the DB delete commits, not before — avoids the DB
+    row surviving a failed R2 delete (fine either way, idempotent) while avoiding
+    the worse case: an R2 delete succeeding then the DB delete failing, which
+    would leave a row pointing at a missing object. Once the DB row is gone,
+    there's nothing left to "point at" anything, so the R2 delete afterward is
+    best-effort — exceptions are caught/logged, not re-raised, so a transient R2
+    failure can't turn an already-successful deletion into a 500. A `None`
+    `r2_object_key` (legacy row) just skips the R2 step.
+- Tests: chunks+object+row all removed; deleting a still-`pending` document (no
+  chunks yet); 404s for missing document/subject/another-owner's-document (and
+  confirmed untouched) /different-subject; tolerates a simulated R2 failure and a
+  `None` key. Live test deletes a real document and confirms the object is
+  actually gone from the real bucket — the offline R2 fake fixture now skips
+  itself for `@pytest.mark.live` tests so this one hits real `r2_client`. **105
+  passed** (5 deselected live), ruff clean.
+- **Live-verified end-to-end** twice: the `-m live` suite (5 passed), and the
+  full real HTTP flow (upload → real R2 → `DELETE` → 204 empty body → `GET` 404
+  → confirmed gone from real R2 `NoSuchKey` → re-`DELETE` 404). Neon left clean.
+  Throwaway script, not committed.
+- Frontend not wired this increment (optional per the task, not half-wired) —
+  noted as a follow-up in PROGRESS.md.
+
 ## 2026-07-17 — Cloudflare R2 file storage (replaces the raw_content stash)
 - Uploaded files now persist to Cloudflare R2 (S3-compatible) instead of the interim
   `documents.raw_content` BYTEA column the Inngest increment added; that column is

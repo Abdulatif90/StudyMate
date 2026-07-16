@@ -721,10 +721,53 @@ and `docs/plan.md`.
     `ready` in ~1.5s with 1 chunk. R2 object + Neon rows cleaned up; confirmed 0 test
     objects left in the bucket. (Throwaway scripts, not committed.)
 
+- [x] DELETE document endpoint — `DELETE /subjects/{subject_id}/documents/{document_id}`.
+  Closes the object-lifecycle gap the R2 increment left open (files were never removed
+  once uploaded).
+  - `service.delete_document(session, owner_id, subject_id, document_id) -> bool`:
+    owner+subject scoped (same lookup as `get_document`, so a non-owner gets a 404 and
+    can't even detect the document exists), returns `False` when not found/not owned
+    → router 404. `router.py`'s `DELETE` route mirrors `ask.router`'s
+    `delete_conversation` pattern exactly (`if not service.delete_document(...): raise
+    404`, `204 No Content`).
+  - **Order, decided and documented in the docstring**: `DocumentChunk` rows are
+    deleted and flushed *before* the `Document` row (no ORM `relationship()`/cascade in
+    this codebase — same flush-before-parent-delete fix already applied twice before,
+    in the Document/DocumentChunk and `delete_conversation` cleanups). The **R2 delete
+    happens after the DB delete has committed**, not before: if the DB delete were to
+    fail/roll back after an R2 delete already succeeded, a `Document` row would be left
+    pointing at a now-missing object — deleting R2 second avoids that. Once the DB
+    delete has committed, there's no longer any row to "point at" anything, so the R2
+    delete afterward is best-effort: its exceptions are caught and logged, not
+    re-raised — `delete_object` is idempotent, and a transient R2 failure at that point
+    only leaves a harmless orphaned object (storage-cost debt, not a dangling
+    reference), and must not turn an already-successful deletion into a 500.
+  - A `None` `r2_object_key` (a legacy row from before that column existed) is handled
+    — the R2 delete step is simply skipped, not attempted against a `None` key.
+  - Tests (offline, `test_documents.py`): removes chunks + R2 object + row; deleting a
+    still-`pending` document (no chunks yet) works cleanly; 404 for a missing document,
+    a missing subject, another owner's document (and confirms it's left completely
+    untouched — still fetchable by the real owner, chunks intact, R2 object intact),
+    and a document from a different subject; tolerates a simulated R2 failure (204
+    still returned, DB row still gone) and a `None` r2_object_key. Plus a **live** test
+    (`-m live`) that deletes a real document and confirms the object is actually gone
+    from the real bucket (`ClientError`/`NoSuchKey`), not just that the DB row is gone —
+    the offline suite's R2 fake is skipped for `@pytest.mark.live` tests specifically so
+    this one exercises the real `r2_client` functions. Backend **105 passed** (5
+    deselected live), `ruff` clean.
+  - **Live-verified end-to-end** twice: (1) the `-m live` suite (5 passed, incl. the new
+    real-R2-delete test); (2) the full real HTTP flow against the real app — upload →
+    file confirmed present in real R2 → `DELETE` → `204` with an empty body → `GET`
+    afterward → `404` → object confirmed gone from real R2 (`NoSuchKey`) → re-`DELETE`
+    (already gone) → `404`. Neon left clean afterward. (Throwaway script, not
+    committed.)
+  - **Frontend not wired this increment** (per the task, optional and not to be
+    half-wired) — no delete button on the subject-detail page yet. Follow-up.
+
 ## Next (Phase 1 — Core RAG)
-- [ ] (Optional polish) DELETE document endpoint — remove the DB row, its chunks, and
-  its R2 object (`r2_client.delete_object`). Not built yet; until it exists nothing
-  deletes documents, so no orphan objects accumulate beyond one-per-document.
+- [ ] (Optional) Frontend: delete-document button on the subject-detail page, calling
+  the now-existing `DELETE` endpoint (invalidate the documents query on success; follow
+  `docs/FRONTEND.md`).
 
 ## Blockers / needs from user
 - None for the core RAG loop — Neon, Clerk, Cohere, Anthropic, Inngest, and R2 keys
