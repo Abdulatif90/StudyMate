@@ -15,6 +15,8 @@ skips cleanly rather than erroring in an environment with no real DB.
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy.pool import StaticPool
@@ -25,6 +27,7 @@ from app.core.config import get_settings
 from app.modules.documents import service as documents_service
 from app.modules.documents.embedding import EMBEDDING_DIM
 from app.modules.documents.models import Document, DocumentChunk, DocumentStatus
+from app.modules.documents.rerank import RerankError
 from app.modules.subjects import service as subjects_service
 from app.modules.subjects.schemas import SubjectCreate
 
@@ -186,12 +189,75 @@ def test_search_chunks_raises_for_missing_subject():
             documents_service.search_chunks(session, _OWNER, uuid.uuid4(), "anything")
 
 
+# --- _rerank_candidates (pure logic over an already-fetched list — no DB/dialect
+# dependency, so this is testable regardless of Postgres/SQLite; rerank itself is
+# mocked, same pattern as _mock_cohere above) ---------------------------------
+
+
+def _chunk(text: str):
+    # _rerank_candidates only ever reads .text off each chunk and passes the object
+    # through untouched, so a lightweight stand-in is enough — no DB needed.
+    return SimpleNamespace(text=text)
+
+
+def test_rerank_candidates_reorders_by_relevance_score(monkeypatch):
+    candidates = [(_chunk("volcanoes"), 0.9), (_chunk("photosynthesis"), 0.5)]
+    # rerank ranks the second candidate (index 1) highest, reversing the vector order.
+    monkeypatch.setattr(
+        documents_service, "rerank", lambda query, texts, top_n: [(1, 0.95), (0, 0.1)]
+    )
+
+    result = documents_service._rerank_candidates("q", candidates, top_k=2)
+
+    assert [chunk.text for chunk, _score in result] == ["photosynthesis", "volcanoes"]
+    assert [score for _chunk, score in result] == [0.95, 0.1]
+
+
+def test_rerank_candidates_respects_top_k(monkeypatch):
+    candidates = [(_chunk(f"chunk {i}"), 1.0 - i * 0.1) for i in range(5)]
+    monkeypatch.setattr(
+        documents_service,
+        "rerank",
+        lambda query, texts, top_n: [(i, 1.0 - i * 0.1) for i in range(top_n)],
+    )
+
+    result = documents_service._rerank_candidates("q", candidates, top_k=2)
+
+    assert len(result) == 2
+
+
+def test_rerank_candidates_falls_back_to_vector_order_on_rerank_error(monkeypatch):
+    candidates = [(_chunk("a"), 0.9), (_chunk("b"), 0.8), (_chunk("c"), 0.7)]
+
+    def _raise(query, texts, top_n):
+        raise RerankError("Cohere is unavailable")
+
+    monkeypatch.setattr(documents_service, "rerank", _raise)
+
+    result = documents_service._rerank_candidates("q", candidates, top_k=2)
+
+    # falls back to the original vector-similarity order, truncated to top_k — not an
+    # error, and not the reranked (unavailable) order.
+    assert result == candidates[:2]
+
+
+def test_rerank_candidates_returns_empty_for_no_candidates(monkeypatch):
+    rerank_spy = MagicMock()
+    monkeypatch.setattr(documents_service, "rerank", rerank_spy)
+
+    assert documents_service._rerank_candidates("q", [], top_k=8) == []
+    rerank_spy.assert_not_called()
+
+
 _HAS_REAL_DB = bool(get_settings().database_url)
 
 
 @pytest.mark.live
 @pytest.mark.skipif(not _HAS_REAL_DB, reason="requires DATABASE_URL (real Postgres/pgvector)")
-def test_search_chunks_orders_by_similarity_against_real_neon():
+def test_search_chunks_orders_by_relevance_via_real_rerank():
+    """search_chunks' full real pipeline now: vector retrieve -> real Cohere Rerank.
+    Asserts the on-topic chunk still ranks first and scores still descend — through
+    the reranked path, not just raw cosine order (see _rerank_candidates)."""
     from app.core.db import get_engine
 
     engine = get_engine()
