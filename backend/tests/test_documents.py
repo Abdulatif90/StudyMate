@@ -30,6 +30,7 @@ from app.core.db import get_session
 from app.main import app
 from app.modules.documents import service as documents_service
 from app.modules.documents.embedding import EMBEDDING_DIM, EmbeddingError
+from app.modules.documents.summarization import SummarizationError
 
 _TEST_USER = "user_test_123"
 _engine = create_engine(
@@ -64,6 +65,14 @@ def _isolated_db():
 @pytest.fixture(autouse=True)
 def _mock_cohere(monkeypatch):
     monkeypatch.setattr(documents_service, "embed_texts", _fake_embed_texts)
+
+
+@pytest.fixture(autouse=True)
+def _mock_summarization(monkeypatch):
+    """Stand-in for Claude summarization, no network — autouse so every existing
+    process_document test gets a deterministic summary without needing to know this
+    step exists. Tests that care about summarization specifically override this."""
+    monkeypatch.setattr(documents_service, "summarize_document", lambda text: "A short summary.")
 
 
 @pytest.fixture(autouse=True)
@@ -375,6 +384,48 @@ def test_process_missing_document_is_a_noop():
     assert _process(_TEST_USER, _MISSING_ID) is None
 
 
+# --- Auto-summary (part of process_document, best-effort) -------------------
+
+
+def test_process_writes_a_summary_when_ready():
+    subject_id = _create_subject()
+    created = client.post(f"/subjects/{subject_id}/documents", files=_txt_file()).json()
+
+    document = _process(_TEST_USER, created["id"])
+
+    assert document.status.value == "ready"
+    assert document.summary == "A short summary."
+
+
+def test_process_leaves_summary_null_when_summarization_fails(monkeypatch):
+    def _raise_summarization_error(text: str) -> str:
+        raise SummarizationError("Claude is unavailable")
+
+    monkeypatch.setattr(documents_service, "summarize_document", _raise_summarization_error)
+
+    subject_id = _create_subject()
+    created = client.post(f"/subjects/{subject_id}/documents", files=_txt_file()).json()
+
+    document = _process(_TEST_USER, created["id"])
+
+    # a summarization failure is secondary — the document still becomes ready with
+    # its chunks/embeddings intact, just without a summary.
+    assert document.status.value == "ready"
+    assert document.summary is None
+    assert _chunk_texts(_TEST_USER, created["id"]) == ["hello world"]
+
+
+def test_process_leaves_summary_null_when_parse_fails():
+    subject_id = _create_subject()
+    files = {"file": ("broken.pdf", io.BytesIO(b"not a real pdf"), "application/pdf")}
+    created = client.post(f"/subjects/{subject_id}/documents", files=files).json()
+
+    document = _process(_TEST_USER, created["id"])
+
+    assert document.status.value == "failed"
+    assert document.summary is None
+
+
 # --- Delete (DELETE /subjects/{subject_id}/documents/{document_id}) ---------
 
 
@@ -522,4 +573,55 @@ def test_delete_document_removes_the_real_r2_object():
         finally:
             session.delete(subject)
             session.commit()
+    r2_client._get_client.cache_clear()
+
+
+@pytest.mark.live
+@pytest.mark.skipif(
+    not _HAS_REAL_DB_AND_R2, reason="requires DATABASE_URL (real Neon) and real R2 credentials"
+)
+def test_process_generates_a_real_summary_end_to_end():
+    """Live end-to-end: real Neon + real R2 + real Cohere + real Claude — confirms
+    process_document actually writes a non-empty, real Claude-generated summary, not
+    just that the mocked unit tests plumb the field through."""
+    from app.core.db import get_engine
+    from app.modules.subjects import service as subjects_service
+    from app.modules.subjects.schemas import SubjectCreate
+
+    r2_client._get_client.cache_clear()
+    engine = get_engine()
+    owner_id = "live_smoke_test_user_summary"
+    with Session(engine) as session:
+        subject = subjects_service.create_subject(
+            session, owner_id, SubjectCreate(name="Summary Smoke Test")
+        )
+        document = documents_service.create_document(
+            session,
+            owner_id,
+            subject.id,
+            filename="photosynthesis.txt",
+            content_type="text/plain",
+            raw=(
+                b"Photosynthesis converts sunlight into chemical energy in plant "
+                b"chloroplasts. Chlorophyll absorbs sunlight, water is split to "
+                b"release oxygen, and carbon dioxide is fixed into glucose."
+            ),
+        )
+
+        try:
+            processed = documents_service.process_document(session, owner_id, document.id)
+            assert processed.status.value == "ready"
+            assert processed.summary
+            assert len(processed.summary) > 0
+        finally:
+            for chunk in documents_service.list_chunks(session, owner_id, document.id):
+                session.delete(chunk)
+            session.commit()
+            r2_object_key = document.r2_object_key
+            session.delete(document)
+            session.commit()
+            session.delete(subject)
+            session.commit()
+            if r2_object_key is not None:
+                r2_client.delete_object(r2_object_key)
     r2_client._get_client.cache_clear()
