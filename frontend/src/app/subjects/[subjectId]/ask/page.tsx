@@ -1,15 +1,17 @@
 "use client";
 
+import { useAuth } from "@clerk/nextjs";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnswerMessage } from "@/components/answer-message";
 import { QuestionMessage } from "@/components/question-message";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useApiClient } from "@/lib/api/useApiClient";
+import { streamAsk } from "@/lib/api/streamAsk";
 import { filterConversationsBySubject } from "@/lib/conversationFilter";
 import { splitTurnsAtEdit } from "@/lib/editTurn";
 import { groupConversationsByDate } from "@/lib/groupConversationsByDate";
@@ -23,6 +25,7 @@ type ConversationWithTurns = components["schemas"]["ConversationWithTurns"];
 export default function AskPage() {
   const { subjectId } = useParams<{ subjectId: string }>();
   const api = useApiClient();
+  const { getToken } = useAuth();
   const queryClient = useQueryClient();
 
   const [question, setQuestion] = useState("");
@@ -30,16 +33,26 @@ export default function AskPage() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [pinnedTurnIds, setPinnedTurnIds] = useState<Set<string>>(new Set());
   const [editingTurnId, setEditingTurnId] = useState<string | null>(null);
-  // Shown as a placeholder question bubble while a send/re-ask is in flight —
-  // otherwise the question the user just (re-)asked has nowhere to appear
-  // until the answer comes back, which is especially jarring after an edit
-  // (the edited turn was just removed from `turns`, so the transcript would
-  // show nothing at all for a few seconds).
-  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
+  // The in-flight ask (new question or edit-resend), if any — drives both the
+  // pending question bubble and the live-filling answer bubble below it.
+  // Otherwise the question/answer the user just (re-)asked has nowhere to
+  // appear until the stream finishes, which is especially jarring after an
+  // edit (the edited turn was just removed from `turns`, so the transcript
+  // would show nothing at all while Claude generates).
+  const [streaming, setStreaming] = useState<{ question: string; answer: string } | null>(null);
+  const [streamError, setStreamError] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
   // Turns removed from view by saveEditedTurn ("regenerate from here"), kept
   // here so they can be put back if the resend fails — otherwise a failed
   // edit/resend would permanently drop the question with no way to recover it.
   const removedTurnsRef = useRef<Turn[]>([]);
+
+  // Aborts any in-flight stream if the user navigates away entirely — the
+  // server keeps generating and still saves the turn (see service.stream_answer's
+  // docstring), this just stops updating state for a component that's gone.
+  useEffect(() => {
+    return () => abortControllerRef.current?.abort();
+  }, []);
 
   const conversationsQuery = useQuery({
     queryKey: ["conversations"],
@@ -102,78 +115,90 @@ export default function AskPage() {
     },
   });
 
-  const askQuestion = useMutation({
-    mutationFn: async ({
-      questionText,
-      conversationId,
-    }: {
-      questionText: string;
-      conversationId: string | null;
-    }) => {
-      const { data, error } = await api.POST("/subjects/{subject_id}/ask", {
-        params: { path: { subject_id: subjectId } },
-        body: {
-          question: questionText,
-          conversation_id: conversationId ?? undefined,
+  // Drives POST /subjects/{subject_id}/ask/stream — used for both a plain new
+  // question and an edit-resend. `fullAnswer` is accumulated in this closure
+  // (not read back from `streaming` state) so the "done" handler always has the
+  // exact final text, regardless of React state-update timing.
+  function startAsk(questionText: string) {
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    setStreamError(false);
+    setStreaming({ question: questionText, answer: "" });
+
+    let fullAnswer = "";
+    streamAsk(
+      { subjectId, question: questionText, conversationId: activeConversationId, getToken },
+      {
+        onToken: (delta) => {
+          fullAnswer += delta;
+          setStreaming({ question: questionText, answer: fullAnswer });
         },
-      });
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: (data, variables) => {
-      removedTurnsRef.current = [];
-      setActiveConversationId(data.conversation_id);
-      setTurns((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          question: variables.questionText,
-          answer: data.answer,
-          // Sources aren't rendered anymore (citations stay inline in the answer
-          // text instead), but the field is required by the generated type.
-          sources: data.sources,
-          created_at: new Date().toISOString(),
+        onDone: (data) => {
+          removedTurnsRef.current = [];
+          setActiveConversationId(data.conversation_id);
+          setTurns((prev) => [
+            ...prev,
+            {
+              id: data.turn_id,
+              question: questionText,
+              answer: fullAnswer,
+              sources: data.sources,
+              created_at: new Date().toISOString(),
+            },
+          ]);
+          // Cleared here, in the same handler that appends the real turn — not
+          // on some later tick — so the streaming bubble disappears in the same
+          // update the finished turn appears in, instead of both being on
+          // screen for a render.
+          setStreaming(null);
+          queryClient.invalidateQueries({ queryKey: ["conversations"] });
+          queryClient.invalidateQueries({ queryKey: ["conversations", data.conversation_id] });
         },
-      ]);
-      // Cleared here (not in onSettled) so the pending bubble disappears in the
-      // same update that appends the real turn — otherwise there's a render
-      // where both the finished turn and the still-visible "Sending…" bubble
-      // are on screen at once.
-      setPendingQuestion(null);
-      queryClient.invalidateQueries({ queryKey: ["conversations"] });
-      queryClient.invalidateQueries({ queryKey: ["conversations", data.conversation_id] });
-    },
-    onError: (_error, variables) => {
+      },
+      controller.signal
+    ).catch(() => {
+      if (controller.signal.aborted) return; // deliberate cancel, not a failure
       if (removedTurnsRef.current.length > 0) {
         setTurns((prev) => [...prev, ...removedTurnsRef.current]);
         removedTurnsRef.current = [];
       } else {
         // Not an edit-resend — the compose box was already cleared on submit,
         // so put the text back rather than losing it.
-        setQuestion(variables.questionText);
+        setQuestion(questionText);
       }
-      setPendingQuestion(null);
-    },
-  });
+      setStreamError(true);
+      setStreaming(null);
+    });
+  }
+
+  // Switching conversations mid-stream would otherwise keep filling in an
+  // answer bubble for a conversation the user already left — abort it. The
+  // server-side generation/persistence continues regardless (see startAsk).
+  function abortActiveStream() {
+    abortControllerRef.current?.abort();
+    setStreaming(null);
+    setStreamError(false);
+  }
 
   function selectConversation(conversationId: string) {
     const details = conversationDetailsById.get(conversationId);
+    abortActiveStream();
     setActiveConversationId(conversationId);
     setTurns(details?.turns ?? []);
     setEditingTurnId(null);
-    setPendingQuestion(null);
     removedTurnsRef.current = [];
   }
 
   function startNewConversation() {
+    abortActiveStream();
     setActiveConversationId(null);
     setTurns([]);
     setEditingTurnId(null);
-    setPendingQuestion(null);
     removedTurnsRef.current = [];
   }
 
   function startEditingTurn(turnId: string) {
+    if (streaming) return; // avoid editing another turn while one is in flight
     setEditingTurnId(turnId);
   }
 
@@ -197,8 +222,7 @@ export default function AskPage() {
     setTurns(remaining);
     removedTurnsRef.current = removed;
     setEditingTurnId(null);
-    setPendingQuestion(newQuestionText);
-    askQuestion.mutate({ questionText: newQuestionText, conversationId: activeConversationId });
+    startAsk(newQuestionText);
   }
 
   // No backend endpoint exists to delete a single turn (only whole
@@ -307,10 +331,10 @@ export default function AskPage() {
               />
             </li>
           ))}
-          {pendingQuestion && (
-            <li>
+          {streaming && (
+            <li className="flex flex-col gap-2">
               <QuestionMessage
-                text={pendingQuestion}
+                text={streaming.question}
                 timestamp={new Date().toISOString()}
                 isEditing={false}
                 pending
@@ -319,11 +343,20 @@ export default function AskPage() {
                 onSaveEdit={() => {}}
                 onDelete={() => {}}
               />
+              {streaming.answer && (
+                <AnswerMessage
+                  text={streaming.answer}
+                  timestamp={new Date().toISOString()}
+                  pinned={false}
+                  onTogglePin={() => {}}
+                  streaming
+                />
+              )}
             </li>
           )}
         </ul>
 
-        {!askQuestion.isPending && (
+        {!streaming && (
           <form
             className="flex flex-col gap-2"
             onSubmit={(event) => {
@@ -331,8 +364,7 @@ export default function AskPage() {
               const trimmed = question.trim();
               if (trimmed) {
                 setQuestion("");
-                setPendingQuestion(trimmed);
-                askQuestion.mutate({ questionText: trimmed, conversationId: activeConversationId });
+                startAsk(trimmed);
               }
             }}
           >
@@ -346,12 +378,12 @@ export default function AskPage() {
             </Button>
           </form>
         )}
-        {askQuestion.isPending && (
+        {streaming && !streaming.answer && (
           <p className="mt-2 text-sm text-muted-foreground">
             Thinking… this can take a few seconds.
           </p>
         )}
-        {askQuestion.isError && (
+        {streamError && (
           <p className="mt-2 text-sm text-destructive">
             Couldn&apos;t get an answer. Please try again.
           </p>

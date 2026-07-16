@@ -24,11 +24,16 @@ export function AnswerMessage({
   timestamp,
   pinned,
   onTogglePin,
+  streaming = false,
 }: {
   text: string;
   timestamp: string;
   pinned: boolean;
   onTogglePin: () => void;
+  /** True while tokens are still arriving — hides actions that don't make sense
+   * on not-yet-complete text (copy/pin/read-aloud) instead of, e.g., letting
+   * "read aloud" start reading a sentence that's still being written. */
+  streaming?: boolean;
 }) {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const displayText = simplifyCitations(text);
@@ -47,6 +52,18 @@ export function AnswerMessage({
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
     setIsSpeaking(false);
+  }
+
+  if (streaming) {
+    return (
+      <Card>
+        <CardContent className="py-4">
+          <div className="min-w-0 text-sm break-words [&_ol_ol]:list-[lower-alpha] [&_ul_ul]:list-[circle]">
+            <ReactMarkdown components={markdownComponents}>{displayText}</ReactMarkdown>
+          </div>
+        </CardContent>
+      </Card>
+    );
   }
 
   return (
