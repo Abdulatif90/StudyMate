@@ -4,8 +4,8 @@
 
 ## Current phase
 **Phase 0 — Setup: complete.** **Phase 1 — Core RAG: in progress** (Subjects, documents,
-Ask/RAG, Conversations, and a first frontend slice are done; streaming, R2, and Inngest
-are still open — see "Next" below and `docs/plan.md`).
+Ask/RAG, Conversations, and the frontend for all of it are done; streaming, R2, and
+Inngest are still open — see "Next" below and `docs/plan.md`).
 
 ## Done
 - [x] Repo skeleton + `.gitignore`
@@ -455,6 +455,68 @@ are still open — see "Next" below and `docs/plan.md`).
   returns early instead of still rendering the upload card underneath it.
   `tsc --noEmit` clean, `eslint` clean.
 
+- [x] Frontend: `docs/FRONTEND.md` (responsive + semantic-color-token rules for every
+  page/component) and CLAUDE.md rule 7 requiring it, then a full responsive + brand-color
+  pass across the pages that predate the rule: `globals.css` gained an indigo/blue
+  `--primary`/`--ring` (was grayscale) in both light and dark; home, `/subjects`,
+  `/subjects/[subjectId]`, sign-in, and sign-up all moved to mobile-first padding
+  (`p-4 sm:p-8`), and the subject detail page's title/filename rows now wrap/truncate
+  instead of overflowing on narrow screens.
+
+- [x] Frontend: Ask/RAG chat UI + conversations list (`/subjects/[subjectId]/ask`) —
+  the last open Phase 1 frontend page; backend for both already existed.
+  - **Layout**: sidebar (new-conversation button, conversations grouped by date via
+    `groupConversationsByDate`, each with a truncated preview from its first question
+    via `truncateText` and a delete button) + main transcript + compose box, following
+    `docs/FRONTEND.md` (mobile-first, sidebar collapses above the transcript on narrow
+    screens, semantic tokens only).
+  - `lib/conversationFilter.ts`: `GET /conversations` is owner-scoped across every
+    subject, so the sidebar filters to just this one client-side.
+  - Sidebar previews fetch full turn history for *every* listed conversation up front
+    (`useQueries`, not just the active one) — gives each item a real first-question
+    preview like Claude's own sidebar, and makes clicking one instant since its turns
+    are already loaded.
+  - `QuestionMessage`/`AnswerMessage` (`components/`): question bubbles support
+    copy/edit/delete; answer bubbles render markdown (`react-markdown`, headings
+    downgraded to keep visual hierarchy inside a chat bubble), support copy/pin/
+    read-aloud (`speechSynthesis`), and run answer text through
+    `lib/simplifyCitations.ts` to drop the noisy `chunk N` suffix from inline
+    citations while keeping the filename. Both action rows are right-aligned
+    (timestamp above, icon buttons below) per user feedback during live testing.
+  - **Edit & resend** ("regenerate from here"): the backend has no per-turn edit/delete,
+    only whole-conversation CRUD, so editing a question drops it and everything after
+    it from the visible transcript, then resends with the same `conversation_id`.
+    `lib/editTurn.ts` (`splitTurnsAtEdit`, extracted+tested after this exact split logic
+    caused a real bug below) does the split; the removed turns are held in a ref and put
+    back if the resend fails, rather than discarded — otherwise a failed edit/resend
+    silently dropped the question with no way to recover it.
+  - **Pending state**: a "Sending…" bubble stands in for the in-flight question (new
+    ones and edit-resends both), and the compose form itself is hidden entirely while a
+    request is in flight (matching the reference UX of Claude's own chat input) instead
+    of staying visible in a disabled state — three live-testing bugs fixed together
+    here: the pending bubble briefly coexisting with the just-finished real turn (now
+    cleared in the same `onSuccess`/`onError` state update, not a separate `onSettled`),
+    the compose box still showing the just-typed text while its bubble also showed it
+    below (now cleared on submit, restored only if the send actually fails), and the
+    emptied box's placeholder looking like a reset/error rather than "sent".
+  - Tests (all pure helpers/components, matching this codebase's established
+    page-untested/helpers-tested pattern — `tsc`/`eslint`/live-browser-verified for the
+    page itself): `conversationFilter.test.ts`, `editTurn.test.ts` (5 — split point at
+    start/middle/end/not-found/empty-list), `groupConversationsByDate.test.ts`,
+    `relativeTime.test.ts`, `simplifyCitations.test.ts`, `truncateText.test.ts`,
+    `question-message.test.tsx`, `answer-message.test.tsx`.
+  - `vitest.setup.ts` gained an explicit `afterEach(cleanup)` — needed once tests
+    started using `@testing-library/user-event` across multiple `it()`s in the same
+    file; without it, DOM from earlier tests in a file stuck around and caused
+    "multiple elements found" failures in later ones. `@testing-library/user-event`
+    added as a dev dependency for this.
+  - **Live-verified in the browser** (user-driven, iterative): four real UX bugs found
+    by hand-testing the pending/edit flow — all described above — were fixed in this
+    session, not caught by any test beforehand (page-level interaction bugs, not pure-
+    logic ones; the extracted `splitTurnsAtEdit` now covers the one piece of this that
+    *is* pure logic).
+  Frontend: `tsc --noEmit` clean, `eslint` clean, **37 passed** (11 test files).
+
 ## Next (Phase 1 — Core RAG)
 - [ ] Streaming: convert the Ask endpoint to SSE (explicitly deferred twice now)
 - [ ] R2 bucket + upload endpoint (store the actual file — right now only validated,
@@ -462,8 +524,6 @@ are still open — see "Next" below and `docs/plan.md`).
 - [ ] Inngest: move parsing/chunking/embedding off the request path into a background
   job (uploads currently do this synchronously, which is fine for small text files but
   won't scale to large PDFs or embedding API latency)
-- [ ] Frontend: Ask/RAG chat UI + conversations list — the backend for both already
-  exists; subjects and documents (list + upload) now have pages
 
 ## Blockers / needs from user
 - Accounts + API keys needed for Phase 1: **R2**. Inngest/Polar can wait until their

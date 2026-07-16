@@ -2,6 +2,73 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-16 — Frontend: Ask/RAG chat UI + conversations list, responsive/color pass
+- Closes the last open Phase 1 frontend page: `/subjects/[subjectId]/ask`. Backend
+  (Ask endpoint + Conversations CRUD) already existed from earlier increments.
+- **`docs(frontend)`**: `docs/FRONTEND.md` (new) — mobile-first responsive rules and
+  semantic-color-token rules for every page/component; CLAUDE.md rule 7 added
+  requiring it. Then applied retroactively to the pages that predate the rule:
+  `globals.css`'s `--primary`/`--ring` moved from grayscale to an indigo/blue OKLCH
+  value (light + dark); home, `/subjects`, `/subjects/[subjectId]`, sign-in, sign-up
+  moved to `p-4 sm:p-8`; subject detail page's title and filename rows now wrap/
+  truncate instead of overflowing at narrow widths.
+- **`feat(frontend)`**: the ask page itself.
+  - Sidebar: new-conversation button, conversations grouped by date
+    (`lib/groupConversationsByDate.ts`), filtered from the owner-wide `GET
+    /conversations` down to this subject (`lib/conversationFilter.ts`), each item
+    previewing its first question (`lib/truncateText.ts`) — fetched up front for
+    every listed conversation via `useQueries` (not just the active one), so
+    previews are real and opening one is instant.
+  - `components/question-message.tsx` / `answer-message.tsx`: question bubbles
+    (copy/edit/delete) and answer bubbles (markdown via `react-markdown`, copy/pin/
+    read-aloud via `speechSynthesis`, citations simplified with
+    `lib/simplifyCitations.ts` to drop the `chunk N` suffix but keep the filename).
+  - Edit & resend ("regenerate from here" — the backend has no per-turn edit, only
+    whole-conversation CRUD): drops the edited turn and everything after it from
+    the visible transcript, resends with the same `conversation_id`.
+  - Added `@testing-library/user-event` (dev dep) and `react-markdown` (dep).
+    `vitest.setup.ts` gained an explicit `afterEach(cleanup)` — without it, DOM
+    from earlier tests in the same file stuck around once tests started using
+    `user-event` across multiple `it()`s in one file, causing "multiple elements
+    found" failures in later ones.
+  - Tests: `conversationFilter.test.ts`, `groupConversationsByDate.test.ts`,
+    `relativeTime.test.ts`, `simplifyCitations.test.ts`, `truncateText.test.ts`,
+    `question-message.test.tsx`, `answer-message.test.tsx`. No page-level test —
+    matches this codebase's existing pattern (pure helpers/components tested,
+    pages verified live), see the fixes below for why that pattern has a real gap.
+- **Four real UX bugs, all found by the user live-testing the pending/edit flow in
+  the browser** (not caught by any test beforehand — page-level interaction bugs,
+  not pure-logic ones):
+  1. A failed edit-resend permanently dropped the question — it had already been
+     spliced out of the transcript before the request even completed, and nothing
+     put it back on error. Fixed by holding the removed turns in a ref and
+     restoring them in the mutation's `onError`.
+  2. The finished turn and the still-visible "Sending…" placeholder bubble could
+     both be on screen for one render — `pendingQuestion` was cleared in a
+     separate `onSettled`, not atomically with the turn update. Fixed by clearing
+     it directly inside `onSuccess`/`onError` instead.
+  3. The compose box kept showing the just-submitted text (only cleared in
+     `onSuccess`) while the pending bubble below showed the same text — looked
+     like the question was shown twice. Fixed by clearing the box on submit, and
+     restoring the text into it on error (only for a plain new question, not an
+     edit-resend, where the restored turn card already covers that).
+  4. Following fix 3, the emptied box's default placeholder made the pending
+     state look like a reset/error rather than "in progress". Landed on hiding the
+     compose form entirely while a request is in flight (matching Claude's own
+     chat input), rather than a pending-specific placeholder — user's call after
+     an intermediate placeholder-text attempt didn't read right either.
+  - **`refactor(frontend)`**: extracted the one piece of bug #1 that's pure logic
+    — the turns-array split at the edited turn — into `lib/editTurn.ts`
+    (`splitTurnsAtEdit`), with 5 tests (split at start/middle/end, turnId not
+    found, empty transcript). This is now the only page-adjacent logic from this
+    increment that has direct test coverage; the rest of the fixes above were
+    verified live in the browser only.
+  - Action-row layout in both message components changed too, per user feedback
+    during the same testing pass: icon buttons + timestamp moved from a single
+    left-aligned row to right-aligned, timestamp stacked above the buttons.
+- Verified: `npx tsc --noEmit` clean, `npm run lint` clean, `npm run test` →
+  **37 passed** (11 files, up from 8).
+
 ## 2026-07-16 — Frontend: Vitest test suite + review fixes from Subject detail page
 - An overseer review of commit `c5474ec` (Subject detail page + upload) flagged
   one real deviation from CLAUDE.md rule 4 ("every change ships with a test") —
