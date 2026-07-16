@@ -77,6 +77,13 @@ def _mock_cohere(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _mock_summarization(monkeypatch):
+    # _upload_txt calls process_document directly (see below), which also generates a
+    # summary now — mocked so these ask/RAG tests never touch the network for it.
+    monkeypatch.setattr(documents_service, "summarize_document", lambda text: "A short summary.")
+
+
+@pytest.fixture(autouse=True)
 def _mock_inngest(monkeypatch):
     # Upload emits an Inngest event now; mock it so these tests never hit the network.
     # _upload_txt processes the document explicitly instead (see below).
