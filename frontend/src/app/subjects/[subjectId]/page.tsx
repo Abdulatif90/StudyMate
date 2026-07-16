@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useApiClient } from "@/lib/api/useApiClient";
@@ -79,7 +80,7 @@ export default function SubjectDetailPage() {
 
   if (subjectQuery.isError) {
     return (
-      <div className="mx-auto max-w-2xl p-8">
+      <div className="mx-auto max-w-2xl p-4 sm:p-8">
         {backLink}
         <p className="text-destructive">Subject not found.</p>
       </div>
@@ -87,12 +88,19 @@ export default function SubjectDetailPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl p-8">
+    <div className="mx-auto max-w-2xl p-4 sm:p-8">
       {backLink}
 
-      <h1 className="mb-8 text-2xl font-semibold">
-        {subjectQuery.isLoading ? "Loading…" : subjectQuery.data?.name}
-      </h1>
+      <div className="mb-8 flex flex-wrap items-center justify-between gap-2">
+        <h1 className="min-w-0 text-2xl font-semibold break-words">
+          {subjectQuery.isLoading ? "Loading…" : subjectQuery.data?.name}
+        </h1>
+        <Button
+          className="shrink-0"
+          nativeButton={false}
+          render={<Link href={`/subjects/${subjectId}/ask`}>Ask</Link>}
+        />
+      </div>
 
       <Card className="mb-8">
         <CardHeader>
@@ -130,8 +138,10 @@ export default function SubjectDetailPage() {
           <li key={doc.id}>
             <Card>
               <CardContent className="flex items-center justify-between gap-4 py-4">
-                <p className="font-medium">{doc.filename}</p>
-                <Badge variant={documentStatusVariant(doc.status)}>{doc.status}</Badge>
+                <p className="min-w-0 flex-1 truncate font-medium">{doc.filename}</p>
+                <Badge className="shrink-0" variant={documentStatusVariant(doc.status)}>
+                  {doc.status}
+                </Badge>
               </CardContent>
             </Card>
           </li>
