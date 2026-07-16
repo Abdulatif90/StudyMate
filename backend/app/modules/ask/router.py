@@ -10,6 +10,7 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 
 from app.core.auth import get_current_user_id
@@ -43,6 +44,33 @@ def ask_question(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Subject not found") from exc
     except service.ConversationNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found") from exc
+
+
+@router.post("/stream")
+def ask_question_stream(
+    subject_id: uuid.UUID,
+    data: AskRequest,
+    session: Session = Depends(get_session),
+    owner_id: str = Depends(get_current_user_id),
+) -> StreamingResponse:
+    # Ownership/conversation validation happens here, as an ordinary call — NOT
+    # inside the generator — because a StreamingResponse's status code is locked in
+    # the moment its body starts iterating, so a 404 raised from inside the
+    # generator would be too late to ever reach the client as a real 404.
+    try:
+        context = service.prepare_ask_stream(
+            session, owner_id, subject_id, data.question, conversation_id=data.conversation_id
+        )
+    except SubjectNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Subject not found") from exc
+    except service.ConversationNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversation not found") from exc
+
+    return StreamingResponse(
+        service.stream_answer(session, owner_id, context),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @conversations_router.get("", response_model=list[ConversationRead])
