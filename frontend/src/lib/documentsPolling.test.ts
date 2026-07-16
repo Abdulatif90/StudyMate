@@ -11,6 +11,7 @@ function doc(status: DocumentRead["status"]): DocumentRead {
     filename: "f.txt",
     content_type: "text/plain",
     status,
+    summary: null,
     created_at: "2026-07-16T00:00:00Z",
   };
 }

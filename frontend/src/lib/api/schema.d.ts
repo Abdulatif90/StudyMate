@@ -290,6 +290,8 @@ export interface components {
             /** Content Type */
             content_type: string;
             status: components["schemas"]["DocumentStatus"];
+            /** Summary */
+            summary: string | null;
             /**
              * Created At
              * Format: date-time

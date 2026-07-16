@@ -164,25 +164,30 @@ export default function SubjectDetailPage() {
         {documentsQuery.data?.map((doc) => (
           <li key={doc.id}>
             <Card>
-              <CardContent className="flex items-center justify-between gap-4 py-4">
-                <p className="min-w-0 flex-1 truncate font-medium">{doc.filename}</p>
-                <Badge className="shrink-0" variant={documentStatusVariant(doc.status)}>
-                  {doc.status}
-                </Badge>
-                <Button
-                  variant="destructive"
-                  size="icon-sm"
-                  className="shrink-0"
-                  aria-label={`Delete ${doc.filename}`}
-                  disabled={deleteDocument.isPending && deleteDocument.variables === doc.id}
-                  onClick={() => {
-                    if (window.confirm(`Delete "${doc.filename}"? This can't be undone.`)) {
-                      deleteDocument.mutate(doc.id);
-                    }
-                  }}
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
+              <CardContent className="flex flex-col gap-2 py-4">
+                <div className="flex items-center justify-between gap-4">
+                  <p className="min-w-0 flex-1 truncate font-medium">{doc.filename}</p>
+                  <Badge className="shrink-0" variant={documentStatusVariant(doc.status)}>
+                    {doc.status}
+                  </Badge>
+                  <Button
+                    variant="destructive"
+                    size="icon-sm"
+                    className="shrink-0"
+                    aria-label={`Delete ${doc.filename}`}
+                    disabled={deleteDocument.isPending && deleteDocument.variables === doc.id}
+                    onClick={() => {
+                      if (window.confirm(`Delete "${doc.filename}"? This can't be undone.`)) {
+                        deleteDocument.mutate(doc.id);
+                      }
+                    }}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
+                {doc.status === "ready" && doc.summary && (
+                  <p className="text-sm text-muted-foreground wrap-break-word">{doc.summary}</p>
+                )}
               </CardContent>
             </Card>
           </li>
