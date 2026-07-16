@@ -4,10 +4,10 @@
 
 ## Current phase
 **Phase 0 — Setup: complete.** **Phase 1 — Core RAG: complete.** **Phase 2 — Quiz:
-started** — quiz generation via Claude tool-use structured output is built end-to-end on
-the backend (generate/list/get/delete, migration applied to Neon, live-verified). The
-quiz *frontend* (a page to generate + take quizzes) is the next increment. See
-`docs/plan.md`. Phase 1 recap: Subjects, documents (R2 + Inngest ingest with
+backend + frontend done** — quiz generation via Claude tool-use structured output
+(generate/list/get/delete) plus the full quiz UI (generate, take/self-test, review with
+score + explanations, delete). Next in Phase 2 per `docs/plan.md`: FTS hybrid search
+(Postgres full-text + RRF). Phase 1 recap: Subjects, documents (R2 + Inngest ingest with
 auto-summary, deletable), Ask/RAG (retrieve → Cohere Rerank → Claude, streaming),
 Conversations, and the frontend for all of it.
 
@@ -937,14 +937,53 @@ Conversations, and the frontend for all of it.
     Not click-tested in a real browser (no browser/Clerk auth here — same standing gap
     as every frontend page); the quiz frontend is the next increment anyway.
 
+- [x] Quiz frontend — generate, take (self-test), review, delete. Consumes the typed
+  `/subjects/{id}/quizzes` routes; follows the established page pattern (client
+  component, `useApiClient` + TanStack Query, shadcn Base-UI, `docs/FRONTEND.md`).
+  - `app/subjects/[subjectId]/quizzes/page.tsx`: lists the subject's quizzes (title or
+    "Untitled quiz" + relative time, each links to its take view) and a generate form
+    (optional title + `num_questions` 1–20, default 5). Generate guards against
+    double-submit (`disabled` + `isPending` check) and shows a "Generating…" state
+    (it's a live Claude round-trip); 422 (no processed material — actionable
+    "upload/wait" message) and 502 (retryable) mapped via `friendlyQuizError` off the
+    real `response.status` (not in the typed error shape). Delete mirrors the
+    delete-document flow (`window.confirm`, destructive icon, checks `error` not
+    `data` since 204 → `data` undefined, invalidates on success).
+  - `app/subjects/[subjectId]/quizzes/[quizId]/page.tsx`: take/review view. Options are
+    selectable buttons; **`correct_index` is never used to style anything until the
+    user reveals** (held client-side, compared only on "Check answers"), so it's a real
+    self-test, not an answer sheet. "Check answers" is gated by `allAnswered` (every
+    question answered). On reveal: score (`scoreQuiz`), each correct option marked with
+    the `--success` token + a check icon, a wrong pick with the `destructive` token + an
+    x icon (color always paired with an icon, per FRONTEND.md), explanations shown, and
+    a "Try again" reset. Options lock once revealed.
+  - Subject-detail page: a "Quizzes" (outline) button next to the existing "Ask" button.
+  - Pure logic extracted + unit-tested (helpers-tested / pages-verified-live pattern):
+    `lib/quizError.ts` (`friendlyQuizError` — 422/502/other, 3 tests) and
+    `lib/quizScore.ts` (`allAnswered`/`isCorrect`/`scoreQuiz` — 11 tests, incl. a
+    selected index of 0 counting as answered, unanswered counting as incorrect).
+  - New semantic token: `--success`/`--success-foreground` (OKLCH, both light+dark,
+    registered in the `@theme inline` map) — added per FRONTEND.md's "add `--success`
+    when needed" rather than hardcoding green, so correct answers use `bg-success/10
+    text-success border-success`.
+  - `schema.d.ts` unchanged (quiz routes were already regenerated into it in the
+    backend increment — no hand-edits).
+  - Verified: `tsc --noEmit` clean, `eslint` clean, **65 passed** (16 files, up from
+    51/14), `npm run build` succeeds (both new routes compile:
+    `/subjects/[subjectId]/quizzes` and `.../quizzes/[quizId]`). Not click-tested in a
+    real browser (no browser/Clerk auth in this environment — same standing gap as every
+    other frontend page here); the quiz *API* it drives was already live-verified
+    end-to-end through the real stack in the backend increment, and `tsc` guarantees the
+    UI consumes those exact typed shapes.
+
 ## Next (Phase 2+)
-- **Quiz frontend** — a page to generate a quiz for a subject and take/review it
-  (consumes the now-typed `/subjects/{id}/quizzes` routes) — next increment.
+- **FTS hybrid search (Postgres full-text + RRF)** — next Phase 2 increment per
+  `docs/plan.md`/DECISIONS.md #4 (avoids Lexara's per-query in-memory BM25 rebuild).
 - Remaining Phase 2+ per `docs/plan.md`: flashcards (SM-2), progress tracking,
   multilingual polish, billing (Polar).
 - Still owed from earlier: a real-browser click-through of the async upload/poll/delete
-  flow with live Clerk auth (noted across several increments, never yet done — no
-  browser available in this environment).
+  and now quiz flows with live Clerk auth (noted across several increments, never yet
+  done — no browser available in this environment).
 
 ## Blockers / needs from user
 - None — Neon, Clerk, Cohere, Anthropic, Inngest, and R2 keys are all in `backend/.env`.

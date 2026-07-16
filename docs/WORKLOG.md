@@ -2,6 +2,51 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-17 — Quiz frontend (generate / take / review / delete)
+- The UI for the Phase 2 quiz backend. Students can generate a quiz for a subject, take
+  it as a real self-test, reveal the score + explanations, and delete it. Follows the
+  established page pattern (client component, `useApiClient` + TanStack Query, shadcn
+  Base-UI, `docs/FRONTEND.md`), consuming the already-typed `/subjects/{id}/quizzes`
+  routes (`schema.d.ts` was regenerated in the backend increment — no hand-edits here).
+- **`feat(frontend)` — helpers + token**: `lib/quizError.ts` (`friendlyQuizError` maps
+  the generate endpoint's real statuses — 422 no material → an actionable "upload a
+  document and wait" message, 502 → retryable — off `response.status`, since these
+  hand-raised codes aren't in the generated typed error shape, same as
+  `friendlyUploadError`). `lib/quizScore.ts` — pure grading with no React and no reveal
+  (`allAnswered` gates submit, `isCorrect`, `scoreQuiz`); the page owns reveal state,
+  this only computes. Added a semantic `--success`/`--success-foreground` token (OKLCH,
+  both themes, registered in `@theme inline`) per FRONTEND.md's "add `--success` when
+  needed" so correct answers use a success token, not hardcoded green; wrong uses the
+  existing `destructive`. 14 vitest tests across the two helpers.
+- **`feat(frontend)` — pages**:
+  - `quizzes/page.tsx` — quiz list + generate form (optional title, `num_questions`
+    1–20 clamped client-side, default 5). Generate **guards against double-submit**
+    (`disabled={isPending}` + an `isPending` check in the submit handler) and shows a
+    "Generating…" state — it's a live Claude round-trip of a few seconds. Delete mirrors
+    the delete-document flow exactly (`window.confirm`, destructive icon button, checks
+    `error` not `data` since a 204 leaves `data` undefined, invalidates the quizzes
+    query on success). Each quiz row links to its take view.
+  - `quizzes/[quizId]/page.tsx` — take/review. **`correct_index` is never used to style
+    anything before the user reveals** (held client-side, compared only when they hit
+    "Check answers"), so it's a genuine self-test, not an answer sheet — the key
+    pitfall. "Check answers" is gated by `allAnswered`; on reveal the options lock, the
+    correct one is marked with the `--success` token + a check icon and any wrong pick
+    with `destructive` + an x icon (color always paired with an icon/label per
+    FRONTEND.md rule 2.5), explanations appear, the score comes from `scoreQuiz`, and
+    "Try again" resets answers + reveal.
+  - Subject-detail page gains a "Quizzes" (outline) button beside the existing "Ask"
+    button. Middleware already matches `/subjects(.*)` — no route-protection change.
+- **Build gotcha (not a code bug)**: `npm run build` first failed collecting page data
+  for the Clerk sign-in/sign-up catch-all routes — the concurrently-running
+  `npm run dev` server was sharing `.next`. Stopping the dev server and clearing
+  `.next` fixed it; the clean build succeeds with both new quiz routes compiled.
+- Verified: `tsc --noEmit` clean, `eslint` clean, **65 passed** (16 files, up from
+  51/14), `npm run build` succeeds. Not click-tested in a real browser (no browser /
+  real Clerk auth in this environment — the same standing gap as every other frontend
+  page in this project); the quiz *API* the UI drives was already live-verified
+  end-to-end through the real stack in the backend increment, and `tsc` against the real
+  regenerated `schema.d.ts` guarantees the UI consumes those exact shapes.
+
 ## 2026-07-17 — Quiz generation via Claude tool-use structured output (Phase 2 start)
 - First Phase 2 feature and the codebase's first **structured-output** integration.
   DECISIONS.md #5 mandates quiz JSON via Claude tool-use, not `json.loads` on free text.
