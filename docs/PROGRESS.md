@@ -3,13 +3,13 @@
 > Current state of the StudyMate build. **Read this to resume work** after any break/reset.
 
 ## Current phase
-**Phase 0 — Setup: complete.** **Phase 1 — Core RAG: genuinely complete** — Subjects,
-documents (uploaded to R2, async-processed via Inngest with an auto-summary,
-deletable), Ask/RAG (retrieve → Cohere Rerank → Claude, streaming), Conversations, and
-the frontend for all of it are done. See "Next" (Phase 2+) and `docs/plan.md`. (This
-phase was marked complete twice prematurely before actually being done — first without
-auto-summary, then without Rerank, both called for by `docs/plan.md`'s Phase 1 line;
-both gaps are now closed, see the two entries below. Phase 2 — Quiz — is next.)
+**Phase 0 — Setup: complete.** **Phase 1 — Core RAG: complete.** **Phase 2 — Quiz:
+started** — quiz generation via Claude tool-use structured output is built end-to-end on
+the backend (generate/list/get/delete, migration applied to Neon, live-verified). The
+quiz *frontend* (a page to generate + take quizzes) is the next increment. See
+`docs/plan.md`. Phase 1 recap: Subjects, documents (R2 + Inngest ingest with
+auto-summary, deletable), Ask/RAG (retrieve → Cohere Rerank → Claude, streaming),
+Conversations, and the frontend for all of it.
 
 ## Done
 - [x] Repo skeleton + `.gitignore`
@@ -874,14 +874,78 @@ both gaps are now closed, see the two entries below. Phase 2 — Quiz — is nex
     chunks, answer grounded with correct citations from both on-topic documents.
     Cleaned up via real `DELETE` calls; Neon confirmed clean afterward.
 
+## Phase 2 — Quiz
+- [x] Quiz generation via Claude **tool-use structured output** (DECISIONS.md #5 — quiz
+  JSON from a validated tool call, never `json.loads` on prose). First structured-output
+  integration in the codebase. New domain module `app/modules/quiz/` (router + service +
+  schemas + models + generation, same established split as documents/ask).
+  - `models.py`: `Quiz` (subject_id FK, owner_id-scoped, title?) + `QuizQuestion`
+    (quiz_id FK, owner_id, question, options as NOT-NULL JSON, correct_index,
+    explanation?, order). Plain FK columns, no ORM cascade — so `delete_quiz` flushes
+    question deletes before the parent (the flush-before-parent rule that bit
+    Document/DocumentChunk, `delete_conversation`, `delete_document` before). Migration
+    `5ffe4bd447ff_add_quizzes_and_quiz_questions_tables`, applied to Neon, confirmed via
+    `information_schema` (`options` is NOT NULL).
+  - `generation.py`: `generate_quiz_questions(excerpts, num_questions)` forces Claude
+    (`claude-haiku-4-5-20251001`) to call a strict `record_quiz` tool via `tool_choice`,
+    then reads the structured `tool_use` block's `.input` back out — confirmed the exact
+    tool-use API shape (`tools=[{name,description,input_schema}]`, `tool_choice`,
+    `.content[i].type == "tool_use"` → `.input`) by introspecting the installed
+    anthropic SDK + a live one-off call before writing any code. Defensive validation
+    turns any malformed/empty response into `QuizGenerationError` — notably an
+    out-of-range `correct_index` (schema-valid integer, but would silently break a
+    future grading flow) and a bool masquerading as an int. Missing `ANTHROPIC_API_KEY`
+    → bare `RuntimeError` at point of use (db.py/llm.py pattern); multilingual (writes
+    in the source material's language, like summary/ask).
+  - `service.py`: `generate_quiz` verifies subject ownership, samples the subject's
+    material (new `documents.service.sample_subject_chunk_texts` — a broad owner+subject
+    chunk-*text* sample, selecting only the text column so no embeddings load and no
+    Cohere call happens, evenly strided for coverage; reuses existing retrieval, no
+    re-embedding), generates via tool-use, and persists Quiz + questions in one
+    transaction (nothing persisted unless generation fully succeeds — no orphaned empty
+    quiz on failure). Plus list/get (owner+subject scoped) and delete_quiz.
+  - `schemas.py` **answer-key decision, documented**: this generation+review increment
+    has no graded-submission flow, so the read shapes intentionally reveal
+    `correct_index`/`explanation` (self-study tool, owner-scoped — you quiz yourself on
+    your own material). A future graded flow must NOT reuse `QuizQuestionRead` for the
+    "take" step — add a separate answer-hidden shape and reveal only post-submission.
+    `owner_id` never exposed.
+  - `router.py`: `POST` (generate, 201), `GET` list, `GET` one, `DELETE` one — thin,
+    mirroring documents/ask. Exception→status: `SubjectNotFoundError`→404,
+    `NoQuizMaterialError`→422 (subject has no processed chunks yet),
+    `QuizGenerationError`→502. Wired into `app/main.py`. Frontend `schema.d.ts`
+    regenerated (quiz route types now in the typed client; no consumer yet — the quiz
+    UI is the next increment).
+  - Tests: `test_quiz_generation.py` (10, Anthropic client mocked directly — tool schema
+    + forced tool_choice sent, tool_use parsed back, every malformed-response path →
+    `QuizGenerationError`, empty-excerpts short-circuit, missing-key `RuntimeError`).
+    `test_quiz.py` (19 SQLite integration + 1 live, generation mocked at the service
+    boundary offline): persists quiz+questions in order with no `owner_id` leak; 404
+    unowned/missing subject, 422 no material, 502 generation failure (nothing persisted
+    on failure); num_questions passthrough + request bounds (0/21 → 422); list/get
+    owner+subject scoping and cross-subject 404s; delete removes quiz + its questions,
+    404s for missing/another-owner/different-subject and leaves them intact. Backend
+    **150 passed** (7 deselected live, up from 121/6), `ruff` clean.
+  - **Live-verified end-to-end** two ways: the `-m live` quiz test (real Neon + Cohere +
+    Claude tool-use → well-formed questions, in-range `correct_index`, cleaned up); and
+    the **full real stack** — real Inngest Dev Server + real R2/Neon/Cohere/Claude —
+    real HTTP upload (auth dependency overridden, no Clerk JWT outside a browser) →
+    `pending` → Inngest job → `ready` (summary populated) in ~4s → `POST /quizzes` →
+    4 well-formed MCQs from real Claude tool-use, each with an in-range correct answer →
+    `GET` re-fetched the persisted quiz → list returned the summary shape. Cleaned up via
+    real `DELETE`s; Neon confirmed clean afterward (0 rows across all five tables).
+    Not click-tested in a real browser (no browser/Clerk auth here — same standing gap
+    as every frontend page); the quiz frontend is the next increment anyway.
+
 ## Next (Phase 2+)
-- Phase 1 Core RAG is genuinely complete now (auto-summary + Rerank were the last two
-  gaps, both closed). Next up per `docs/plan.md`: quizzes, flashcards (SM-2), progress
-  tracking, multilingual polish, billing (Polar).
-- Still owed from this session: a real-browser click-through of the async
-  upload/poll/delete flow with live Clerk auth (noted in the last several increments,
-  never yet done — no browser available in this environment).
+- **Quiz frontend** — a page to generate a quiz for a subject and take/review it
+  (consumes the now-typed `/subjects/{id}/quizzes` routes) — next increment.
+- Remaining Phase 2+ per `docs/plan.md`: flashcards (SM-2), progress tracking,
+  multilingual polish, billing (Polar).
+- Still owed from earlier: a real-browser click-through of the async upload/poll/delete
+  flow with live Clerk auth (noted across several increments, never yet done — no
+  browser available in this environment).
 
 ## Blockers / needs from user
-- None for Phase 1 (now complete) — Neon, Clerk, Cohere, Anthropic, Inngest, and R2
-  keys are all in `backend/.env`. Polar can wait until billing is actually built.
+- None — Neon, Clerk, Cohere, Anthropic, Inngest, and R2 keys are all in `backend/.env`.
+  Polar can wait until billing is actually built.

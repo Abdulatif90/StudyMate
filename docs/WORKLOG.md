@@ -2,6 +2,75 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-17 — Quiz generation via Claude tool-use structured output (Phase 2 start)
+- First Phase 2 feature and the codebase's first **structured-output** integration.
+  DECISIONS.md #5 mandates quiz JSON via Claude tool-use, not `json.loads` on free text.
+  New domain module `app/modules/quiz/` (router + service + schemas + models +
+  generation), same established split as documents/ask.
+- **Confirmed the tool-use API shape before writing any code** — introspected the
+  installed anthropic SDK (`0.116.0`): `messages.create(tools=[{name, description,
+  input_schema}], tool_choice={"type":"tool","name":...})`, response has
+  `stop_reason == "tool_use"` and a `content` block with `.type == "tool_use"` whose
+  `.input` is the API-validated dict. Verified with a real one-off call (2 MCQs came
+  back well-formed) rather than assuming.
+- **`feat(quiz)` — models + migration**: `Quiz` (subject_id FK, owner_id-scoped, title?)
+  + `QuizQuestion` (quiz_id FK, owner_id, question, options as NOT-NULL JSON,
+  correct_index, explanation?, order). Plain FK columns, no ORM cascade (codebase
+  style). Migration `5ffe4bd447ff`, applied to Neon, confirmed via `information_schema`
+  (`options` NOT NULL). Registered both models in `alembic/env.py`.
+- **`feat(quiz)` — generation.py**: `generate_quiz_questions(excerpts, num_questions)`
+  forces the `record_quiz` tool via `tool_choice` and reads the structured tool_input
+  back. Strict `input_schema` (question, options[], correct_index, explanation;
+  `additionalProperties: false`, all required). Defensive validation on the parsed
+  input → `QuizGenerationError` on anything malformed: no tool_use block (e.g. hit
+  max_tokens), empty questions, <2 options, non-string/empty option, an out-of-range
+  `correct_index` (schema-valid integer but would break grading), and a bool
+  masquerading as an int (bool is an int subclass in Python). Missing
+  `ANTHROPIC_API_KEY` → bare `RuntimeError`; API/network failure → `QuizGenerationError`.
+  Multilingual: prompt says write in the source material's language. `max_tokens` scales
+  with `num_questions`, bounded at 8192.
+- **`feat(quiz)` — service + routes**: `generate_quiz` verifies subject ownership,
+  samples the subject's material, generates, and persists Quiz + questions in one
+  transaction — nothing persisted unless generation fully succeeds (no orphaned empty
+  quiz on failure). `documents.service.sample_subject_chunk_texts` (new) is a broad
+  owner+subject chunk-*text* sample that selects only the `text` column (no embeddings
+  loaded, no Cohere call) and evenly strides across the material for coverage — reuses
+  existing retrieval, no re-embedding (per the pitfall). `delete_quiz` flushes question
+  deletes before the parent (flush-before-parent rule — bit `delete_conversation`/
+  `delete_document` before). Router: `POST` (201) / `GET` list / `GET` one / `DELETE` —
+  thin, mirroring documents/ask. Exception→status: 404 unowned subject, 422 no material
+  (`NoQuizMaterialError`), 502 generation failure. Wired into `app/main.py`.
+- **Answer-key decision, documented in `schemas.py`**: this generation+review increment
+  has no graded-submission flow, so the read shapes deliberately reveal
+  `correct_index`/`explanation` (self-study tool, owner-scoped). A future graded flow
+  must add a separate answer-hidden "take" shape and reveal only post-submission —
+  documented so this is a deliberate choice, not an accidental answer-key leak.
+  `owner_id` never exposed on any read shape.
+- **`chore(frontend)`**: regenerated `schema.d.ts` (quiz route types now in the typed
+  client; `tsc` clean, no consumer yet — the quiz UI is the next increment).
+- Tests: `test_quiz_generation.py` (10, Anthropic client mocked directly, same pattern
+  as test_llm/test_summarization — tool schema + forced tool_choice sent, tool_use
+  parsed back, every malformed path → `QuizGenerationError`, empty-excerpts
+  short-circuit without constructing a client, missing-key `RuntimeError`).
+  `test_quiz.py` (19 SQLite integration + 1 live; generation mocked at the service
+  boundary offline, chunks seeded directly since quiz gen only reads text): persist
+  quiz+questions in order with no `owner_id` leak; 404 unowned/missing subject, 422 no
+  material, 502 generation failure (and nothing persisted on failure); num_questions
+  passthrough + bounds (0/21 → 422); list/get owner+subject scoping + cross-subject
+  404s; delete removes quiz+questions, 404s for missing/another-owner/different-subject
+  and leaves them intact. Backend **150 passed** (7 deselected live, up from 121/6),
+  `ruff` clean.
+- **Live-verified end-to-end** two ways: (1) the `-m live` quiz test — real Neon +
+  Cohere + Claude tool-use, asserted well-formed questions (≥2 options, in-range
+  `correct_index`), cleaned up. (2) The **full real stack** — real Inngest Dev Server +
+  real R2/Neon/Cohere/Claude: real HTTP upload (auth dependency overridden, no Clerk JWT
+  outside a browser) → `pending` → Inngest job → `ready` with summary in ~4s →
+  `POST /quizzes` → 4 well-formed MCQs from real Claude tool-use, each with an in-range
+  correct answer → `GET` re-fetched the persisted quiz, list returned the summary shape.
+  Cleaned up via real `DELETE`s; Neon confirmed clean (0 rows across all five tables).
+  Throwaway script, not committed. Not browser-tested (no browser/Clerk auth here) — the
+  quiz frontend is the next increment.
+
 ## 2026-07-17 — Cohere Rerank in the Ask retrieval path (Phase 1 genuinely complete)
 - `docs/plan.md`'s Phase 1 line is "Ask (retrieve → Cohere Rerank → Claude)" — vector
   search and Ask existed, but the Rerank step between them was never built. This was
