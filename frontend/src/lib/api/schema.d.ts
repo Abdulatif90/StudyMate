@@ -69,7 +69,8 @@ export interface paths {
         get: operations["get_document_subjects__subject_id__documents__document_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Document */
+        delete: operations["delete_document_subjects__subject_id__documents__document_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -86,6 +87,23 @@ export interface paths {
         put?: never;
         /** Ask Question */
         post: operations["ask_question_subjects__subject_id__ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/subjects/{subject_id}/ask/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ask Question Stream */
+        post: operations["ask_question_stream_subjects__subject_id__ask_stream_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -122,6 +140,25 @@ export interface paths {
         post?: never;
         /** Delete Conversation */
         delete: operations["delete_conversation_conversations__conversation_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/inngest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Api Inngest */
+        get: operations["get_api_inngest_api_inngest_get"];
+        /** Put Inngest Api */
+        put: operations["put_inngest_api_api_inngest_put"];
+        /** Post Inngest Api */
+        post: operations["post_inngest_api_api_inngest_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -538,6 +575,36 @@ export interface operations {
             };
         };
     };
+    delete_document_subjects__subject_id__documents__document_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subject_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     ask_question_subjects__subject_id__ask_post: {
         parameters: {
             query?: never;
@@ -560,6 +627,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AskResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ask_question_stream_subjects__subject_id__ask_stream_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subject_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -649,6 +751,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_api_inngest_api_inngest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    put_inngest_api_api_inngest_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    post_inngest_api_api_inngest_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

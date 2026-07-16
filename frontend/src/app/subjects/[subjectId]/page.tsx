@@ -4,12 +4,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useRef, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useApiClient } from "@/lib/api/useApiClient";
+import { friendlyDeleteError } from "@/lib/deleteError";
 import { documentStatusVariant } from "@/lib/documentStatus";
 import { documentsRefetchInterval } from "@/lib/documentsPolling";
 import { friendlyUploadError } from "@/lib/uploadError";
@@ -20,6 +21,7 @@ export default function SubjectDetailPage() {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const subjectQuery = useQuery({
     queryKey: ["subjects", subjectId],
@@ -69,6 +71,24 @@ export default function SubjectDetailPage() {
     onError: (error: Error) => {
       setUploadError(error.message);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    },
+  });
+
+  const deleteDocument = useMutation({
+    mutationFn: async (documentId: string) => {
+      const { error, response } = await api.DELETE("/subjects/{subject_id}/documents/{document_id}", {
+        params: { path: { subject_id: subjectId, document_id: documentId } },
+      });
+      // 204 No Content on success — openapi-fetch leaves `data` undefined for that,
+      // so `error` (not `data`) is what actually signals failure here.
+      if (error) throw new Error(friendlyDeleteError(response.status));
+    },
+    onSuccess: () => {
+      setDeleteError(null);
+      queryClient.invalidateQueries({ queryKey: ["subjects", subjectId, "documents"] });
+    },
+    onError: (error: Error) => {
+      setDeleteError(error.message);
     },
   });
 
@@ -139,6 +159,7 @@ export default function SubjectDetailPage() {
       {documentsQuery.data?.length === 0 && (
         <p className="text-muted-foreground">No documents yet — upload one above.</p>
       )}
+      {deleteError && <p className="mb-2 text-sm text-destructive">{deleteError}</p>}
       <ul className="flex flex-col gap-2">
         {documentsQuery.data?.map((doc) => (
           <li key={doc.id}>
@@ -148,6 +169,20 @@ export default function SubjectDetailPage() {
                 <Badge className="shrink-0" variant={documentStatusVariant(doc.status)}>
                   {doc.status}
                 </Badge>
+                <Button
+                  variant="destructive"
+                  size="icon-sm"
+                  className="shrink-0"
+                  aria-label={`Delete ${doc.filename}`}
+                  disabled={deleteDocument.isPending && deleteDocument.variables === doc.id}
+                  onClick={() => {
+                    if (window.confirm(`Delete "${doc.filename}"? This can't be undone.`)) {
+                      deleteDocument.mutate(doc.id);
+                    }
+                  }}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
               </CardContent>
             </Card>
           </li>
