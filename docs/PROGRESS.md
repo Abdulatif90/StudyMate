@@ -3,12 +3,13 @@
 > Current state of the StudyMate build. **Read this to resume work** after any break/reset.
 
 ## Current phase
-**Phase 0 — Setup: complete.** **Phase 1 — Core RAG: complete** — Subjects, documents
-(uploaded to R2, async-processed via Inngest with an auto-summary, deletable), Ask/RAG
-(streaming), Conversations, and the frontend for all of it are done. See "Next"
-(Phase 2+) and `docs/plan.md`. (This phase was previously marked complete without
-auto-summary, which `docs/plan.md` calls for as part of ingest — that gap is now
-closed; see the entry below. Cohere Rerank is the next increment.)
+**Phase 0 — Setup: complete.** **Phase 1 — Core RAG: genuinely complete** — Subjects,
+documents (uploaded to R2, async-processed via Inngest with an auto-summary,
+deletable), Ask/RAG (retrieve → Cohere Rerank → Claude, streaming), Conversations, and
+the frontend for all of it are done. See "Next" (Phase 2+) and `docs/plan.md`. (This
+phase was marked complete twice prematurely before actually being done — first without
+auto-summary, then without Rerank, both called for by `docs/plan.md`'s Phase 1 line;
+both gaps are now closed, see the two entries below. Phase 2 — Quiz — is next.)
 
 ## Done
 - [x] Repo skeleton + `.gitignore`
@@ -829,12 +830,54 @@ closed; see the entry below. Cohere Rerank is the next increment.)
     browser/Clerk auth available in this environment — same standing gap as every
     other frontend page here).
 
+- [x] Cohere Rerank in the Ask retrieval path — closes the last Phase 1 gap
+  (`docs/plan.md`'s Ask line is "retrieve → Cohere Rerank → Claude"; the Rerank step
+  had never actually been built).
+  - `documents/rerank.py` (new): `rerank(query, texts, top_n) -> list[(index,
+    relevance_score)]` via `rerank-v3.5` (Cohere's multilingual rerank model — same
+    multilingual reasoning as `embed-multilingual-v3.0`). Reuses
+    `embedding._get_client` (one Cohere `Client` supports both `.embed()` and
+    `.rerank()`) rather than duplicating the `COHERE_API_KEY` check. Confirmed the
+    real SDK signature/response shape by introspecting the installed package and a
+    real one-off call before writing any code against it. Any API/network failure →
+    `RerankError`.
+  - `service.search_chunks`: on the Postgres path, retrieves a **wider**
+    vector-similarity candidate pool (`RERANK_CANDIDATE_POOL = 30`, same
+    owner/subject/embedding-NOT-NULL filters — widening only changes the `LIMIT`),
+    then a new `_rerank_candidates(query, candidates, top_k)` helper reranks and cuts
+    down to `top_k` — only that final set reaches Claude, never the wider pool.
+    `_rerank_candidates` is pure Python over an already-fetched list (no DB/dialect
+    dependency) — directly unit-testable regardless of Postgres vs. SQLite. SQLite
+    branch (the whole offline suite) untouched — no vector ordering to rerank there.
+  - **Graceful degradation, decided in `_rerank_candidates`'s docstring**: a
+    `RerankError` must not break Ask (which already degrades gracefully everywhere)
+    — falls back to the pre-rerank vector-similarity order truncated to `top_k`,
+    same best-effort spirit as the auto-summary step above. `SourceChunk
+    .similarity_score` now means Cohere's `relevance_score` on the reranked path, or
+    raw cosine similarity on the fallback — documented since both mean "higher is
+    more relevant" but aren't on the same scale.
+  - `ask/service.py`/`prepare_ask_stream` needed no changes — both already call
+    `search_chunks` as the shared entry point.
+  - Tests: `test_rerank.py` (new, 6, Cohere client mocked directly — call shape,
+    index/score mapping, `top_n` capping, API-failure wrapping, and one test proving
+    the `COHERE_API_KEY` check is genuinely reused from `embedding.py`, not
+    duplicated). `test_search.py` (+4, `_rerank_candidates` pure-logic tests: reorder
+    by relevance score, `top_k` respected, `RerankError` falls back to vector order,
+    empty-candidates short-circuit). Existing live semantic-ranking test extended in
+    place to exercise the real rerank path. Backend **121 passed** (6 deselected
+    live, up from 112/6), `ruff` clean.
+  - **Live-verified end-to-end** two ways: the `-m live` suite (6 passed, Neon
+    confirmed clean); the full real pipeline — 4 real documents (2 on-topic, 2
+    off-topic) processed through the real service layer, then a real HTTP
+    `POST /subjects/{id}/ask` (auth dependency overridden) — real Cohere Rerank
+    scores clearly separated on-topic (0.75, 0.72) from off-topic (0.03, 0.02)
+    chunks, answer grounded with correct citations from both on-topic documents.
+    Cleaned up via real `DELETE` calls; Neon confirmed clean afterward.
+
 ## Next (Phase 2+)
-- Cohere Rerank (search_chunks → Cohere Rerank → Claude) in the Ask retrieval path —
-  next increment.
-- R2/Inngest/streaming/delete/auto-summary round out Phase 1 Core RAG. Next up per
-  `docs/plan.md`: quizzes, flashcards (SM-2), progress tracking, multilingual polish,
-  billing (Polar).
+- Phase 1 Core RAG is genuinely complete now (auto-summary + Rerank were the last two
+  gaps, both closed). Next up per `docs/plan.md`: quizzes, flashcards (SM-2), progress
+  tracking, multilingual polish, billing (Polar).
 - Still owed from this session: a real-browser click-through of the async
   upload/poll/delete flow with live Clerk auth (noted in the last several increments,
   never yet done — no browser available in this environment).

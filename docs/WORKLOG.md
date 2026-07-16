@@ -2,6 +2,72 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-17 — Cohere Rerank in the Ask retrieval path (Phase 1 genuinely complete)
+- `docs/plan.md`'s Phase 1 line is "Ask (retrieve → Cohere Rerank → Claude)" — vector
+  search and Ask existed, but the Rerank step between them was never built. This was
+  the last open Phase 1 item; Phase 2 (Quiz) starts next.
+- **`feat(backend)`**: `documents/rerank.py` (new, beside `embedding.py` — same Cohere
+  client concern): `rerank(query, texts, top_n) -> list[(index, relevance_score)]` via
+  `rerank-v3.5` (Cohere's multilingual rerank model — an English-only one would
+  degrade non-English subjects, same reasoning as `embed-multilingual-v3.0`). Reuses
+  `embedding._get_client` directly rather than duplicating the `COHERE_API_KEY` check —
+  one `Client` instance already supports both `.embed()` and `.rerank()`. Confirmed the
+  real SDK signature/response shape (`co.rerank(model=, query=, documents=, top_n=)`,
+  `.results[i].index`/`.relevance_score`) by introspecting the installed `cohere`
+  package and a real one-off call before writing any code against it — the real call
+  correctly ranked a photosynthesis sentence over an unrelated one (0.70 vs. 0.02).
+  Any API/network failure → `RerankError`.
+  - `documents/service.py`: `search_chunks` now retrieves a **wider** vector-similarity
+    candidate pool (`RERANK_CANDIDATE_POOL = 30`, same owner/subject/embedding-NOT-NULL
+    filters as before — widening only changes the `LIMIT`) on the Postgres path, then
+    hands it to a new `_rerank_candidates(query, candidates, top_k)` helper, which
+    reranks and cuts down to `top_k` — that's what actually reaches Claude, never the
+    wider pool. `_rerank_candidates` is pure Python over an already-fetched list (no
+    DB/dialect dependency), so it's directly unit-testable regardless of Postgres vs.
+    SQLite. The SQLite branch (used by the whole offline test suite) is untouched —
+    `<=>` is Postgres-only, so there's no vector ordering to rerank there in the first
+    place, same as before this increment.
+  - **Graceful degradation, decided and documented in `_rerank_candidates`'s
+    docstring**: a `RerankError` must not break Ask, which already degrades
+    gracefully everywhere (`ask/service.py`). On failure, falls back to the
+    pre-rerank vector-similarity order truncated to `top_k` (not an error) — same
+    best-effort spirit as `process_document`'s summary step. The returned
+    `similarity_score` means Cohere's `relevance_score` on the reranked path, or raw
+    cosine similarity on the fallback — documented on `ask/schemas.py`'s
+    `SourceChunk.similarity_score` since both are "higher = more relevant" but not on
+    the same scale.
+  - `ask/service.py`/`prepare_ask_stream` needed **no changes** — both already call
+    `search_chunks` as the shared entry point, confirmed by reading both call sites;
+    the reranked/graceful-fallback behavior is transparent to them.
+- Tests: `test_rerank.py` (new, 6 — Cohere client mocked directly, same pattern as
+  `test_embedding.py`: empty-list short-circuit, call shape, index/score mapping,
+  `top_n` capped at input length, API-failure wrapping, and one test proving the
+  `COHERE_API_KEY` check is genuinely *reused* from `embedding.py` rather than
+  duplicated — patches `rerank._get_client` back to the real
+  `embedding._get_client` and confirms the same `RuntimeError`).
+  `test_search.py` (+4, `_rerank_candidates` — pure logic, no DB: reorders by
+  Cohere's relevance score, `top_k` respected, a forced `RerankError` falls back to
+  the original vector order untouched, empty candidates short-circuit without
+  calling rerank). Existing live semantic-ranking test extended in place (per the
+  task's ask to extend rather than duplicate fixtures) —
+  `test_search_chunks_orders_by_relevance_via_real_rerank` now exercises the full
+  real retrieve→rerank pipeline, not just raw cosine order. Backend **121 passed**
+  (6 deselected live, up from 112/6), `ruff check` clean.
+- **Live-verified end-to-end** two ways: (1) `-m live` suite (6 passed, including the
+  extended real-rerank test) — Neon confirmed clean afterward. (2) The full real
+  pipeline: uploaded 4 real documents (2 on-topic photosynthesis docs, 2 off-topic)
+  through the real service layer (real R2/Cohere), then hit the real
+  `POST /subjects/{id}/ask` endpoint over real HTTP (auth dependency overridden — no
+  real Clerk JWT outside a browser, same technique as prior live-HTTP scripts) —
+  real Cohere Rerank scores clearly separated on-topic (0.75, 0.72) from off-topic
+  (0.03, 0.02) chunks, and the answer was grounded with correct
+  `(filename, chunk N)` citations from both on-topic documents. Cleaned up via real
+  `DELETE` calls (documents, subject, conversation); Neon confirmed clean afterward.
+  Throwaway script, not committed.
+- `docs/PROGRESS.md`: Phase 1 is now genuinely complete — Rerank was the last item;
+  the "Phase 1 complete" claim before the auto-summary increment was premature twice
+  over. Phase 2 (Quiz) is next.
+
 ## 2026-07-17 — Auto-summary on document upload (Phase 1 gap closed)
 - `docs/plan.md`'s Phase 1 ingest step was "chunk → Cohere embed → pgvector +
   auto-summary", but auto-summary was never actually built — `PROGRESS.md`'s "Phase 1
