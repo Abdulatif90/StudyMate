@@ -25,3 +25,6 @@ pgvector>=0.3
 
 # Generation (Claude) — Ask endpoint
 anthropic>=0.110
+
+# Async jobs — move document parse/chunk/embed off the request path
+inngest>=0.5

@@ -26,7 +26,7 @@ async def create_document(
 ) -> Document:
     raw = await file.read()
     try:
-        return service.create_document(
+        document = service.create_document(
             session,
             owner_id,
             subject_id,
@@ -40,6 +40,12 @@ async def create_document(
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, str(exc)) from exc
     except service.FileTooLargeError as exc:
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, str(exc)) from exc
+
+    # Only after the row is committed (create_document above) — the job looks the
+    # document up by id, so the event must not race ahead of the insert. Returns a
+    # `pending` document immediately; the Inngest job resolves it to ready/failed.
+    service.enqueue_document_processing(document)
+    return document
 
 
 @router.get("", response_model=list[DocumentRead])

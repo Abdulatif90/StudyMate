@@ -195,8 +195,11 @@ def test_search_chunks_orders_by_similarity_against_real_neon():
             ),
             "html.txt": b"HTML tags define the structure of a web page for browsers to render.",
         }
-        created_docs = [
-            documents_service.create_document(
+        # Upload is async now — create_document only inserts a pending row; process
+        # the document (what the Inngest job does) so its chunks/embeddings exist.
+        created_docs = []
+        for filename, content in topics.items():
+            document = documents_service.create_document(
                 session,
                 owner_id,
                 subject.id,
@@ -204,8 +207,8 @@ def test_search_chunks_orders_by_similarity_against_real_neon():
                 content_type="text/plain",
                 raw=content,
             )
-            for filename, content in topics.items()
-        ]
+            documents_service.process_document(session, owner_id, document.id)
+            created_docs.append(document)
 
         try:
             results = documents_service.search_chunks(

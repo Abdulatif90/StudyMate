@@ -6,12 +6,15 @@ Docs:         http://localhost:8000/docs
 
 from __future__ import annotations
 
+import inngest.fast_api
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
+from app.core.inngest_client import get_inngest_client
 from app.modules.ask.router import conversations_router
 from app.modules.ask.router import router as ask_router
+from app.modules.documents.jobs import process_document_fn
 from app.modules.documents.router import router as documents_router
 from app.modules.subjects.router import router as subjects_router
 
@@ -34,6 +37,9 @@ app.include_router(subjects_router)
 app.include_router(documents_router)
 app.include_router(ask_router)
 app.include_router(conversations_router)
+
+# Serve the Inngest functions at /api/inngest (Inngest calls back here to run jobs).
+inngest.fast_api.serve(app, get_inngest_client(), [process_document_fn])
 
 
 @app.get("/health")

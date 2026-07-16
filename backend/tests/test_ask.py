@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 import json
+import uuid
 from unittest.mock import MagicMock
 
 import pytest
@@ -74,6 +75,13 @@ def _mock_cohere(monkeypatch):
     monkeypatch.setattr(documents_service, "embed_texts", _fake_embed_texts)
 
 
+@pytest.fixture(autouse=True)
+def _mock_inngest(monkeypatch):
+    # Upload emits an Inngest event now; mock it so these tests never hit the network.
+    # _upload_txt processes the document explicitly instead (see below).
+    monkeypatch.setattr(documents_service, "enqueue_document_processing", lambda document: None)
+
+
 client = TestClient(app)
 _MISSING_ID = "00000000-0000-0000-0000-000000000000"
 
@@ -87,10 +95,16 @@ def _create_subject(name: str = "Biology") -> str:
 def _upload_txt(
     subject_id: str, content: bytes = b"Photosynthesis converts sunlight into energy."
 ) -> dict:
+    """Upload a document AND run its processing synchronously — upload alone now only
+    creates a `pending` row (processing is async), but the ask tests need the chunks
+    to exist to have anything to retrieve."""
     files = {"file": ("notes.txt", io.BytesIO(content), "text/plain")}
     response = client.post(f"/subjects/{subject_id}/documents", files=files)
     assert response.status_code == 201
-    return response.json()
+    document = response.json()
+    with Session(_engine) as session:
+        documents_service.process_document(session, _TEST_USER, uuid.UUID(document["id"]))
+    return document
 
 
 def test_ask_returns_answer_and_sources(monkeypatch):
@@ -512,6 +526,9 @@ def test_ask_end_to_end_against_real_neon_and_claude():
                 b"chloroplasts. Chlorophyll absorbs sunlight."
             ),
         )
+        # Upload is async now — run the processing (what the Inngest job does) so the
+        # document's chunks/embeddings exist for retrieval.
+        documents_service.process_document(session, owner_id, document.id)
 
         try:
             response = ask_question(session, owner_id, subject.id, "How do plants use sunlight?")
@@ -573,6 +590,9 @@ def test_ask_stream_end_to_end_against_real_neon_cohere_and_claude():
                 b"chloroplasts. Chlorophyll absorbs sunlight."
             ),
         )
+        # Upload is async now — run the processing (what the Inngest job does) so the
+        # document's chunks/embeddings exist for retrieval.
+        documents_service.process_document(session, owner_id, document.id)
 
         conversation_id = None
         try:

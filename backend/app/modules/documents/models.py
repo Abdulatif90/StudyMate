@@ -1,10 +1,11 @@
 """Document — an uploaded file within a Subject.
 
 `owner_id` mirrors `Subject.owner_id` (same tenant-scoping discipline, enforced again
-here rather than relied on transitively through `subject_id`). `status` anticipates the
-future async ingest pipeline (Inngest): once that exists, uploads will start `pending`
-and a background job will move them to `ready`/`failed`. For now (no async pipeline
-yet) `service.py` resolves straight to `ready`/`failed` within the same request.
+here rather than relied on transitively through `subject_id`). `status` drives the
+async ingest pipeline (Inngest): uploads start `pending`, and a background job
+(`documents.jobs`) parses/chunks/embeds and moves them to `ready`/`failed` — see
+`service.create_document` (sync, returns `pending`) and `service.process_document`
+(the job's work).
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import JSON
+from sqlalchemy import JSON, LargeBinary
 from sqlalchemy import Enum as SAEnum
 from sqlmodel import Column, Field, SQLModel
 
@@ -44,6 +45,14 @@ class Document(SQLModel, table=True):
     status: DocumentStatus = Field(
         default=DocumentStatus.PENDING, sa_column=Column(_status_column_type, nullable=False)
     )
+    # The uploaded file's raw bytes, stashed here only until the async processing job
+    # (parse/chunk/embed) consumes them, then cleared back to NULL. This is a
+    # deliberate interim: the job runs in a *separate* request (Inngest calls back
+    # over HTTP), so it needs the bytes from somewhere shared across app instances,
+    # and the actual file isn't persisted anywhere yet — R2 is a later increment. The
+    # event payload can't carry them (Inngest's size limit vs. 20 MB PDFs), so a
+    # temporary BYTEA column is the only shared store available until R2 replaces it.
+    raw_content: bytes | None = Field(default=None, sa_column=Column(LargeBinary, nullable=True))
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

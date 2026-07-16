@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     clerk_issuer: str | None = None
     cohere_api_key: str | None = None
     anthropic_api_key: str | None = None
+    # Inngest (async document processing). Optional so the app/tests boot without
+    # them; the event-send path raises a clear error at point of use if unset (see
+    # app/core/inngest_client.py).
+    inngest_event_key: str | None = None
+    inngest_signing_key: str | None = None
 
     # Comma-separated (not JSON) so a plain `.env` value like
     # `CORS_ORIGINS=http://localhost:3000,https://app.example.com` just works —

@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import uuid
 
-from sqlmodel import Session, select
+import inngest
+from sqlmodel import Session, delete, select
 
+from app.core.inngest_client import get_inngest_client, require_event_key
 from app.modules.documents.chunking import chunk_text
 from app.modules.documents.embedding import EmbeddingError, embed_query, embed_texts
 from app.modules.documents.models import Document, DocumentChunk, DocumentStatus
@@ -21,6 +23,9 @@ from app.modules.documents.parsing import (
 from app.modules.subjects.service import get_subject
 
 MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB
+
+# Emitted by create_document, consumed by the Inngest function in documents.jobs.
+DOCUMENT_UPLOADED_EVENT = "document/uploaded"
 
 
 class SubjectNotFoundError(Exception):
@@ -52,6 +57,11 @@ def create_document(
     content_type: str,
     raw: bytes,
 ) -> Document:
+    """Synchronous, on the request path: validate ownership + the file, insert a
+    `pending` Document row (stashing the raw bytes for the async job), and return
+    immediately. The heavy work (parse/chunk/embed) happens later in
+    `process_document`, triggered by the `document/uploaded` event.
+    """
     require_owned_subject(session, owner_id, subject_id)
 
     if content_type not in SUPPORTED_CONTENT_TYPES:
@@ -59,11 +69,71 @@ def create_document(
     if len(raw) > MAX_UPLOAD_SIZE_BYTES:
         raise FileTooLargeError(f"File exceeds {MAX_UPLOAD_SIZE_BYTES} byte limit")
 
-    # A missing COHERE_API_KEY raises RuntimeError from embed_texts, deliberately NOT
-    # caught here — that's a deployment mistake, not a per-document problem, and should
-    # fail loudly rather than quietly marking documents "failed" (see embedding.py).
+    document = Document(
+        subject_id=subject_id,
+        owner_id=owner_id,
+        filename=filename,
+        content_type=content_type,
+        status=DocumentStatus.PENDING,
+        raw_content=raw,
+    )
+    session.add(document)
+    session.commit()
+    session.refresh(document)
+    return document
+
+
+def enqueue_document_processing(document: Document) -> None:
+    """Emit the `document/uploaded` event so the Inngest job picks the document up.
+    Kept separate from `create_document` so the DB insert stays trivially testable
+    without Inngest, and so the router can enqueue only after the row is committed.
+    """
+    require_event_key()
+    get_inngest_client().send_sync(
+        inngest.Event(
+            name=DOCUMENT_UPLOADED_EVENT,
+            data={"document_id": str(document.id), "owner_id": document.owner_id},
+        )
+    )
+
+
+def get_document_by_id(session: Session, owner_id: str, document_id: uuid.UUID) -> Document | None:
+    """Owner-scoped lookup by id alone (no subject_id) — for the async job, which only
+    carries the document_id and owner_id in its event payload."""
+    return session.exec(
+        select(Document).where(Document.id == document_id, Document.owner_id == owner_id)
+    ).first()
+
+
+def process_document(session: Session, owner_id: str, document_id: uuid.UUID) -> Document | None:
+    """The async job's work: parse/chunk/embed the stashed raw bytes and resolve the
+    document to `ready`/`failed`. Returns the document, or None if it no longer exists
+    (deleted between upload and processing) — the caller treats that as a no-op.
+
+    Idempotent / safe to retry (Inngest retries on unhandled failure):
+    - If `raw_content` is already NULL, the job has already run to completion — return
+      the document unchanged rather than reprocessing empty bytes.
+    - Otherwise delete any chunks from a previous attempt before re-inserting, so a
+      retried parse/embed can't leave duplicate DocumentChunk rows.
+
+    A failed parse or embed (`DocumentParseError`/`EmbeddingError`) sets `status:
+    failed` with zero chunks — the same invariant the old synchronous path guaranteed.
+    A missing COHERE_API_KEY raises RuntimeError instead (a deployment mistake, not a
+    per-document problem): the job fails loudly and Inngest retries, leaving the
+    document `pending` rather than masquerading as a document-level `failed`.
+    """
+    document = get_document_by_id(session, owner_id, document_id)
+    if document is None:
+        return None
+    if document.raw_content is None:
+        return document
+
+    # Clear chunks from any prior attempt (idempotency on retry).
+    session.exec(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
+    session.commit()
+
     try:
-        text = extract_text(content_type, raw)
+        text = extract_text(document.content_type, document.raw_content)
         chunks_text = chunk_text(text)
         embeddings = embed_texts(chunks_text)
         parse_status = DocumentStatus.READY
@@ -72,35 +142,27 @@ def create_document(
         embeddings = []
         parse_status = DocumentStatus.FAILED
 
-    document = Document(
-        subject_id=subject_id,
-        owner_id=owner_id,
-        filename=filename,
-        content_type=content_type,
-        status=parse_status,
-    )
-    session.add(document)
-    session.commit()
-    session.refresh(document)
-
-    # Empty for a failed parse, a failed embedding call, or genuinely empty extraction
-    # (e.g. a scanned PDF with no text layer) — no special-casing needed, the loop is
-    # just a no-op and the document is still created with its status reflecting why.
+    # Empty for a failed parse/embed or genuinely empty extraction (e.g. a scanned PDF
+    # with no text layer) — no special-casing needed, the loop is just a no-op.
     # `strict=True` catches a mismatched-length response from Cohere immediately
     # instead of silently pairing the wrong text with the wrong vector.
     for index, (chunk_content, vector) in enumerate(zip(chunks_text, embeddings, strict=True)):
         session.add(
             DocumentChunk(
                 document_id=document.id,
-                subject_id=subject_id,
+                subject_id=document.subject_id,
                 owner_id=owner_id,
                 chunk_index=index,
                 text=chunk_content,
                 embedding=vector,
             )
         )
-    session.commit()
 
+    document.status = parse_status
+    document.raw_content = None  # done with the bytes — don't keep files in the DB
+    session.add(document)
+    session.commit()
+    session.refresh(document)
     return document
 
 
