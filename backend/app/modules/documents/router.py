@@ -71,3 +71,14 @@ def get_document(
     if document is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
     return document
+
+
+@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document(
+    subject_id: uuid.UUID,
+    document_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    owner_id: str = Depends(get_current_user_id),
+) -> None:
+    if not service.delete_document(session, owner_id, subject_id, document_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")

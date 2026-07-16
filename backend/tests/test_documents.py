@@ -18,12 +18,14 @@ import uuid
 from unittest.mock import Mock
 
 import pytest
+from botocore.exceptions import ClientError
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.core import r2_client
 from app.core.auth import get_current_user_id
+from app.core.config import get_settings
 from app.core.db import get_session
 from app.main import app
 from app.modules.documents import service as documents_service
@@ -74,9 +76,17 @@ def _mock_inngest(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _mock_r2(monkeypatch):
+def _mock_r2(request, monkeypatch):
     """In-memory stand-in for R2 — put/get/delete against a dict, no network. Returned
-    so tests can assert the upload path actually stored the bytes."""
+    so tests can assert the upload path actually stored the bytes.
+
+    Skipped for `@pytest.mark.live` tests — those deliberately want the real
+    `r2_client` functions so they can round-trip through the real bucket.
+    """
+    if request.node.get_closest_marker("live"):
+        yield None
+        return
+
     store: dict[str, bytes] = {}
 
     def put(key, data, content_type):
@@ -85,6 +95,7 @@ def _mock_r2(monkeypatch):
     monkeypatch.setattr(r2_client, "put_object", put)
     monkeypatch.setattr(r2_client, "get_object", lambda key: store[key])
     monkeypatch.setattr(r2_client, "delete_object", lambda key: store.pop(key, None))
+    yield store
     return store
 
 
@@ -362,3 +373,153 @@ def test_process_keeps_the_r2_object_after_processing(_mock_r2):
 def test_process_missing_document_is_a_noop():
     # e.g. the document was deleted between upload and the job running
     assert _process(_TEST_USER, _MISSING_ID) is None
+
+
+# --- Delete (DELETE /subjects/{subject_id}/documents/{document_id}) ---------
+
+
+def test_delete_removes_the_document_its_chunks_and_its_r2_object(_mock_r2):
+    subject_id = _create_subject()
+    created = client.post(f"/subjects/{subject_id}/documents", files=_txt_file()).json()
+    _process(_TEST_USER, created["id"])
+    key = f"{_TEST_USER}/{created['id']}/notes.txt"
+    assert key in _mock_r2
+    assert len(_chunk_texts(_TEST_USER, created["id"])) == 1
+
+    response = client.delete(f"/subjects/{subject_id}/documents/{created['id']}")
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert client.get(f"/subjects/{subject_id}/documents/{created['id']}").status_code == 404
+    assert _chunk_texts(_TEST_USER, created["id"]) == []
+    assert key not in _mock_r2
+
+
+def test_delete_a_pending_document_with_no_chunks_yet():
+    # not processed yet — no chunks exist, must still delete cleanly
+    subject_id = _create_subject()
+    created = client.post(f"/subjects/{subject_id}/documents", files=_txt_file()).json()
+    assert created["status"] == "pending"
+
+    response = client.delete(f"/subjects/{subject_id}/documents/{created['id']}")
+
+    assert response.status_code == 204
+    assert client.get(f"/subjects/{subject_id}/documents/{created['id']}").status_code == 404
+
+
+def test_delete_returns_404_when_document_missing():
+    subject_id = _create_subject()
+    response = client.delete(f"/subjects/{subject_id}/documents/{_MISSING_ID}")
+    assert response.status_code == 404
+
+
+def test_delete_returns_404_for_missing_subject():
+    response = client.delete(f"/subjects/{_MISSING_ID}/documents/{_MISSING_ID}")
+    assert response.status_code == 404
+
+
+def test_delete_returns_404_for_another_owners_document_and_leaves_it_untouched(_mock_r2):
+    subject_id = _create_subject()
+    created = client.post(f"/subjects/{subject_id}/documents", files=_txt_file()).json()
+    _process(_TEST_USER, created["id"])
+    key = f"{_TEST_USER}/{created['id']}/notes.txt"
+
+    app.dependency_overrides[get_current_user_id] = lambda: "someone_else"
+    response = client.delete(f"/subjects/{subject_id}/documents/{created['id']}")
+    assert response.status_code == 404
+
+    # untouched: still fetchable (as the real owner), chunks intact, R2 object intact
+    app.dependency_overrides[get_current_user_id] = lambda: _TEST_USER
+    assert client.get(f"/subjects/{subject_id}/documents/{created['id']}").status_code == 200
+    assert len(_chunk_texts(_TEST_USER, created["id"])) == 1
+    assert key in _mock_r2
+
+
+def test_delete_from_a_different_subject_returns_404():
+    subject_a = _create_subject(name="Bio")
+    subject_b = _create_subject(name="Chem")
+    created = client.post(f"/subjects/{subject_a}/documents", files=_txt_file()).json()
+
+    response = client.delete(f"/subjects/{subject_b}/documents/{created['id']}")
+
+    assert response.status_code == 404
+    assert client.get(f"/subjects/{subject_a}/documents/{created['id']}").status_code == 200
+
+
+def test_delete_tolerates_an_r2_failure_and_still_removes_the_db_row(monkeypatch):
+    # The DB delete has already committed by the time the R2 delete is attempted (see
+    # service.delete_document's docstring) — a transient R2 failure must not turn an
+    # already-successful deletion into a 500; it's logged and tolerated instead.
+    monkeypatch.setattr(
+        r2_client, "delete_object", lambda key: (_ for _ in ()).throw(RuntimeError("R2 down"))
+    )
+    subject_id = _create_subject()
+    created = client.post(f"/subjects/{subject_id}/documents", files=_txt_file()).json()
+
+    response = client.delete(f"/subjects/{subject_id}/documents/{created['id']}")
+
+    assert response.status_code == 204
+    assert client.get(f"/subjects/{subject_id}/documents/{created['id']}").status_code == 404
+
+
+def test_delete_tolerates_a_document_with_no_r2_key(_mock_r2):
+    # e.g. a legacy row from before r2_object_key existed — delete_document must not
+    # crash trying to delete a None key.
+    subject_id = _create_subject()
+    created = client.post(f"/subjects/{subject_id}/documents", files=_txt_file()).json()
+    with Session(_engine) as session:
+        doc = documents_service.get_document_by_id(session, _TEST_USER, uuid.UUID(created["id"]))
+        doc.r2_object_key = None
+        session.add(doc)
+        session.commit()
+
+    response = client.delete(f"/subjects/{subject_id}/documents/{created['id']}")
+
+    assert response.status_code == 204
+
+
+_HAS_REAL_DB_AND_R2 = bool(get_settings().database_url) and bool(get_settings().r2_bucket_name)
+
+
+@pytest.mark.live
+@pytest.mark.skipif(
+    not _HAS_REAL_DB_AND_R2, reason="requires DATABASE_URL (real Neon) and real R2 credentials"
+)
+def test_delete_document_removes_the_real_r2_object():
+    """Live end-to-end: real Neon + real R2 — confirms the object is actually gone
+    from the real bucket after delete_document, not just that the DB row is gone."""
+    from app.core.db import get_engine
+    from app.modules.subjects import service as subjects_service
+    from app.modules.subjects.schemas import SubjectCreate
+
+    r2_client._get_client.cache_clear()
+    engine = get_engine()
+    owner_id = "live_smoke_test_user_delete"
+    with Session(engine) as session:
+        subject = subjects_service.create_subject(
+            session, owner_id, SubjectCreate(name="Delete Smoke Test")
+        )
+        document = documents_service.create_document(
+            session,
+            owner_id,
+            subject.id,
+            filename="delete-me.txt",
+            content_type="text/plain",
+            raw=b"This document will be deleted.",
+        )
+        r2_object_key = document.r2_object_key
+        assert r2_object_key is not None
+        assert r2_client.get_object(r2_object_key)  # confirm it's really there first
+
+        try:
+            deleted = documents_service.delete_document(session, owner_id, subject.id, document.id)
+            assert deleted is True
+            remaining = documents_service.get_document(session, owner_id, subject.id, document.id)
+            assert remaining is None
+
+            with pytest.raises(ClientError):
+                r2_client.get_object(r2_object_key)  # confirmed gone from real R2
+        finally:
+            session.delete(subject)
+            session.commit()
+    r2_client._get_client.cache_clear()

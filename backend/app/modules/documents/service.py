@@ -6,6 +6,7 @@ caller (reusing subjects.service — a document can't be more accessible than it
 
 from __future__ import annotations
 
+import logging
 import uuid
 
 import inngest
@@ -112,6 +113,58 @@ def get_document_by_id(session: Session, owner_id: str, document_id: uuid.UUID) 
     return session.exec(
         select(Document).where(Document.id == document_id, Document.owner_id == owner_id)
     ).first()
+
+
+def delete_document(
+    session: Session, owner_id: str, subject_id: uuid.UUID, document_id: uuid.UUID
+) -> bool:
+    """Delete a document and everything it owns: its `DocumentChunk` rows, its R2
+    object, and the `Document` row itself. Returns `False` (router → 404) if the
+    document doesn't exist, isn't owned by `owner_id`, or isn't in `subject_id` — same
+    owner+subject scoping as `get_document`, so a non-owner can't delete (or even
+    detect the existence of) another tenant's document.
+
+    Order, and why: DB rows are deleted and committed *before* the R2 object. If the DB
+    delete fails/rolls back, the R2 object is untouched (still consistent — nothing was
+    removed that the DB still claims exists). Deleting R2 first would risk the reverse:
+    a DB-delete failure after a successful R2 delete would leave a `Document` row
+    pointing at a now-missing object. Once the DB delete has committed, there is no
+    longer any DB row to "point at" anything, so the R2 delete afterward is best-effort
+    and its exceptions are deliberately swallowed (not re-raised) — `delete_object` is
+    idempotent, and a transient R2 failure at that point only leaves a harmless
+    orphaned object (a storage-cost cleanup debt, not a dangling/broken reference,
+    since nothing in the DB references it anymore); it must not turn an
+    already-successful document deletion into a 500 for the caller.
+
+    Chunks are deleted (and flushed) *before* the Document row for the same reason
+    `ask.service.delete_conversation` flushes before its parent delete: there's no
+    ORM-level `relationship()`/cascade in this codebase, so SQLAlchemy won't order the
+    deletes for you — without the flush, it can emit `DELETE FROM documents` before
+    `DELETE FROM document_chunks` and hit the FK constraint.
+    """
+    document = get_document(session, owner_id, subject_id, document_id)
+    if document is None:
+        return False
+
+    session.exec(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
+    session.flush()
+    r2_object_key = document.r2_object_key
+    session.delete(document)
+    session.commit()
+
+    if r2_object_key is not None:
+        try:
+            r2_client.delete_object(r2_object_key)
+        except Exception:
+            # Best-effort — see the "Order, and why" note above. The document is
+            # already gone from the DB (the source of truth for the app), so a
+            # transient R2 failure here is logged and tolerated, not surfaced as a
+            # failed delete.
+            logging.getLogger(__name__).warning(
+                "Failed to delete R2 object %s for deleted document %s", r2_object_key, document_id
+            )
+
+    return True
 
 
 def process_document(session: Session, owner_id: str, document_id: uuid.UUID) -> Document | None:
