@@ -3,12 +3,12 @@
 Mirrors tests/test_subjects.py's isolation pattern (see there for why overrides are
 scoped per-test rather than at import time).
 
-Processing is async now: upload validates + inserts a `pending` row and emits an
-Inngest event, then a background job (service.process_document) parses/chunks/embeds
-and resolves the document to ready/failed. Tests exercise both halves separately —
-the Inngest event-send is mocked (`_mock_inngest`, autouse — no network) and the job
-is driven by calling `process_document` directly (`_process`). Cohere is mocked
-everywhere too (`_mock_cohere`, autouse).
+Processing is async now: upload validates + uploads the bytes to R2 + inserts a
+`pending` row, then a background job (service.process_document) fetches from R2 and
+parses/chunks/embeds, resolving the document to ready/failed. Tests exercise both
+halves separately — Inngest is mocked (`_mock_inngest`), R2 is an in-memory fake
+(`_mock_r2`), Cohere is mocked (`_mock_cohere`) — all autouse, so no test here makes
+a network call. The job is driven by calling `process_document` directly (`_process`).
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
+from app.core import r2_client
 from app.core.auth import get_current_user_id
 from app.core.db import get_session
 from app.main import app
@@ -70,6 +71,21 @@ def _mock_inngest(monkeypatch):
     enqueue = Mock()
     monkeypatch.setattr(documents_service, "enqueue_document_processing", enqueue)
     return enqueue
+
+
+@pytest.fixture(autouse=True)
+def _mock_r2(monkeypatch):
+    """In-memory stand-in for R2 — put/get/delete against a dict, no network. Returned
+    so tests can assert the upload path actually stored the bytes."""
+    store: dict[str, bytes] = {}
+
+    def put(key, data, content_type):
+        store[key] = data
+
+    monkeypatch.setattr(r2_client, "put_object", put)
+    monkeypatch.setattr(r2_client, "get_object", lambda key: store[key])
+    monkeypatch.setattr(r2_client, "delete_object", lambda key: store.pop(key, None))
+    return store
 
 
 client = TestClient(app)
@@ -122,6 +138,16 @@ def test_upload_returns_pending_and_enqueues_processing(_mock_inngest):
     assert "owner_id" not in body
     # the upload path emits the event exactly once, after the row is committed
     _mock_inngest.assert_called_once()
+
+
+def test_upload_stores_the_file_in_r2_under_an_owner_scoped_key(_mock_r2):
+    subject_id = _create_subject()
+
+    created = client.post(f"/subjects/{subject_id}/documents", files=_txt_file(b"hi")).json()
+
+    # exactly one object stored, keyed by {owner}/{document_id}/{filename}
+    assert list(_mock_r2) == [f"{_TEST_USER}/{created['id']}/notes.txt"]
+    assert _mock_r2[f"{_TEST_USER}/{created['id']}/notes.txt"] == b"hi"
 
 
 def test_upload_does_no_processing_on_the_request_path():
@@ -303,24 +329,10 @@ def test_process_empty_document_embeds_nothing(monkeypatch):
     embed_spy.assert_called_once_with([])
 
 
-def test_process_is_idempotent_after_success():
-    """A retry after the job already completed is a no-op — raw_content was cleared,
-    so reprocessing neither errors nor duplicates chunks."""
-    subject_id = _create_subject()
-    created = client.post(f"/subjects/{subject_id}/documents", files=_txt_file()).json()
-
-    _process(_TEST_USER, created["id"])
-    assert len(_chunk_texts(_TEST_USER, created["id"])) == 1
-
-    # second run (Inngest retry after a successful-but-unacked run)
-    document = _process(_TEST_USER, created["id"])
-    assert document.status.value == "ready"
-    assert len(_chunk_texts(_TEST_USER, created["id"])) == 1  # not doubled
-
-
-def test_process_retry_reprocesses_without_duplicate_chunks():
-    """A retry after a *partial* attempt (raw_content still present) deletes the prior
-    attempt's chunks before re-inserting, so it can't accumulate duplicates."""
+def test_process_run_twice_does_not_duplicate_chunks():
+    """Re-running the job (Inngest retry) re-fetches from R2 and deletes the prior
+    attempt's chunks before re-inserting, so chunks never accumulate — the byte source
+    (R2) is unchanged, so this holds whether the last attempt fully or partly ran."""
     subject_id = _create_subject()
     long_text = " ".join(f"This is sentence number {i}." for i in range(200)).encode()
     files = {"file": ("long.txt", io.BytesIO(long_text), "text/plain")}
@@ -330,16 +342,21 @@ def test_process_retry_reprocesses_without_duplicate_chunks():
     first_count = len(_chunk_texts(_TEST_USER, created["id"]))
     assert first_count > 1
 
-    # Simulate a retry where the previous attempt didn't clear raw_content (e.g. it
-    # raised after inserting chunks): restore the bytes, then reprocess.
-    with Session(_engine) as session:
-        doc = documents_service.get_document_by_id(session, _TEST_USER, uuid.UUID(created["id"]))
-        doc.raw_content = long_text
-        session.add(doc)
-        session.commit()
+    document = _process(_TEST_USER, created["id"])  # second run
+    assert document.status.value == "ready"
+    assert len(_chunk_texts(_TEST_USER, created["id"])) == first_count  # not doubled
 
+
+def test_process_keeps_the_r2_object_after_processing(_mock_r2):
+    """R2 is the file store now (not a temp stash) — the object stays after processing,
+    so the document can be re-processed."""
+    subject_id = _create_subject()
+    created = client.post(f"/subjects/{subject_id}/documents", files=_txt_file(b"keep me")).json()
+
+    key = f"{_TEST_USER}/{created['id']}/notes.txt"
+    assert key in _mock_r2
     _process(_TEST_USER, created["id"])
-    assert len(_chunk_texts(_TEST_USER, created["id"])) == first_count  # deleted-then-reinserted
+    assert key in _mock_r2  # still there after processing
 
 
 def test_process_missing_document_is_a_noop():

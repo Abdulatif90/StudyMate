@@ -11,6 +11,7 @@ import uuid
 import inngest
 from sqlmodel import Session, delete, select
 
+from app.core import r2_client
 from app.core.inngest_client import get_inngest_client, require_event_key
 from app.modules.documents.chunking import chunk_text
 from app.modules.documents.embedding import EmbeddingError, embed_query, embed_texts
@@ -57,10 +58,12 @@ def create_document(
     content_type: str,
     raw: bytes,
 ) -> Document:
-    """Synchronous, on the request path: validate ownership + the file, insert a
-    `pending` Document row (stashing the raw bytes for the async job), and return
-    immediately. The heavy work (parse/chunk/embed) happens later in
-    `process_document`, triggered by the `document/uploaded` event.
+    """Synchronous, on the request path: validate ownership + the file, upload the
+    bytes to R2 under an owner-scoped key, insert a `pending` Document row pointing at
+    that object, and return immediately. The heavy work (parse/chunk/embed) happens
+    later in `process_document`, triggered by the `document/uploaded` event.
+
+    Size is validated (below) *before* the R2 upload — never upload then reject.
     """
     require_owned_subject(session, owner_id, subject_id)
 
@@ -69,14 +72,20 @@ def create_document(
     if len(raw) > MAX_UPLOAD_SIZE_BYTES:
         raise FileTooLargeError(f"File exceeds {MAX_UPLOAD_SIZE_BYTES} byte limit")
 
+    # Build the row (its id is assigned now, via the model default) so the R2 key can
+    # embed it, then upload to R2 *before* committing — if the upload fails, nothing is
+    # persisted (no pending row pointing at a missing object). A DB failure after a
+    # successful upload is the rarer path and would leave one orphaned R2 object.
     document = Document(
         subject_id=subject_id,
         owner_id=owner_id,
         filename=filename,
         content_type=content_type,
         status=DocumentStatus.PENDING,
-        raw_content=raw,
     )
+    document.r2_object_key = r2_client.build_object_key(owner_id, document.id, filename)
+    r2_client.put_object(document.r2_object_key, raw, content_type)
+
     session.add(document)
     session.commit()
     session.refresh(document)
@@ -106,34 +115,38 @@ def get_document_by_id(session: Session, owner_id: str, document_id: uuid.UUID) 
 
 
 def process_document(session: Session, owner_id: str, document_id: uuid.UUID) -> Document | None:
-    """The async job's work: parse/chunk/embed the stashed raw bytes and resolve the
-    document to `ready`/`failed`. Returns the document, or None if it no longer exists
-    (deleted between upload and processing) — the caller treats that as a no-op.
+    """The async job's work: fetch the file from R2, parse/chunk/embed it, and resolve
+    the document to `ready`/`failed`. Returns the document, or None if it no longer
+    exists (deleted between upload and processing) — the caller treats that as a no-op.
 
-    Idempotent / safe to retry (Inngest retries on unhandled failure):
-    - If `raw_content` is already NULL, the job has already run to completion — return
-      the document unchanged rather than reprocessing empty bytes.
-    - Otherwise delete any chunks from a previous attempt before re-inserting, so a
-      retried parse/embed can't leave duplicate DocumentChunk rows.
+    Idempotent / safe to retry (Inngest retries on unhandled failure): deletes any
+    chunks from a previous attempt before re-inserting, so a retried run can't leave
+    duplicate DocumentChunk rows regardless of how far the last attempt got. (Inngest
+    also memoizes a *successfully* completed step, so a retry-after-success normally
+    won't re-invoke this at all — but the delete-then-reinsert makes a direct re-run
+    safe too.)
+
+    The R2 object is kept after processing (R2 is the file store now, not a temp
+    stash) — it stays available for re-processing and would be cleaned up by a future
+    delete-document endpoint.
 
     A failed parse or embed (`DocumentParseError`/`EmbeddingError`) sets `status:
-    failed` with zero chunks — the same invariant the old synchronous path guaranteed.
-    A missing COHERE_API_KEY raises RuntimeError instead (a deployment mistake, not a
-    per-document problem): the job fails loudly and Inngest retries, leaving the
-    document `pending` rather than masquerading as a document-level `failed`.
+    failed` with zero chunks — the same invariant the synchronous path guaranteed. A
+    missing COHERE_API_KEY (or an R2 fetch failure) raises instead of being caught: an
+    infra/deployment problem should fail loudly and let Inngest retry, not masquerade
+    as a per-document `failed`.
     """
     document = get_document_by_id(session, owner_id, document_id)
-    if document is None:
-        return None
-    if document.raw_content is None:
-        return document
+    if document is None or document.r2_object_key is None:
+        return document if document is not None else None
 
     # Clear chunks from any prior attempt (idempotency on retry).
     session.exec(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
     session.commit()
 
+    raw = r2_client.get_object(document.r2_object_key)
     try:
-        text = extract_text(document.content_type, document.raw_content)
+        text = extract_text(document.content_type, raw)
         chunks_text = chunk_text(text)
         embeddings = embed_texts(chunks_text)
         parse_status = DocumentStatus.READY
@@ -159,7 +172,6 @@ def process_document(session: Session, owner_id: str, document_id: uuid.UUID) ->
         )
 
     document.status = parse_status
-    document.raw_content = None  # done with the bytes — don't keep files in the DB
     session.add(document)
     session.commit()
     session.refresh(document)

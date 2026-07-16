@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import JSON, LargeBinary
+from sqlalchemy import JSON
 from sqlalchemy import Enum as SAEnum
 from sqlmodel import Column, Field, SQLModel
 
@@ -45,14 +45,13 @@ class Document(SQLModel, table=True):
     status: DocumentStatus = Field(
         default=DocumentStatus.PENDING, sa_column=Column(_status_column_type, nullable=False)
     )
-    # The uploaded file's raw bytes, stashed here only until the async processing job
-    # (parse/chunk/embed) consumes them, then cleared back to NULL. This is a
-    # deliberate interim: the job runs in a *separate* request (Inngest calls back
-    # over HTTP), so it needs the bytes from somewhere shared across app instances,
-    # and the actual file isn't persisted anywhere yet — R2 is a later increment. The
-    # event payload can't carry them (Inngest's size limit vs. 20 MB PDFs), so a
-    # temporary BYTEA column is the only shared store available until R2 replaces it.
-    raw_content: bytes | None = Field(default=None, sa_column=Column(LargeBinary, nullable=True))
+    # R2 (S3-compatible) object key where the uploaded file's bytes live — set on
+    # upload (`service.create_document`), read by the async job
+    # (`service.process_document`) to parse/chunk/embed. Owner-scoped
+    # (`{owner_id}/{document_id}/{filename}`, see r2_client.build_object_key).
+    # Nullable only to tolerate a row that existed before this column; new uploads
+    # always set it.
+    r2_object_key: str | None = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

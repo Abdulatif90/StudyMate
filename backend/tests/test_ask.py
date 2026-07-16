@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
+from app.core import r2_client
 from app.core.auth import get_current_user_id
 from app.core.config import get_settings
 from app.core.db import get_session
@@ -80,6 +81,21 @@ def _mock_inngest(monkeypatch):
     # Upload emits an Inngest event now; mock it so these tests never hit the network.
     # _upload_txt processes the document explicitly instead (see below).
     monkeypatch.setattr(documents_service, "enqueue_document_processing", lambda document: None)
+
+
+@pytest.fixture(autouse=True)
+def _mock_r2(monkeypatch):
+    # Upload stores the file in R2 and the job fetches it back; fake it with an
+    # in-memory dict so these tests (ask/RAG, not R2) never touch the network. Real R2
+    # is round-tripped in tests/test_r2_client.py.
+    store: dict[str, bytes] = {}
+
+    def put(key, data, content_type):
+        store[key] = data
+
+    monkeypatch.setattr(r2_client, "put_object", put)
+    monkeypatch.setattr(r2_client, "get_object", lambda key: store[key])
+    monkeypatch.setattr(r2_client, "delete_object", lambda key: store.pop(key, None))
 
 
 client = TestClient(app)

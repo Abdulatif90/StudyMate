@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     inngest_event_key: str | None = None
     inngest_signing_key: str | None = None
 
+    # Cloudflare R2 (S3-compatible file storage for uploaded documents). Optional so
+    # the app/tests boot without them; app/core/r2_client.py raises at point of use.
+    r2_account_id: str | None = None
+    r2_access_key_id: str | None = None
+    r2_secret_access_key: str | None = None
+    r2_bucket_name: str | None = None
+
     # Comma-separated (not JSON) so a plain `.env` value like
     # `CORS_ORIGINS=http://localhost:3000,https://app.example.com` just works —
     # pydantic-settings expects JSON for genuine list-typed fields, which is more

@@ -20,6 +20,7 @@ import pytest
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
+from app.core import r2_client
 from app.core.config import get_settings
 from app.modules.documents import service as documents_service
 from app.modules.documents.embedding import EMBEDDING_DIM
@@ -46,6 +47,20 @@ def _mock_cohere(monkeypatch):
     # service.py) — never reached by the SQLite tests below, but mocked anyway so
     # this file never makes a real network call regardless.
     monkeypatch.setattr(documents_service, "embed_query", lambda text: [0.0] * EMBEDDING_DIM)
+
+
+@pytest.fixture(autouse=True)
+def _mock_r2(monkeypatch):
+    # Only the live test uploads via create_document (which puts to R2) and processes
+    # it (which fetches from R2); fake it in-memory so no test here touches real R2.
+    store: dict[str, bytes] = {}
+
+    def put(key, data, content_type):
+        store[key] = data
+
+    monkeypatch.setattr(r2_client, "put_object", put)
+    monkeypatch.setattr(r2_client, "get_object", lambda key: store[key])
+    monkeypatch.setattr(r2_client, "delete_object", lambda key: store.pop(key, None))
 
 
 def _make_subject(session: Session, owner_id: str, name: str = "Bio") -> uuid.UUID:
