@@ -4,7 +4,7 @@
 
 ## Current phase
 **Phase 0 — Setup: complete.** **Phase 1 — Core RAG: in progress** (Subjects, documents,
-Ask/RAG, Conversations, and the frontend for all of it are done; streaming, R2, and
+Ask/RAG (now streaming), Conversations, and the frontend for all of it are done; R2 and
 Inngest are still open — see "Next" below and `docs/plan.md`).
 
 ## Done
@@ -517,8 +517,91 @@ Inngest are still open — see "Next" below and `docs/plan.md`).
     *is* pure logic).
   Frontend: `tsc --noEmit` clean, `eslint` clean, **37 passed** (11 test files).
 
+- [x] Streaming: converted the Ask endpoint to SSE (explicitly deferred twice before this).
+  Non-stream `POST /subjects/{subject_id}/ask` kept as-is; new `POST
+  .../ask/stream` (`text/event-stream`) added alongside it.
+  - **Event shape** (documented in `service.py` next to where it's produced):
+    zero or more `event: token` / `data: {"text": "<delta>"}`, then exactly one
+    terminal `event: done` / `data: {"conversation_id", "turn_id", "sources"}`.
+  - `llm.ask_claude_stream`: same system prompt, `prior_turns` handling, and
+    `(filename, chunk N)` citation contract as `ask_claude` — both now share a
+    `_build_messages` helper so they can't drift apart. Uses
+    `client.messages.stream(...)`, yields `stream.text_stream` deltas. Being a
+    generator function, its body (including the missing-key `RuntimeError`)
+    doesn't run until first iterated — covered explicitly by a test, since it's
+    an easy assumption to get wrong.
+  - `service.py` split into `prepare_ask_stream` (ownership/conversation/
+    retrieval — an ordinary call, raises `SubjectNotFoundError`/
+    `ConversationNotFoundError` synchronously) and `stream_answer` (the actual
+    generator). Split was required, not stylistic: a `StreamingResponse`'s
+    status code is locked in the moment its body starts iterating, so a 404
+    raised from inside the generator would be too late to ever reach the
+    client as a real 404 — router.py calls `prepare_ask_stream` in a normal
+    `try/except` before constructing the `StreamingResponse` at all.
+  - **Persistence — exactly once, only after the stream resolves**: `stream_answer`
+    accumulates deltas locally and calls `create_turn` as its literal last
+    action, after the token loop fully resolves — normally, via the no-material
+    path, or via a caught `LLMError`. Never per-delta, never with partial text.
+    LLM failure has two sub-cases: nothing generated yet → the same
+    `_GENERATION_FAILED_ANSWER` fallback as the non-stream path (sources: []);
+    failed partway through → keeps the real partial text and its sources rather
+    than appending a confusing "try again" after genuine grounded output.
+  - **Client-abort behavior, decided and documented in `stream_answer`'s
+    docstring**: if the client disconnects mid-stream, the generator is torn
+    down before reaching the persistence step (which only ever runs with the
+    *complete* answer, never a partial one), so no half-written turn is
+    possible. If the client merely navigates away without an immediate
+    disconnect signal, generation keeps running server-side and the turn still
+    gets saved — same behavior as Claude.ai/ChatGPT's own chat UIs. There is no
+    code path that persists a truncated/inconsistent record.
+  - Tests: `tests/test_llm.py` (+4: deltas yielded, wraps a failure before any
+    delta, wraps a failure partway through — partial deltas already yielded are
+    still observed via `next()` before the error, missing-key `RuntimeError`
+    only surfaces on first iteration not at call time).
+    `tests/test_ask.py` (+9 default, mirroring the non-stream suite one-for-one
+    — token/done events, both 404s, no-material, LLM-failure-before-any-delta,
+    LLM-failure-partway-through persists the partial answer, turn-saved-even-
+    when-no-material, follow-up reuses conversation + prior context, 404 for a
+    conversation from a different subject — plus 1 live test parsing real SSE
+    output end-to-end against real Neon+Cohere+Claude). A small `_parse_sse`
+    test helper decodes the raw `event:`/`data:` body back into pairs.
+    Backend: **83 passed** (26 new), `ruff check` → clean.
+  - Frontend: `EventSource` can't attach the Clerk bearer token (GET-only, no
+    custom headers), so `lib/api/streamAsk.ts` uses `fetch()` + a manual
+    `ReadableStream` reader instead, attaching the token the same way
+    `useApiClient`'s middleware does. `lib/parseSSE.ts` (`createSSEParser`) is
+    the one genuinely pure piece — an incremental parser that buffers a partial
+    event/line across arbitrary `ReadableStream` chunk boundaries — pulled out
+    specifically so it has direct unit tests (6, incl. an event split across
+    three chunks) rather than only being exercised through the page.
+  - `ask/page.tsx`: replaced the `askQuestion` mutation with `startAsk`, driving
+    `streamAsk` directly; the old `pendingQuestion` string became a `streaming
+    { question, answer }` object so the same in-flight state drives both the
+    pending question bubble and a new live-filling `AnswerMessage` (new
+    `streaming` prop — hides copy/pin/read-aloud on not-yet-complete text)
+    below it. Preserved from the non-stream version: edit/resend still uses
+    `splitTurnsAtEdit`, and the removed turns still get restored if the resend
+    fails. Added: an `AbortController` per stream, aborted on unmount and on
+    switching/starting a conversation mid-stream (server-side generation and
+    persistence continue regardless, per the backend's documented abort
+    behavior above — this only stops updating a component that's moved on);
+    editing a *different* turn while one is already streaming is now a no-op
+    instead of allowing two concurrent asks.
+  - `AnswerMessage` gained a `streaming` prop (test: partial text renders,
+    action row hidden while streaming; actions reappear once it's false).
+  - **Live-verified** against real Neon+Cohere+Claude: the pytest live test
+    (service-layer, same reasoning as every other live test in this codebase —
+    no real Clerk JWT outside a browser) confirmed real tokens streaming in,
+    the `done` event's sources non-empty and grounded, and the persisted turn's
+    answer matching the streamed text exactly. Frontend: `tsc --noEmit` clean,
+    `eslint` clean, **45 passed** (13 test files) — not click-tested in a real
+    browser with real Clerk auth (no browser available in this environment);
+    that part still needs a manual pass.
+  Frontend note: a pre-existing local `uvicorn --reload` dev server was found
+  running during this work and appears to be serving stale code (missing the
+  new route) — needs a manual restart before browser-testing this.
+
 ## Next (Phase 1 — Core RAG)
-- [ ] Streaming: convert the Ask endpoint to SSE (explicitly deferred twice now)
 - [ ] R2 bucket + upload endpoint (store the actual file — right now only validated,
   not persisted anywhere)
 - [ ] Inngest: move parsing/chunking/embedding off the request path into a background

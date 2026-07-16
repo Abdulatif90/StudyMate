@@ -2,6 +2,71 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-16 — Ask endpoint streaming (SSE), backend + frontend
+- Converts the Ask endpoint to SSE — explicitly deferred twice before this
+  (see PROGRESS.md). Non-stream `POST /subjects/{subject_id}/ask` kept as-is;
+  new `POST .../ask/stream` added alongside it.
+- **`feat(backend)`**: `llm.ask_claude_stream` (shares message-building with
+  `ask_claude` via a new `_build_messages` helper, so prompt/citation contract
+  can't drift between the two), `service.prepare_ask_stream` +
+  `service.stream_answer`, `POST /subjects/{subject_id}/ask/stream`.
+  - Split into `prepare_ask_stream`/`stream_answer` because a
+    `StreamingResponse`'s status is locked in once its body starts iterating —
+    404s (`SubjectNotFoundError`/`ConversationNotFoundError`) have to come from
+    an ordinary call the router can still catch normally, not from inside the
+    generator.
+  - Event shape: `event: token` / `data: {"text"}` deltas, one terminal
+    `event: done` / `data: {"conversation_id", "turn_id", "sources"}`.
+  - Turn persisted exactly once, as the literal last statement in
+    `stream_answer`, after the token loop fully resolves (success, no-material,
+    or a caught `LLMError`) — never per-delta, never with partial text. A
+    mid-stream `LLMError` after some real deltas already went out keeps that
+    partial text as the answer (with its sources) instead of appending a
+    "try again" message after genuine grounded output.
+  - Client-abort decision (documented in `stream_answer`'s docstring, since the
+    task called this out explicitly): the generator is torn down before ever
+    reaching the persistence step if the client disconnects mid-stream — no
+    half-written turn is structurally possible, since persistence only ever
+    runs with the complete answer. If the client just navigates away without a
+    clean disconnect, generation keeps running server-side and still saves —
+    matches how Claude.ai/ChatGPT's own chat UIs behave.
+  - Tests: `test_llm.py` (+4, incl. that the missing-key `RuntimeError` only
+    surfaces on first iteration — a generator function's body doesn't run at
+    call time). `test_ask.py` (+9, mirroring the non-stream suite one-for-one,
+    plus 1 live end-to-end test against real Neon+Cohere+Claude). Backend: 83
+    passed (26 new), `ruff check` clean.
+  - **Live-verified** (pytest live test, service-layer — same reasoning as
+    every other live test here, no real Clerk JWT outside a browser): real
+    tokens streamed in, `done`'s sources were non-empty and grounded, the
+    persisted turn's answer matched the streamed text exactly.
+- **`feat(frontend)`**: `lib/parseSSE.ts` (`createSSEParser`) — the one
+  genuinely pure piece of this, an incremental parser buffering a partial
+  SSE event/line across arbitrary `ReadableStream` chunk boundaries; 6 tests,
+  including one event deliberately split across three chunks.
+  `lib/api/streamAsk.ts` drives the actual request: `EventSource` can't attach
+  the Clerk bearer token (GET-only, no custom headers), so this is `fetch()` +
+  a manual `ReadableStream` reader, attaching the token the same way
+  `useApiClient`'s middleware does.
+  - `ask/page.tsx`: `askQuestion` mutation replaced with `startAsk` (drives
+    `streamAsk`); the old `pendingQuestion` string became a `streaming
+    { question, answer }` object driving both the pending question bubble and
+    a new live-filling `AnswerMessage` (new `streaming` prop, hides
+    copy/pin/read-aloud on not-yet-complete text). Edit/resend still goes
+    through `splitTurnsAtEdit` with the same restore-on-failure behavior as
+    before. Added an `AbortController` per stream — aborted on unmount and on
+    switching/starting a conversation mid-stream (the server keeps generating
+    and persisting regardless; this only stops updating a component that's
+    moved on). Editing a different turn while one is already streaming is now
+    a no-op instead of allowing two concurrent asks.
+  - `react-markdown` stayed without `rehype-raw` — no new HTML-injection
+    surface from rendering partial/streamed markdown.
+  - Frontend: `tsc --noEmit` clean, `eslint` clean, 45 passed (13 files, up
+    from 37/11).
+- **Not yet done**: real browser click-through with live Clerk auth — no
+  browser available in this environment. Also found a pre-existing local
+  `uvicorn --reload` dev server that appears to be serving stale code (missing
+  the new route); needs a manual restart before that browser pass.
+
 ## 2026-07-16 — Frontend: Ask/RAG chat UI + conversations list, responsive/color pass
 - Closes the last open Phase 1 frontend page: `/subjects/[subjectId]/ask`. Backend
   (Ask endpoint + Conversations CRUD) already existed from earlier increments.
