@@ -18,4 +18,5 @@ class DocumentRead(BaseModel):
     filename: str
     content_type: str
     status: DocumentStatus
+    summary: str | None
     created_at: datetime

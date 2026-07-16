@@ -22,6 +22,7 @@ from app.modules.documents.parsing import (
     DocumentParseError,
     extract_text,
 )
+from app.modules.documents.summarization import SummarizationError, summarize_document
 from app.modules.subjects.service import get_subject
 
 MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB
@@ -168,9 +169,10 @@ def delete_document(
 
 
 def process_document(session: Session, owner_id: str, document_id: uuid.UUID) -> Document | None:
-    """The async job's work: fetch the file from R2, parse/chunk/embed it, and resolve
-    the document to `ready`/`failed`. Returns the document, or None if it no longer
-    exists (deleted between upload and processing) — the caller treats that as a no-op.
+    """The async job's work: fetch the file from R2, parse/chunk/embed it, generate an
+    auto-summary, and resolve the document to `ready`/`failed`. Returns the document,
+    or None if it no longer exists (deleted between upload and processing) — the
+    caller treats that as a no-op.
 
     Idempotent / safe to retry (Inngest retries on unhandled failure): deletes any
     chunks from a previous attempt before re-inserting, so a retried run can't leave
@@ -188,6 +190,13 @@ def process_document(session: Session, owner_id: str, document_id: uuid.UUID) ->
     missing COHERE_API_KEY (or an R2 fetch failure) raises instead of being caught: an
     infra/deployment problem should fail loudly and let Inngest retry, not masquerade
     as a per-document `failed`.
+
+    Summary generation is a *separate*, best-effort step after a successful
+    parse/embed: a `SummarizationError` (or a missing ANTHROPIC_API_KEY, which raises
+    loudly instead — same deployment-mistake reasoning as the Cohere key) does not fail
+    the document — it still becomes `ready`, just with `summary` left NULL. This
+    differs from the parse/embed failure handling above on purpose: the summary is
+    secondary, the retrieved/embedded chunks are the actual product.
     """
     document = get_document_by_id(session, owner_id, document_id)
     if document is None or document.r2_object_key is None:
@@ -225,6 +234,19 @@ def process_document(session: Session, owner_id: str, document_id: uuid.UUID) ->
         )
 
     document.status = parse_status
+    # Best-effort: a summarization failure must not fail the whole job — unlike the
+    # loud R2-fetch/parse/embed failures above, this is secondary. If parse/embed
+    # succeeded the document still becomes `ready`, just with `summary` left NULL.
+    document.summary = None
+    if parse_status == DocumentStatus.READY:
+        try:
+            document.summary = summarize_document(text)
+        except SummarizationError:
+            logging.getLogger(__name__).warning(
+                "Failed to generate summary for document %s; leaving summary NULL",
+                document_id,
+            )
+
     session.add(document)
     session.commit()
     session.refresh(document)
