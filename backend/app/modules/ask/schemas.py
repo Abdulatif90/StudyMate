@@ -18,6 +18,9 @@ class SourceChunk(BaseModel):
     filename: str
     chunk_index: int
     text: str
+    # Cohere Rerank's relevance_score when reranking succeeded (see
+    # documents.service._rerank_candidates), or raw cosine similarity on the fallback
+    # path — both are "higher is more relevant", just not on an identical scale.
     similarity_score: float
 
 

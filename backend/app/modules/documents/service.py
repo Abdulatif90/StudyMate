@@ -22,10 +22,18 @@ from app.modules.documents.parsing import (
     DocumentParseError,
     extract_text,
 )
+from app.modules.documents.rerank import RerankError, rerank
 from app.modules.documents.summarization import SummarizationError, summarize_document
 from app.modules.subjects.service import get_subject
 
 MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB
+
+# How many vector-similarity candidates search_chunks fetches before handing them to
+# Cohere Rerank — wider than top_k on purpose (Rerank's cross-encoder judges relevance
+# more accurately than raw cosine order, but only among whatever candidates it's given;
+# a pool too close to top_k defeats the point). Bounded, not unlimited: one Rerank call
+# per Ask, and cost/latency scale with how many documents are sent to it.
+RERANK_CANDIDATE_POOL = 30
 
 # Emitted by create_document, consumed by the Inngest function in documents.jobs.
 DOCUMENT_UPLOADED_EVENT = "document/uploaded"
@@ -299,6 +307,41 @@ def get_documents_by_ids(
     return {document.id: document for document in documents}
 
 
+def _rerank_candidates(
+    query: str,
+    candidates: list[tuple[DocumentChunk, float]],
+    top_k: int,
+) -> list[tuple[DocumentChunk, float]]:
+    """Re-order `candidates` (chunk, vector-similarity-score pairs, already fetched via
+    vector search, most-similar-first) using Cohere Rerank, cut down to `top_k`. Pure
+    Python over an already-fetched list — no DB/dialect dependency — so this is
+    unit-testable directly regardless of whether the caller's DB is Postgres or SQLite.
+
+    On success, the returned score is Cohere's `relevance_score` (the cross-encoder's
+    query↔chunk judgment), not the original cosine similarity — it's the more accurate
+    signal now that it exists, and it's what actually determined the final order.
+
+    **Graceful degradation, by design**: a `RerankError` must not break Ask — Ask
+    already degrades gracefully everywhere else (see `ask/service.py`). On failure,
+    this falls back to `candidates` truncated to `top_k` in its original
+    vector-similarity order (score = cosine similarity, the pre-rerank meaning) rather
+    than raising, exactly like `process_document`'s best-effort summary step.
+    """
+    if not candidates:
+        return []
+
+    texts = [chunk.text for chunk, _score in candidates]
+    try:
+        ranked = rerank(query, texts, top_n=top_k)
+    except RerankError:
+        logging.getLogger(__name__).warning(
+            "Cohere rerank failed; falling back to vector-similarity order", exc_info=True
+        )
+        return candidates[:top_k]
+
+    return [(candidates[index][0], relevance_score) for index, relevance_score in ranked]
+
+
 def search_chunks(
     session: Session,
     owner_id: str,
@@ -306,15 +349,16 @@ def search_chunks(
     query: str,
     top_k: int = 8,
 ) -> list[tuple[DocumentChunk, float]]:
-    """Semantic search over one subject's chunks. Returns (chunk, similarity_score)
-    pairs, most similar first — `similarity_score` is `1 - cosine_distance` (higher is
-    more similar).
+    """Semantic search over one subject's chunks: retrieve → Cohere Rerank. Returns
+    (chunk, score) pairs, most relevant first, at most `top_k` — see
+    `_rerank_candidates` for what `score` means on the reranked vs. fallback path.
 
     pgvector's `<=>` cosine-distance operator only exists on Postgres; off it (the
     SQLite test engine), every filter below (owner, subject, embedding IS NOT NULL)
     still applies — enough to unit-test tenant/subject scoping — but similarity
-    ordering/scoring is skipped since there's no equivalent to run. Real ranking is
-    verified against live Neon instead (see tests/test_search.py).
+    ordering/scoring and reranking are both skipped, since there's no vector ordering
+    to rerank in the first place. Real ranking (including rerank) is verified against
+    live Neon instead (see tests/test_search.py).
     """
     require_owned_subject(session, owner_id, subject_id)
 
@@ -330,6 +374,12 @@ def search_chunks(
 
     query_vector = embed_query(query)
     distance = DocumentChunk.embedding.cosine_distance(query_vector)
-    statement = select(DocumentChunk, distance).where(*filters).order_by(distance).limit(top_k)
+    # Same `filters` as the SQLite branch above — widening the pool only changes the
+    # LIMIT, not which tenant's/subject's chunks are eligible.
+    candidate_limit = max(top_k, RERANK_CANDIDATE_POOL)
+    statement = (
+        select(DocumentChunk, distance).where(*filters).order_by(distance).limit(candidate_limit)
+    )
     results = session.exec(statement).all()
-    return [(chunk, 1 - dist) for chunk, dist in results]
+    candidates = [(chunk, 1 - dist) for chunk, dist in results]
+    return _rerank_candidates(query, candidates, top_k)
