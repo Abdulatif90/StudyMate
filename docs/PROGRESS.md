@@ -589,17 +589,31 @@ Inngest are still open — see "Next" below and `docs/plan.md`).
     instead of allowing two concurrent asks.
   - `AnswerMessage` gained a `streaming` prop (test: partial text renders,
     action row hidden while streaming; actions reappear once it's false).
-  - **Live-verified** against real Neon+Cohere+Claude: the pytest live test
-    (service-layer, same reasoning as every other live test in this codebase —
-    no real Clerk JWT outside a browser) confirmed real tokens streaming in,
-    the `done` event's sources non-empty and grounded, and the persisted turn's
-    answer matching the streamed text exactly. Frontend: `tsc --noEmit` clean,
-    `eslint` clean, **45 passed** (13 test files) — not click-tested in a real
-    browser with real Clerk auth (no browser available in this environment);
-    that part still needs a manual pass.
-  Frontend note: a pre-existing local `uvicorn --reload` dev server was found
-  running during this work and appears to be serving stale code (missing the
-  new route) — needs a manual restart before browser-testing this.
+  - **Live-verified** against real Neon+Cohere+Claude at two levels:
+    1. Service-layer pytest live test (same reasoning as every other live test
+       here — no real Clerk JWT outside a browser): real tokens streamed in,
+       the `done` event's sources non-empty and grounded, persisted turn's
+       answer matching the streamed text exactly.
+    2. **HTTP transport level** — the one thing TestClient can't prove, since it
+       buffers the whole SSE body. Ran the real app under `uvicorn` on a real
+       socket (auth dependency overridden, since no real Clerk JWT is available
+       here — everything else real: Neon + Cohere + Claude), then hit
+       `/ask/stream` with an `httpx` streaming client and timestamped each raw
+       wire chunk: 3 chunks arrived spread over 0.72s (t≈3.77s → 4.00s →
+       4.49s), i.e. genuinely incremental off the socket, not one buffered
+       blob. Answer came back grounded with an inline `(cell.txt, chunk 0)`
+       citation and one source in `done`. Neon left clean afterward. (Throwaway
+       verification script, not committed.)
+  - **Still needs a manual browser pass** with real Clerk auth: token-by-token
+    rendering in the actual React UI, sources appearing, edit-and-resend over
+    the stream, and switching conversations mid-stream aborting the client view
+    while the turn still persists. The transport-level streaming underneath all
+    of these is now verified (above); what's unverified is only the React
+    wiring, which needs a browser (none available in this environment).
+  - Frontend: `tsc --noEmit` clean, `eslint` clean, **45 passed** (13 files).
+  Note: a pre-existing local `uvicorn --reload` dev server was found running
+  during this work serving stale code (missing the new route) — needs a manual
+  restart before the browser pass.
 
 ## Next (Phase 1 — Core RAG)
 - [ ] R2 bucket + upload endpoint (store the actual file — right now only validated,

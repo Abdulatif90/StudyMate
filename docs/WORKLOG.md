@@ -62,10 +62,23 @@ Log of completed work (newest first). Each entry: what was done, tests, commit.
     surface from rendering partial/streamed markdown.
   - Frontend: `tsc --noEmit` clean, `eslint` clean, 45 passed (13 files, up
     from 37/11).
-- **Not yet done**: real browser click-through with live Clerk auth — no
-  browser available in this environment. Also found a pre-existing local
-  `uvicorn --reload` dev server that appears to be serving stale code (missing
-  the new route); needs a manual restart before that browser pass.
+- **HTTP-level live verification** (added after the commits below, since
+  TestClient buffers the SSE body and can't prove incremental delivery): ran
+  the real app under `uvicorn` on a real socket with the Clerk auth dependency
+  overridden (no real JWT here; Neon/Cohere/Claude all real), hit `/ask/stream`
+  with an `httpx` streaming client, and timestamped each raw wire chunk — 3
+  chunks arrived spread over 0.72s, confirming genuine incremental delivery off
+  the socket (not a buffered blob). Answer grounded with an inline citation, one
+  source in `done`, Neon left clean. Throwaway script, not committed. Also
+  re-ran `pytest -m live tests/test_ask.py` (2 passed) and confirmed Neon clean.
+- **Still not done**: real browser click-through with live Clerk auth (React-UI
+  token rendering, edit-resend over the stream, mid-stream conversation switch)
+  — no browser in this environment; the transport layer under all of it is now
+  verified, only the React wiring is unproven. A pre-existing local
+  `uvicorn --reload` dev server was found serving stale code (missing the new
+  route); needs a manual restart before that browser pass.
+- Commits: `ee23fef` (backend SSE), `04f7ea6` (frontend streaming),
+  `a59ee9e` (docs) — all on `develop`, pushed to `origin/develop`.
 
 ## 2026-07-16 — Frontend: Ask/RAG chat UI + conversations list, responsive/color pass
 - Closes the last open Phase 1 frontend page: `/subjects/[subjectId]/ask`. Backend
