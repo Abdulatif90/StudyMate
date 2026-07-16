@@ -3,11 +3,10 @@
 > Current state of the StudyMate build. **Read this to resume work** after any break/reset.
 
 ## Current phase
-**Phase 0 — Setup: complete.** **Phase 1 — Core RAG: essentially complete** — Subjects,
-documents (uploaded to R2, async-processed via Inngest), Ask/RAG (streaming),
-Conversations, and the frontend for all of it are done. Remaining Phase 1 polish is
-optional (a delete-document endpoint); the core RAG loop is fully built. See "Next"
-and `docs/plan.md`.
+**Phase 0 — Setup: complete.** **Phase 1 — Core RAG: complete** — Subjects, documents
+(uploaded to R2, async-processed via Inngest, deletable), Ask/RAG (streaming),
+Conversations, and the frontend for all of it are done. See "Next" (Phase 2+) and
+`docs/plan.md`.
 
 ## Done
 - [x] Repo skeleton + `.gitignore`
@@ -761,14 +760,47 @@ and `docs/plan.md`.
     afterward → `404` → object confirmed gone from real R2 (`NoSuchKey`) → re-`DELETE`
     (already gone) → `404`. Neon left clean afterward. (Throwaway script, not
     committed.)
-  - **Frontend not wired this increment** (per the task, optional and not to be
-    half-wired) — no delete button on the subject-detail page yet. Follow-up.
+- [x] Frontend: delete-document button on the subject-detail page — the delete
+  endpoint's last missing piece; **closes out Phase 1 Core RAG entirely**.
+  - Cleaned up a stray uncommitted one-line edit already sitting in this file
+    (`break-words` → `wrap-break-word`, both valid/equivalent Tailwind) that predated
+    this increment and wasn't part of it — discarded rather than folded in, since
+    there was no evidence it was an intended, in-progress change.
+  - `lib/api/schema.d.ts` regenerated (`npm run generate-api-types` against the
+    running backend) — the DELETE route (and, it turned out, `/ask/stream` and
+    `/api/inngest` from earlier increments) weren't in the typed client yet.
+    `api.DELETE("/subjects/{subject_id}/documents/{document_id}", ...)` is now typed.
+  - A destructive-variant icon button per document row (`variant="destructive"` —
+    already a semantic-token variant in `components/ui/button.tsx`, matches
+    `docs/FRONTEND.md`'s "destructive token for the delete affordance"), `Trash2`
+    icon, `window.confirm` guard — same pattern as the ask page's existing
+    conversation-delete. A `useMutation` calls the typed DELETE; **checks `error`, not
+    `data`** (the 204 response leaves `data` undefined, which is not a failure —
+    exactly the pitfall called out for this increment). On success, invalidates
+    `["subjects", subjectId, "documents"]`, so the row disappears and the existing
+    `documentsRefetchInterval` polling keeps working unchanged (same query key, no
+    changes to that hook). Per-row pending state via
+    `deleteDocument.isPending && deleteDocument.variables === doc.id`, so deleting one
+    document doesn't disable every row's button. **Not** gated on document status — a
+    still-`pending` document can be deleted too (the backend already allows this; the
+    button has no status check to accidentally block it).
+  - `lib/deleteError.ts` (`friendlyDeleteError`): maps a 404 (already deleted/not
+    found) to a specific message, same shape as the existing `friendlyUploadError`;
+    2 tests.
+  - Verified: `tsc --noEmit` clean, `eslint` clean, `npm run build` (production build)
+    succeeds, **51 passed** (14 files, up from 49/13). Not click-tested in a real
+    browser — no browser or real Clerk auth available in this environment; the
+    backend endpoint itself was already live-verified end-to-end (real HTTP → real R2
+    → real Neon) in the increment that added it, and this call is a thin, typed
+    wrapper mirroring the already-proven `deleteConversation` pattern on the ask page.
 
-## Next (Phase 1 — Core RAG)
-- [ ] (Optional) Frontend: delete-document button on the subject-detail page, calling
-  the now-existing `DELETE` endpoint (invalidate the documents query on success; follow
-  `docs/FRONTEND.md`).
+## Next (Phase 2+)
+- R2/Inngest/streaming/delete round out Phase 1 Core RAG. Next up per `docs/plan.md`:
+  quizzes, flashcards (SM-2), progress tracking, multilingual polish, billing (Polar).
+- Still owed from this session: a real-browser click-through of the async
+  upload/poll/delete flow with live Clerk auth (noted in the last several increments,
+  never yet done — no browser available in this environment).
 
 ## Blockers / needs from user
-- None for the core RAG loop — Neon, Clerk, Cohere, Anthropic, Inngest, and R2 keys
-  are all in `backend/.env`. Polar can wait until billing is actually built.
+- None for Phase 1 (now complete) — Neon, Clerk, Cohere, Anthropic, Inngest, and R2
+  keys are all in `backend/.env`. Polar can wait until billing is actually built.

@@ -2,6 +2,33 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-17 — Frontend: delete-document button (closes out Phase 1 Core RAG)
+- Wires a delete button into the subject-detail page for the `DELETE
+  /subjects/{subject_id}/documents/{document_id}` endpoint added last increment —
+  the last open Phase 1 item.
+- First, cleaned up a stray uncommitted edit already in
+  `subjects/[subjectId]/page.tsx` (`break-words` → `wrap-break-word`) that predated
+  this work and wasn't part of it — discarded (`git checkout`) rather than folded
+  in, since there was no evidence it was intended.
+- `lib/api/schema.d.ts` regenerated against the running backend — the DELETE route
+  (plus `/ask/stream` and `/api/inngest` from earlier increments) weren't in the
+  typed client yet; confirmed `api.DELETE(...)` for the document path is now typed.
+- **`feat(frontend)`**: destructive-variant icon button per row (`Trash2`,
+  `window.confirm`, same pattern as the ask page's conversation-delete), a
+  `useMutation` that checks `error` not `data` (204 leaves `data` undefined — not a
+  failure), invalidates the documents query on success (same query key
+  `documentsRefetchInterval` polls, unchanged). Per-row pending state so deleting one
+  document doesn't disable every button. Deliberately not gated on document status —
+  a still-`pending` document can be deleted too, matching what the backend allows.
+  `lib/deleteError.ts` (`friendlyDeleteError`, 2 tests) maps 404 to a specific
+  message, mirroring `friendlyUploadError`.
+- Verified: `tsc --noEmit` clean, `eslint` clean, `npm run build` succeeds, **51
+  passed** (14 files, up from 49/13). Not click-tested in a real browser — no
+  browser/Clerk auth available in this environment; the backend endpoint itself was
+  already live-verified end-to-end last increment, and this is a thin typed wrapper
+  mirroring an already-proven pattern.
+- Phase 1 Core RAG is now complete.
+
 ## 2026-07-17 — DELETE document endpoint (closes the R2 object-lifecycle gap)
 - `DELETE /subjects/{subject_id}/documents/{document_id}` — removes a document's
   `DocumentChunk` rows, its R2 object, and the `Document` row. Files were never
