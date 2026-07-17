@@ -316,3 +316,66 @@ def test_search_chunks_orders_by_relevance_via_real_rerank():
                 session.delete(document)
             session.delete(subject)
             session.commit()
+
+
+@pytest.mark.live
+@pytest.mark.skipif(not _HAS_REAL_DB, reason="requires DATABASE_URL (real Postgres/pgvector)")
+def test_hybrid_search_surfaces_exact_keyword_match():
+    """The reason the lexical (FTS) arm was added: an exact keyword/code match — exactly
+    where pure embeddings are weakest (rare tokens, codes, identifiers) — is retrieved
+    and top-ranked through the real hybrid path (Postgres FTS `@@` over the generated
+    tsvector + vector + RRF fusion + Cohere Rerank). test_rrf.py proves the fusion math
+    offline; this proves the whole Postgres pipeline is wired correctly and that the FTS
+    arm carries its own owner+subject scoping (only this owner's chunks come back)."""
+    from app.core.db import get_engine
+
+    engine = get_engine()
+    owner_id = "live_smoke_test_user_hybrid"
+    with Session(engine) as session:
+        subject = subjects_service.create_subject(
+            session, owner_id, SubjectCreate(name="Hybrid Search Smoke Test")
+        )
+
+        # One chunk carries a distinctive code ("ISO-9001"); the others are semantically
+        # adjacent (quality, process) but never contain that exact token — so only the
+        # lexical arm can pin the code to its chunk.
+        topics = {
+            "iso.txt": (
+                b"Our laboratory holds ISO-9001 certification for its quality management system."
+            ),
+            "quality.txt": (
+                b"Quality management improves processes and reduces defects across manufacturing."
+            ),
+            "teamwork.txt": b"Good teamwork and clear communication matter in any workplace.",
+            "budget.txt": b"Annual budgets allocate resources across departments and projects.",
+        }
+        created_docs = []
+        for filename, content in topics.items():
+            document = documents_service.create_document(
+                session,
+                owner_id,
+                subject.id,
+                filename=filename,
+                content_type="text/plain",
+                raw=content,
+            )
+            documents_service.process_document(session, owner_id, document.id)
+            created_docs.append(document)
+
+        try:
+            results = documents_service.search_chunks(
+                session, owner_id, subject.id, "ISO-9001 certification", top_k=2
+            )
+
+            assert results, "expected at least one result"
+            top_chunk, _score = results[0]
+            assert "ISO-9001" in top_chunk.text  # the exact-keyword chunk ranks first
+        finally:
+            for document in created_docs:
+                for chunk in documents_service.list_chunks(session, owner_id, document.id):
+                    session.delete(chunk)
+            session.commit()
+            for document in created_docs:
+                session.delete(document)
+            session.delete(subject)
+            session.commit()
