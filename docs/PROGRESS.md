@@ -1527,6 +1527,17 @@ frontends already shipped.
   - Side-note: `frontend/.env` has no `NEXT_PUBLIC_API_URL`, but `lib/api/client.ts` falls
     back to `http://localhost:8000`, so build/dev are unaffected.
 
+- [x] **Frontend redesign Increment 1 — design-system foundation** (frontend-only). Palette
+  overhaul in `globals.css` (OKLCH, light+dark): indigo primary kept, gray accent → teal,
+  neutrals warmed (hue ~80, never pure gray), `--warning` added, grayscale `--chart-1..5` →
+  a real categorical ramp from the **dataviz** reference (WCAG-AA-checked both themes). Base
+  UI `ui/*` wrappers — `dialog`, `alert-dialog`, `toast` (global `toast()` helper +
+  `<Toaster/>`), `dropdown-menu` — introspected against the installed `@base-ui/react@1.6.0`
+  before wiring. `useConfirm` (`window.confirm` replacement, pure logic in
+  `lib/confirmState.ts`, tested). next-themes dark-mode + `ThemeToggle` (verified against
+  Tailwind v4's `.dark` custom-variant). **Foundation only — no page consumes it yet**
+  (Increments 2–3 do that). **125 passed**, tsc/eslint/build clean. Not browser-verified.
+
 ## Next (Phase 4+)
 - **Frontend redesign roadmap (in progress)** — a phased UI/UX overhaul, one increment per
   commit batch, each gated on a `tekshir` review before the next starts. FRONTEND.md was
@@ -1534,8 +1545,9 @@ frontends already shipped.
   shell). Sequence:
   1. **Docs + design-system foundation** — FRONTEND.md rules; calm-academic OKLCH palette
      (indigo primary + teal accent + warm neutrals + `--warning` + real chart ramp), Base
-     UI `ui/*` wrappers (dialog, alert-dialog, toast + `<Toaster/>`, select/menu),
-     `useConfirm` helper, next-themes dark-mode toggle. **(this increment)**
+     UI `ui/*` wrappers (dialog, alert-dialog, toast + `<Toaster/>`, dropdown-menu),
+     `useConfirm` helper, next-themes dark-mode toggle. **✓ DONE (see WORKLOG 2026-07-18).**
+     Foundation only — pages don't consume it yet; that's Increments 2–3.
   2. **Shared app shell + navigation** — one `AppShell` (persistent nav + ThemeToggle +
      UserButton + language-switcher slot), adopted via an `app/(app)/` route-group layout;
      remove per-page headers. (Do this BEFORE the i18n page-conversion so the

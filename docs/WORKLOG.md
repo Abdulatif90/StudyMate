@@ -2,6 +2,50 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-18 — Frontend redesign Increment 1: design-system foundation
+Phased UI/UX overhaul, increment 1 of ~4 (each gated on a `tekshir` review before the
+next). Frontend-only, no backend change. Two commits.
+- **Commit A (docs)**: amended `docs/FRONTEND.md` — §2 palette items 7–8 (teal accent, warm
+  neutrals, `--warning`, real chart ramp), new §3 (overlays/confirmations/toasts — no
+  `window.confirm`, no inline error text), new §4 (shared app shell + nav), renumbered
+  General → §5. Added the phased redesign roadmap to `PROGRESS.md` "Next".
+- **Commit B (foundation)**:
+  - **Palette** (`globals.css`, OKLCH, light + dark): kept indigo `--primary`; replaced the
+    gray `--accent` with **teal**; **warmed the neutrals** (a hint of chroma at hue ~80 in
+    background/card/muted/secondary/border, never pure gray); added `--warning` /
+    `--warning-foreground`; replaced the grayscale `--chart-1..5` with a **real categorical
+    ramp** (blue/green/magenta/yellow/aqua) taken from the **dataviz** reference palette.
+    **Loaded the `dataviz` skill first**, converted its validated hexes to OKLCH, and
+    **contrast-checked every changed text pair against WCAG AA in both themes** (all ≥ 4.5:1;
+    the one borderline — light accent-on-white at 4.46 — was darkened to clear 4.85).
+  - **Base UI `ui/*` wrappers** (Step 0: introspected the installed `@base-ui/react@1.6.0`
+    `.d.ts` for each primitive before wiring — confirmed the parts, the `data-*-style`
+    transition attrs, and that the **toast manager** (`createToastManager`/`useToastManager`)
+    is runtime-exported from the `toast` namespace): `ui/dialog.tsx`, `ui/alert-dialog.tsx`,
+    `ui/toast.tsx` (global `toastManager` + `toast()` helper with `.success/.error/.warning`
+    + a `<Toaster/>`, each toast paired with a type icon — never colour alone), and
+    `ui/dropdown-menu.tsx` (Base UI `menu`, for the Increment 2 nav collapse).
+  - **`useConfirm`** (`components/confirm-provider.tsx`) — a promise-based
+    `window.confirm` replacement over `ui/alert-dialog`. The choice is recorded in a ref on
+    click and the promise is settled exactly once in `onOpenChange`, so there's no
+    button-vs-close ordering race and an Esc/outside dismiss resolves `false`. Pure
+    state/label logic extracted to `lib/confirmState.ts` and unit-tested (7 tests).
+  - **Dark mode**: added **next-themes** 0.4.6 (`attribute="class"`, `defaultTheme="system"`)
+    — verified it works with Tailwind v4's `@custom-variant dark (&:is(.dark *))` (it sets
+    `class="dark"` on `<html>`, which the variant keys off; no cookie fallback needed). A
+    `ThemeToggle` (lucide sun/moon, mounted-guarded to avoid hydration mismatch);
+    `<html suppressHydrationWarning>`. Providers now nest ThemeProvider → QueryClient →
+    ToastProvider → ConfirmProvider → children + `<Toaster/>`.
+  - **Not yet adopted by pages** — this increment only *adds* the system; wiring
+    confirms/toasts/shell into pages is Increments 2–3. Nothing calls `useConfirm`/`toast`
+    yet, and no shell exists yet, by design.
+  - Tests +7 (`confirmState.test.ts`). Frontend **125 passed** (29 files, up from 118/28),
+    `tsc --noEmit` clean, `eslint` clean, `npm run build` succeeds.
+  - **Not browser-verified** — no browser with real Clerk auth here, so the theme toggle's
+    live class-swap, overlay focus-trap/Esc behaviour, and toast rendering are unverified in
+    a real browser (standing gap). Palette contrast, API wiring, types, and build are all
+    verified offline.
+
 ## 2026-07-18 — next-intl foundation + language switcher + first page slice (Phase 5 groundwork)
 - Wired **next-intl 4.13.2** in the **"without i18n routing"** mode
   (https://next-intl.dev/docs/getting-started/app-router/without-i18n-routing): the active

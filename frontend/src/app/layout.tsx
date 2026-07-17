@@ -32,7 +32,9 @@ export default async function RootLayout({
 
   return (
     <ClerkProvider signInUrl="/sign-in" signUpUrl="/sign-up">
-      <html lang={locale}>
+      {/* suppressHydrationWarning: next-themes sets class="dark" on <html> via a
+          pre-hydration script, so the server/client class attributes intentionally differ. */}
+      <html lang={locale} suppressHydrationWarning>
         <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
           {/* Rendered from a Server Component, so NextIntlClientProvider auto-inherits
               the locale + messages resolved in i18n/request.ts — no explicit props. */}
