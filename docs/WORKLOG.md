@@ -2,6 +2,68 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-17 — Flashcards backend: SM-2 scheduling + Claude tool-use generation (Phase 3 start)
+- First Phase 3 feature. New `app/modules/flashcards/` (models + sm2 + generation +
+  service + schemas + router), same established split as documents/ask/quiz.
+- **`feat(flashcards)` — sm2.py + models + migration**: `sm2.review(grade, state, now)`
+  is a **pure function** — no DB, no I/O, no `datetime.now()` buried inside; `now` is
+  always caller-supplied, which is what makes every rule deterministically testable.
+  Implements canonical SuperMemo SM-2: `grade < 3` resets `repetitions`/`interval_days`
+  to relearn, but **does not reset `ease_factor`** — the ease-update formula (`ef' = ef +
+  (0.1 - (5-q)*(0.08 + (5-q)*0.02))`) applies unconditionally, on every review, so a
+  lapse only nudges ease down rather than wiping out a card's whole easing history. This
+  is the exact bug the task called out, and it's cheap to get wrong if the reset and the
+  ease-update get bundled into the same `if grade < 3` branch — kept deliberately
+  separate here. `grade >= 3`: rep 1 → 1 day, rep 2 → 6 days, rep *n* →
+  `round(prev_interval * ease_factor)`. `ease_factor` floored at `1.3`. `Flashcard`
+  model: `subject_id` FK, `owner_id`-scoped, `front`/`back`, SM-2 state columns. New
+  cards default `due_at=now`/`repetitions=0`/`ease_factor=2.5`/`interval_days=0` — due
+  immediately. Migration `b27704cd2174`, applied to Neon, confirmed via
+  `information_schema`; `alembic check` clean.
+- **`feat(flashcards)` — generation.py**: mirrors `quiz/generation.py` exactly
+  (DECISIONS.md #5, tool-use structured output, not `json.loads`): forced
+  `record_flashcards` tool, strict schema, defensive `_parse_flashcards` (rejects an
+  empty-string front/back even though it's schema-valid), `FlashcardGenerationError` on
+  any malformed/empty/API failure, missing key → bare `RuntimeError`, multilingual.
+- **`feat(flashcards)` — service + routes**: `generate_flashcards` verifies ownership,
+  samples material (reused `sample_subject_chunk_texts`, no re-embedding), generates,
+  persists atomically. `review_flashcard`/`delete_flashcard`/`get_flashcard` are
+  **owner-scoped by id alone** — same pattern as `documents.service.get_document_by_id`
+  — since neither review nor delete carries `subject_id` in its URL (mirrors
+  `ask.router`'s subject-scoped-`router` / flat-`conversations_router` split: here,
+  `router` = generate/list/`/due`, `flashcards_router` = review/delete).
+  `review_flashcard` validates `grade` 0-5 before calling `sm2.review`
+  (`InvalidGradeError`) — defense-in-depth; `ReviewRequest.grade`'s Pydantic `ge=0, le=5`
+  already rejects a bad grade at the HTTP boundary before this line is ever reached.
+  `list_due_flashcards`/`review_flashcard` both take an overridable `now` so neither
+  depends on wall-clock timing for correctness. Wired into `main.py` + `alembic/env.py`.
+- Tests: `test_sm2.py` (18, pure/deterministic) — every rule from the algorithm gets its
+  own assertion, including the specific lapse-decrements-but-doesn't-reset-ease case and
+  grade 4 landing exactly on the formula's zero-crossing. `test_flashcard_generation.py`
+  (9, Anthropic client mocked directly). `test_flashcards.py` (22 SQLite integration +
+  1 live): generation mocked at the service boundary offline, chunks seeded directly (no
+  R2/Inngest needed); covers generate/list/due/review/delete tenant scoping, the 422/502
+  paths (with nothing persisted on failure), due-date filtering, and review actually
+  advancing/resetting the schedule correctly. One test bug caught and fixed along the
+  way (not a production bug): the live test's "due_at advanced" assertion initially
+  compared a card to itself, because `review_flashcard` looks the card up in the same
+  session and mutates the identity-mapped object in place — fixed by snapshotting the
+  pre-review `due_at` as a plain value first. Backend **208 passed** (9 deselected live,
+  up from 159/8), `ruff` clean.
+- **Live-verified end-to-end** two ways: (1) the `-m live` test — real Neon + Cohere +
+  Claude tool-use generates well-formed cards, a real review advances the schedule,
+  cleanup removes both the Neon rows *and* the R2 object the uploaded document created
+  (confirmed via `list_objects_v2`) — **the existing quiz/search live tests leave that
+  R2 object orphaned; this one doesn't repeat the gap**, per the task's explicit ask.
+  (2) The full real stack — real Inngest Dev Server + real R2/Neon/Cohere/Claude: real
+  HTTP upload → `pending` → `ready` in ~5s → `POST /flashcards` → 4 well-formed cards,
+  all due immediately → a real `POST /flashcards/{id}/review` correctly advanced
+  `repetitions`/`interval_days`/`due_at`, and the reviewed card correctly dropped out of
+  `GET /due` afterward while the other 3 remained. Cleaned up via real `DELETE`s; Neon
+  **and** R2 both confirmed clean afterward (throwaway script, not committed). Not
+  browser-tested (no browser/Clerk auth in this environment) — the flashcards frontend
+  is the next increment.
+
 ## 2026-07-17 — Hybrid retrieval: Postgres FTS + vector, fused with RRF (closes Phase 2)
 - Added the lexical arm to retrieval and fused it with the existing vector arm via
   Reciprocal Rank Fusion, before the Cohere Rerank stage. DECISIONS.md #4 requires FTS

@@ -4,12 +4,13 @@
 
 ## Current phase
 **Phase 0 — Setup: complete.** **Phase 1 — Core RAG: complete.** **Phase 2 — Quiz + FTS
-hybrid: complete** — quiz generation via Claude tool-use structured output + full quiz
-UI, and hybrid retrieval (pgvector + Postgres full-text, fused with RRF, then Cohere
-Rerank). Next is **Phase 3 — Flashcards + SM-2 SRS** per `docs/plan.md`. Phase 1 recap:
-Subjects, documents (R2 + Inngest ingest with auto-summary, deletable), Ask/RAG
-(hybrid retrieve → Cohere Rerank → Claude, streaming), Conversations, and the frontend
-for all of it.
+hybrid: complete.** **Phase 3 — Flashcards + SM-2: backend done, frontend next** — SM-2
+spaced-repetition scheduling, Claude tool-use flashcard generation, and full
+generate/list/due/review/delete backend, live-verified end-to-end. The flashcards
+*frontend* (review UI, grading) is the next increment. Phase 1–2 recap: Subjects,
+documents (R2 + Inngest ingest with auto-summary, deletable), hybrid Ask/RAG (Postgres
+FTS + vector + RRF + Cohere Rerank, streaming), Conversations, Quiz (tool-use
+generation + full UI) — all with their own frontends already shipped.
 
 ## Done
 - [x] Repo skeleton + `.gitignore`
@@ -1015,13 +1016,83 @@ for all of it.
     live **Ask** tests (non-stream + streaming) — grounded, cited answers through the
     hybrid path end-to-end. Neon confirmed clean afterward.
 
+- [x] Flashcards backend — SM-2 spaced-repetition scheduling + Claude tool-use
+  generation + generate/list/due/review/delete. Phase 3 backend done; frontend next.
+  - **`sm2.py`**: the canonical SuperMemo SM-2 algorithm as a **pure function** — no DB,
+    no I/O, no `datetime.now()` inside (`now` is always caller-supplied, so every rule
+    is deterministically testable). Grade < 3 resets `repetitions`/`interval_days`
+    (relearn) but does **not** reset `ease_factor` — only the unconditional ease-update
+    formula (applied on every review, pass or lapse) nudges it down. This is the classic
+    SM-2 bug this codebase specifically guards against: conflating "reset progress" with
+    "reset ease" would wipe out a card's entire easing history on one slip. Grade ≥ 3
+    advances: rep 1 → 1 day, rep 2 → 6 days, rep *n* → `round(prev_interval *
+    ease_factor)`. `ease_factor` floored at `1.3` (SuperMemo's documented minimum) so
+    repeated low grades can't drive intervals negative/inverted.
+  - **`models.py`**: `Flashcard` (`subject_id` FK, `owner_id`-scoped like `Quiz`, `front`,
+    `back`, + SM-2 state: `repetitions`, `ease_factor`, `interval_days`, `due_at`,
+    `last_reviewed_at`). Plain FK column, no ORM cascade. New cards default
+    `due_at=now`/`repetitions=0`/`ease_factor=2.5`/`interval_days=0` — due immediately,
+    so they appear in the very first due-cards review. Migration `b27704cd2174`, applied
+    to Neon, confirmed via `information_schema`; `alembic check` reports no drift.
+  - **`generation.py`**: mirrors `quiz/generation.py` exactly (DECISIONS.md #5) — a
+    forced `record_flashcards` tool with a strict `input_schema` (`front`/`back`,
+    `additionalProperties: false`), `tool_choice` forcing the call, defensive
+    `_parse_flashcards` validation (an empty-string side is schema-valid but useless, so
+    it's still rejected), `FlashcardGenerationError` on any malformed/empty/API failure.
+    Missing `ANTHROPIC_API_KEY` → bare `RuntimeError`. Multilingual.
+  - **`service.py`**: `generate_flashcards` verifies ownership → samples material (reuses
+    `documents.service.sample_subject_chunk_texts`, no re-embedding) → generates →
+    persists in one transaction (nothing on failure). `list_flashcards`/
+    `list_due_flashcards` are subject-scoped; `review_flashcard`/`delete_flashcard`/
+    `get_flashcard` are **owner-scoped by id alone** (same pattern as
+    `documents.service.get_document_by_id`) since neither review nor delete carries
+    `subject_id` in its URL. `review_flashcard` validates `grade` 0-5 before touching
+    `sm2.review` (`InvalidGradeError`) — defense-in-depth; the HTTP schema
+    (`ReviewRequest.grade: Field(ge=0, le=5)`) already rejects it at the boundary.
+    `list_due_flashcards`/`review_flashcard` both accept an overridable `now` so no
+    caller depends on wall-clock timing for correctness.
+  - **`router.py`**: two routers, same split as `ask.router`'s
+    `router`/`conversations_router` — `router` (subject-scoped: generate/list/`/due`),
+    `flashcards_router` (flat, owner-scoped-by-id: review/delete). Thin
+    exception→HTTP translation (404 unowned subject, 422 no material, 502 generation
+    failure, 422 defensively for `InvalidGradeError`). Wired into `main.py` +
+    `alembic/env.py`.
+  - Tests: `test_sm2.py` (18, pure/deterministic — first/second/nth successful interval,
+    any lapse grade 0-2 resets identically, a lapse decrements ease **without**
+    resetting it, perfect grade increases ease, grade 4 is the formula's exact
+    zero-crossing, repeated low grades floor at `1.3` both over many reviews and in a
+    single review from near the floor, out-of-range grades raise, `due_at = now +
+    interval`, `review()` doesn't mutate its input). `test_flashcard_generation.py` (9,
+    Anthropic client mocked directly, same pattern as `test_quiz_generation.py`).
+    `test_flashcards.py` (22 SQLite integration + 1 live): generated cards start with
+    default SR state and are due immediately; 404/422/502 paths (and nothing persisted
+    on a generation failure); `num_cards` passthrough + bounds (0/51 → 422); due-cards
+    filtering (a manually future-dated card is excluded); review advances the schedule
+    on a pass and resets `repetitions` on a lapse without losing all ease progress;
+    out-of-range grade → 422; review/delete 404 for missing/another-owner and leave the
+    card intact. Backend **208 passed** (9 deselected live, up from 159/8), `ruff`
+    clean.
+  - **Live-verified end-to-end** two ways: (1) the `-m live` flashcards test — real
+    Neon + Cohere + Claude tool-use generates well-formed cards, a real review advances
+    the schedule, cleanup removes **both** the Neon rows *and* the R2 object the
+    uploaded document created (the existing quiz/search live tests leave that R2 object
+    orphaned — confirmed via `list_objects_v2`, not repeated here). (2) The full real
+    stack — real Inngest Dev Server + real R2/Neon/Cohere/Claude — real HTTP upload →
+    `pending` → `ready` in ~5s → `POST /flashcards` → 4 well-formed cards, all due
+    immediately → a real review via `POST /flashcards/{id}/review` correctly advanced
+    `repetitions`/`interval_days`/`due_at` and the card correctly dropped out of
+    `GET /due` afterward. Cleaned up via real `DELETE`s; Neon **and** R2 both confirmed
+    clean afterward. Not click-tested in a real browser (no browser/Clerk auth here —
+    the flashcards frontend is the next increment anyway).
+
 ## Next (Phase 3+)
-- **Phase 3 — Flashcards + SM-2 SRS** per `docs/plan.md` (next phase).
+- **Flashcards frontend** — generate cards for a subject, review/grade them (0-5),
+  see the schedule advance — next increment.
 - Remaining per `docs/plan.md`: progress tracking, multilingual polish, billing (Polar,
   Phase 4), Business/Teams B2B (Phase 5).
 - Still owed from earlier: a real-browser click-through of the async upload/poll/delete,
-  quiz, and hybrid-Ask flows with live Clerk auth (noted across several increments,
-  never yet done — no browser available in this environment).
+  quiz, hybrid-Ask, and now flashcards flows with live Clerk auth (noted across several
+  increments, never yet done — no browser available in this environment).
 
 ## Blockers / needs from user
 - None — Neon, Clerk, Cohere, Anthropic, Inngest, and R2 keys are all in `backend/.env`.
