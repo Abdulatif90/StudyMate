@@ -5,15 +5,16 @@
 ## Current phase
 **Phase 0 — Setup: complete.** **Phase 1 — Core RAG: complete.** **Phase 2 — Quiz + FTS
 hybrid: complete.** **Phase 3 — Flashcards + SM-2: complete.** **Phase 4 — Progress
-tracking: backend done; Polar billing blocked on keys.** Progress is a new read-only
-`app/modules/progress/` (no models — pure aggregation over documents/flashcards/quizzes),
-live-verified against real Neon data. Polar billing can't start until the user provides
-a Polar account/API keys (same blocker pattern as R2/Inngest earlier). The progress
-*frontend* (a dashboard) is the next increment. Phase 1–3 recap: Subjects, documents (R2
-+ Inngest ingest with auto-summary, deletable), hybrid Ask/RAG (Postgres FTS + vector +
-RRF + Cohere Rerank, streaming), Conversations, Quiz (tool-use generation + full UI),
-Flashcards + SM-2 (tool-use generation + full review-session UI) — all with their own
-frontends already shipped.
+tracking: complete (backend + frontend); Polar billing blocked on keys.** Progress is a
+read-only `app/modules/progress/` (no models — pure aggregation over
+documents/flashcards/quizzes) plus a per-subject progress page and an overall
+`/dashboard`, both live-verified. Polar billing can't start until the user provides a
+Polar account/API keys (same blocker pattern as R2/Inngest earlier) — that's the only
+open Phase 4 item. Phase 1–3 recap: Subjects, documents (R2 + Inngest ingest with
+auto-summary, deletable), hybrid Ask/RAG (Postgres FTS + vector + RRF + Cohere Rerank,
+streaming), Conversations, Quiz (tool-use generation + full UI), Flashcards + SM-2
+(tool-use generation + full review-session UI) — all with their own frontends already
+shipped.
 
 ## Done
 - [x] Repo skeleton + `.gitignore`
@@ -1196,14 +1197,71 @@ frontends already shipped.
     blip, not a bug; re-querying fresh resolved it before any assertion was written
     against it.)
 
+- [x] Progress dashboard frontend — per-subject progress page + an overall `/dashboard`.
+  Closes Phase 4's Progress half (Polar billing, the other half, is still blocked).
+  - `components/progress-stats.tsx`: the shared rendering piece both new pages use —
+    three headline stat tiles (documents/flashcards/quizzes), a document-status badge
+    row, and a flashcard mastery breakdown. **Loaded the `dataviz` skill before writing
+    this** (it's a data visualization, per the skill's own trigger). The mastery
+    breakdown is a **status-encoded** segmented bar reusing the app's existing semantic
+    tokens — `muted-foreground` for new/not-started, `primary` for learning/in-progress,
+    `success` for mature/well-learned — rather than inventing a new categorical palette;
+    a design-system's pre-existing status tokens are exactly the kind of parameter the
+    skill's method expects to be handed, not re-derived. Every segment is still paired
+    with a visible label + count in the legend beneath the bar (never color alone, one
+    of the skill's non-negotiables). The bar itself never re-buckets a single card —
+    `lib/flashcardMastery.ts`'s `masteryRows`/`percentMature` only format the
+    already-partitioned `new`/`learning`/`mature` counts the API returns, so the UI
+    can't silently disagree with the backend's bucket math. `lib/documentProgress.ts`
+    does the equivalent for `DocumentStatusCounts`, reusing the same
+    ready/pending/failed → badge-variant mapping as the existing `documentStatus.ts`.
+  - `app/subjects/[subjectId]/progress/page.tsx`: fetches `GET
+    /subjects/{subject_id}/progress`. Same states as every other subject-scoped page —
+    "Subject not found" (checked via `subjectQuery.isError`, same as the quiz/flashcards
+    pages, not just a generic progress-load error), loading, and — the empty-account
+    case the task called out specifically — a friendly "Nothing to show yet" nudge
+    linking back to the subject, instead of a zeroed-out stat grid with no context, when
+    the subject genuinely has no documents/flashcards/quizzes.
+  - `app/dashboard/page.tsx`: fetches `GET /progress` (overall, across every subject the
+    caller owns). `subject_count === 0` renders a "Welcome to StudyMate / get started"
+    card instead of an all-zeros dashboard. **Added `/dashboard` to the Clerk middleware
+    matcher** (was `/subjects(.*)` only) — without this the page renders but its API
+    calls 401, since nothing protects it or forces a session. Linked from the Subjects
+    page header (beside `UserButton`) and from the home page for a signed-in visitor.
+  - **Clerk API surface changed since this app was scaffolded**: `SignedIn`/`SignedOut`
+    aren't exported by the installed `@clerk/nextjs` (`7.5.18`) — confirmed by reading
+    the package's own `.d.mts` type declarations rather than assuming, since `tsc`
+    caught the wrong import immediately. This version replaced them with a single
+    `<Show when="signed-in" fallback={...}>` component (`when` also accepts
+    `"signed-out"`, authorization descriptors, or a predicate) — used that instead.
+  - Subject-detail page gains a "Progress" (outline) button alongside
+    Flashcards/Quizzes/Ask.
+  - New pure helpers, unit-tested: `lib/flashcardMastery.ts` (`masteryRows` — 4 tests,
+    `percentMature` — 3 tests) and `lib/documentProgress.ts` (`documentStatusRows` — 3
+    tests), 10 tests total, covering the empty-deck / zero-count cases (`0`, never
+    `NaN`/`Infinity`).
+  - `schema.d.ts` regenerated (`SubjectProgress`/`OverallProgress`/
+    `DocumentStatusCounts`/`FlashcardProgress` + the 2 routes now typed) — no
+    hand-edits.
+  - Verified: `tsc --noEmit` clean, `eslint` clean, **90 passed** (21 files, up from
+    80/19), `npm run build` succeeds (both new routes compile: `/dashboard` and
+    `/subjects/[subjectId]/progress`; `/` itself moved from a static to a dynamic route
+    once it needed `<Show>`'s auth-aware rendering — expected, not a regression).
+  - **Live-verified**: no browser available in this environment (the standing gap noted
+    on every frontend page in this project), so this drove the **exact real HTTP
+    endpoints and payload shapes both pages call** against real Neon data (the same real
+    subjects/documents/flashcards/quizzes used to live-verify the backend) — confirmed
+    both `SubjectProgress` and `OverallProgress` return the exact shape
+    `ProgressStats`/`masteryRows`/`documentStatusRows` expect, and that
+    `new + learning + mature == total` holds against the real payload (the exact
+    partition invariant the stacked-bar rendering depends on). Read-only.
+
 ## Next (Phase 4+)
-- **Progress dashboard (frontend)** — a page rendering `SubjectProgress`/
-  `OverallProgress` (per-subject + overall) — next increment.
-- **Polar billing** — blocked; see "Blockers" below.
+- **Polar billing** — blocked; see "Blockers" below. The only open Phase 4 item.
 - Remaining per `docs/plan.md`: multilingual polish, Business/Teams B2B (Phase 5).
 - Still owed from earlier: a real-browser click-through of the async upload/poll/delete,
-  quiz, hybrid-Ask, and flashcards flows with live Clerk auth (noted across several
-  increments, never yet done — no browser available in this environment).
+  quiz, hybrid-Ask, flashcards, and progress-dashboard flows with live Clerk auth (noted
+  across several increments, never yet done — no browser available in this environment).
 
 ## Blockers / needs from user
 - **Polar billing (Phase 4)** — needs the user's Polar account + API keys before any

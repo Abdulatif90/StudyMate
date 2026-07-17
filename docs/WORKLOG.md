@@ -2,6 +2,73 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-17 — Progress dashboard frontend (closes Phase 4's Progress half)
+- The UI for the Phase 4 progress backend: a per-subject progress page and an overall
+  `/dashboard`. Polar billing (the other Phase 4 item) is still blocked on the user's
+  account/keys — unaffected by this increment.
+- **`chore(frontend)`**: regenerated `schema.d.ts` — `SubjectProgress`/
+  `OverallProgress`/`DocumentStatusCounts`/`FlashcardProgress` + the 2 routes now typed.
+- **Loaded the `dataviz` skill before writing the mastery breakdown** — it's a data
+  visualization by the skill's own trigger criteria, so this happened before any chart
+  code or color choice, not after. The breakdown ended up as a **status-encoded**
+  segmented bar rather than a fresh categorical palette: `new`/`learning`/`mature` map
+  onto the app's pre-existing semantic tokens (`muted-foreground`, `primary`,
+  `success`) — a design system's already-chosen status tokens are precisely the kind of
+  parameter the skill's method expects to receive, not re-derive from scratch. Every
+  segment still gets a visible label + count in the legend beneath the bar (never color
+  alone — one of the skill's non-negotiables, satisfied by construction here since the
+  legend was always going to exist for accessibility reasons anyway).
+- **`feat(frontend)` — helpers**: `lib/flashcardMastery.ts` (`masteryRows`,
+  `percentMature`) and `lib/documentProgress.ts` (`documentStatusRows`) turn the
+  backend's response into display rows — **neither recomputes anything**, they only
+  format the `new`/`learning`/`mature`/`ready`/`pending`/`failed` counts the API already
+  computed, so the UI can never silently disagree with the backend's bucket math (the
+  same "don't re-derive the source of truth" principle the task called out explicitly
+  as a pitfall). 10 vitest tests, including the empty-deck/zero-count cases returning
+  `0` rather than `NaN`/`Infinity`.
+- **`feat(frontend)` — shared component**: `components/progress-stats.tsx` — stat
+  tiles, a document-status badge row (reusing the same ready/pending/failed →
+  badge-variant mapping as the existing `documentStatus.ts`), and the mastery bar. Used
+  by both new pages so they can't drift apart in how they render the same
+  `documents`/`flashcards`/`quiz_count` shape.
+- **`feat(frontend)` — pages**:
+  - `subjects/[subjectId]/progress/page.tsx` — same states as every other
+    subject-scoped page: "Subject not found" checked via `subjectQuery.isError` first
+    (matching the quiz/flashcards pages' pattern exactly, not a generic "couldn't load
+    progress" for a 404), loading, and — the empty-account case the task specifically
+    called out — a friendly "Nothing to show yet" nudge instead of an all-zeros stat
+    grid, when the subject genuinely has no documents/flashcards/quizzes.
+  - `dashboard/page.tsx` — `subject_count === 0` renders a "Welcome to StudyMate / get
+    started" card instead of a broken-looking zeroed dashboard. **Added `/dashboard` to
+    the Clerk middleware matcher** (it was `/subjects(.*)` only) — without this the
+    page would render but its API calls would 401, since nothing forces a session on
+    an unprotected route. Linked from the Subjects page header (beside `UserButton`)
+    and from the home page for a signed-in visitor.
+  - Subject-detail page gains a "Progress" (outline) button alongside
+    Flashcards/Quizzes/Ask.
+- **Real API-surface gap caught by `tsc`, not assumed away**: `SignedIn`/`SignedOut`
+  don't exist in the installed `@clerk/nextjs` (`7.5.18`) — `tsc` rejected the import
+  immediately. Read the package's own `.d.mts` declarations rather than guessing a
+  workaround: this version unified them into a single `<Show when="signed-in"
+  fallback={...}>` component (`when` also takes `"signed-out"`, an authorization
+  descriptor, or a predicate function). Used that instead of downgrading or
+  hand-rolling an auth check.
+- Verified: `tsc --noEmit` clean, `eslint` clean, **90 passed** (21 files, up from
+  80/19), `npm run build` succeeds (both new routes compile). `/` moved from a static
+  to a dynamic prerender once it needed `<Show>`'s auth-aware rendering at request
+  time — expected given the change, not a regression to chase.
+- **Live-verified**: still no browser available in this environment (the same standing
+  gap on every frontend page here), so this drove **the exact real HTTP endpoints and
+  payload shapes both new pages call** against real Neon data — the same real
+  subjects/documents/flashcards/quizzes already used to live-verify the backend
+  increment. Confirmed both `SubjectProgress` and `OverallProgress` match the shape
+  `ProgressStats`/`masteryRows`/`documentStatusRows` expect, and specifically that
+  `new + learning + mature == total` holds against the real payload — the exact
+  partition invariant the stacked bar's rendering assumes. Read-only throughout
+  (throwaway script, not committed).
+- Phase 4's Progress half is now fully done (backend + frontend). Polar billing remains
+  the one blocked item; everything else in Phase 4 is complete.
+
 ## 2026-07-17 — Progress tracking backend: read-only aggregation (Phase 4 start)
 - Phase 4 is "Progress + Polar billing". Polar needs the user's account/API keys (not
   yet provided — blocked, same pattern as R2/Inngest were before). Did Progress first:
