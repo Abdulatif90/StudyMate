@@ -2,6 +2,101 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-17 — Plan tiers + usage-limit enforcement (Phase 4 billing foundation)
+- Polar itself is blocked on the user's account/API keys, but the **entitlement layer**
+  — which plan an owner is on and enforcing that plan's caps — is independent of the
+  payment provider, so it's built now. Polar later just upserts one `UserPlan` row from
+  its webhook; nothing else changes. No Polar SDK, no secrets, no plan-change endpoint
+  in this increment.
+- **`feat(billing)` — models + migration**: `UserPlan` (`owner_id` PK, plan enum,
+  `updated_at`); **absence of a row = Free**, never an error, so a brand-new user with
+  no billing row still uses the app up to the Free cap.
+  - `GenerationUsage` (`owner_id`, `day`, `kind`, `count`; unique on the triple) counts
+    generation **events**. This was the increment's main open design question, and the
+    answer isn't the obvious one: counting existing rows by `created_at` *looks* free
+    but is wrong, because rows don't map to events 1:1 — one `generate_quiz` writes one
+    `Quiz` row (countable), but one `generate_flashcards` writes *N* `Flashcard` rows, so
+    counting those would charge a single 10-card generation as 10 against a 20/day cap.
+    A dedicated counter records what the limit actually means, has bounded growth (≤2
+    rows/owner/day, not one per event), and stays correct if either module's
+    rows-per-generation ratio changes.
+  - Migration `48c8dee79a2c` applied to Neon; enum labels verified lowercase via
+    `pg_enum` (the `values_callable` fix this codebase already established), unique
+    constraint + indexes confirmed, `alembic check` clean. Also **fixed a latent gap
+    rather than copying it**: autogenerate's `downgrade()` drops the tables but not the
+    Postgres enum *types* `create_table` implicitly created, so a downgrade would leave
+    them behind and the next upgrade would fail with "type already exists". Added
+    explicit `DROP TYPE IF EXISTS` — the pre-existing `documentstatus` migration has
+    this same gap, noted in the migration rather than repeated.
+- **`feat(billing)` — service + router**: `billing.service` **owns all quota counting**;
+  the four guarded modules each gained exactly one guard call and zero counting logic.
+  Every cap lives in one documented `LIMITS` dict (Free 3/10/20, Pro 50/200/200,
+  Business unlimited via `None` — which short-circuits the count query rather than
+  comparing against a huge sentinel), so tuning a tier is a one-line change. **The user
+  should confirm/adjust those numbers** — they're the task's defaults.
+- **Tenant scoping is the security crux of this module**, more than anywhere else: a
+  usage count that read across owners would let one user's activity consume — or
+  silently bypass — another's quota. Every count filters `owner_id` directly (each table
+  already carries its own denormalized `owner_id`, so it's a plain equality filter, never
+  a join that could go wrong), and the per-subject document count filters `owner_id`
+  **and** `subject_id` — either alone is wrong in a different way (subject-only would be
+  a cross-tenant read if a subject_id ever leaked; owner-only would count the wrong
+  subject's documents). Asserted per-cap in the tests.
+- **Ordering contract, decided and documented in the code** (the task's core pitfall):
+  `ensure_can_*` runs at the START of each create path — before the R2 upload in
+  `create_document`, before the Claude call in both generators, before any row is
+  written — so a rejected request does no billable work and persists nothing.
+  `record_generation` **stages the increment without committing**, so the caller's
+  existing `session.commit()` persists counter + generated rows in the *same
+  transaction* (neither can land without the other, so the counter can't drift), and it
+  only runs *after* generation succeeded — a failed Claude call doesn't burn the user's
+  daily quota. The check/increment race at the exact cap boundary is documented as an
+  accepted ±1 overshoot on a soft cost-bounding cap, rather than paying for
+  `SELECT ... FOR UPDATE` contention on every generation.
+- **Days are UTC** (`_utc_day`) with an injectable `now` throughout — a local-time
+  boundary would depend on server timezone and be flaky/untestable, exactly as the task
+  warned.
+- **`PlanLimitExceededError` → 402 via one app-wide exception handler** in `main.py`,
+  not the same `except` block copy-pasted into four routers. The mapping is identical
+  everywhere, so one handler keeps those routers thin (the increment's own rule) and any
+  future guarded path gets it for free; per-router try/except stays the pattern for
+  *module-specific* exceptions, which genuinely differ per route. The body names the
+  limit + cap in prose **and** carries `limit`/`plan`/`cap` as fields, so a frontend can
+  act on it without parsing English.
+- `GET /billing/plan` returns plan + limits + usage (`subjects`, `generations_today`) so
+  the UI can render "2 of 3 subjects used". `max_documents_per_subject` deliberately has
+  no account-wide usage number — it's a per-subject cap, and the per-subject count
+  already comes from `GET /subjects/{id}/progress`. **No plan-change endpoint**: that's
+  the provider's job, and a self-serve "set my own plan" route would be an entitlement
+  bypass.
+- Tests: `test_billing.py` (26, offline/SQLite, no mocking — nothing external here).
+  Every cap asserted **exactly at its boundary** (Nth allowed / N+1th raises with the
+  right limit+plan+cap); default-Free-when-no-row; Pro lifting a cap and Business
+  unlimited; the document cap being per-subject not per-account; the generation cap
+  counting quiz + flashcards **together**; `record_generation` creating-then-incrementing
+  one row per slot (not one per event); its no-commit contract asserted by rolling the
+  caller's transaction back and confirming the counter rolled back too; the UTC-day reset
+  pinned with an injected `now` (exhausted at 23:59, fresh one second past midnight) and
+  asserted day-bucketed rather than a rolling 24h window; **tenant isolation per cap**;
+  and over HTTP — a 402 with the right fields, a rejected create persisting nothing, and
+  inserting a Pro row (what Polar's webhook will do) lifting the cap immediately.
+  Backend **244 passed** (9 deselected live, up from 218/9), `ruff` clean. **The 218
+  pre-existing tests needed no changes** — none of them exceeded a Free cap, which is
+  itself a useful signal that the defaults aren't absurdly tight.
+- **Live-verified against real Neon**, using a throwaway owner id so the real account's
+  data was never touched (confirmed before and after): a no-row owner defaulted to Free
+  with cap 3 → created 3 subjects (all 201) → `GET /billing/plan` reported
+  `subjects: 3` → the 4th returned **402** with
+  `{"limit":"subjects","plan":"free","cap":3}` and "You've reached your free plan limit
+  of 3 subjects. Upgrade your plan to continue." → confirmed the rejected create
+  persisted nothing (still exactly 3) → inserted a Pro `UserPlan` row, simulating the
+  future Polar webhook → the same request that had just 402'd returned **201**. Every
+  row cleaned up; the two real users' subjects untouched. (Throwaway script, not
+  committed.)
+- Phase 4 status: Progress (backend + frontend) and the entitlement layer are done. The
+  Polar **payment wiring** is the one blocked item; a billing frontend (usage meters /
+  upgrade prompts) is a separate, unblocked next increment.
+
 ## 2026-07-17 — Progress dashboard frontend (closes Phase 4's Progress half)
 - The UI for the Phase 4 progress backend: a per-subject progress page and an overall
   `/dashboard`. Polar billing (the other Phase 4 item) is still blocked on the user's

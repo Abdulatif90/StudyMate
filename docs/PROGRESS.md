@@ -5,16 +5,18 @@
 ## Current phase
 **Phase 0 — Setup: complete.** **Phase 1 — Core RAG: complete.** **Phase 2 — Quiz + FTS
 hybrid: complete.** **Phase 3 — Flashcards + SM-2: complete.** **Phase 4 — Progress
-tracking: complete (backend + frontend); Polar billing blocked on keys.** Progress is a
-read-only `app/modules/progress/` (no models — pure aggregation over
-documents/flashcards/quizzes) plus a per-subject progress page and an overall
-`/dashboard`, both live-verified. Polar billing can't start until the user provides a
-Polar account/API keys (same blocker pattern as R2/Inngest earlier) — that's the only
-open Phase 4 item. Phase 1–3 recap: Subjects, documents (R2 + Inngest ingest with
-auto-summary, deletable), hybrid Ask/RAG (Postgres FTS + vector + RRF + Cohere Rerank,
-streaming), Conversations, Quiz (tool-use generation + full UI), Flashcards + SM-2
-(tool-use generation + full review-session UI) — all with their own frontends already
-shipped.
+tracking complete (backend + frontend); plan/usage entitlement layer complete (backend);
+Polar payment wiring blocked on keys.** Progress is a read-only `app/modules/progress/`
+plus a per-subject page and an overall `/dashboard`. `app/modules/billing/` now holds a
+**provider-agnostic** entitlement layer — Free/Pro/Business plans and enforced usage caps
+— that Polar will later plug into by upserting one `UserPlan` row from its webhook; no
+Polar SDK/secrets exist yet. Remaining in Phase 4: the Polar payment wiring itself
+(**blocked** — needs the user's Polar account/API keys, same pattern as R2/Inngest
+earlier) and a usage-meter/upgrade-prompt frontend. Phase 1–3 recap: Subjects, documents
+(R2 + Inngest ingest with auto-summary, deletable), hybrid Ask/RAG (Postgres FTS + vector
++ RRF + Cohere Rerank, streaming), Conversations, Quiz (tool-use generation + full UI),
+Flashcards + SM-2 (tool-use generation + full review-session UI) — all with their own
+frontends already shipped.
 
 ## Done
 - [x] Repo skeleton + `.gitignore`
@@ -1256,15 +1258,103 @@ shipped.
     `new + learning + mature == total` holds against the real payload (the exact
     partition invariant the stacked-bar rendering depends on). Read-only.
 
+- [x] Plan tiers + usage-limit enforcement — the **entitlement layer** Polar will plug
+  into. Provider-agnostic on purpose: no Polar SDK, no secrets, no plan-change endpoint.
+  Polar itself stays blocked on keys; this half of billing doesn't depend on it.
+  - New `app/modules/billing/` (router + service + schemas + models).
+  - **`models.py`**: `UserPlan` (`owner_id` PRIMARY KEY, `plan` enum
+    free/pro/business, `updated_at`) — one row per owner, and **absence of a row means
+    Free**, never an error (a brand-new user with no billing row uses the app up to the
+    Free cap). This is the exact row a future Polar webhook upserts on
+    subscribe/cancel; nothing else changes when it arrives. `owner_id` being the PK
+    makes it inherently tenant-scoped.
+  - **`GenerationUsage`** (`owner_id`, `day`, `kind`, `count`, unique on the triple):
+    counts generation **events** per owner per UTC day. **Why a table instead of
+    counting existing rows by `created_at`** — the decision the task asked to document:
+    rows don't map to events 1:1. One `generate_quiz` writes one `Quiz` row (countable),
+    but one `generate_flashcards` writes *N* `Flashcard` rows — counting those would
+    charge a single 10-card generation as 10 against the daily cap. Bounded growth
+    (≤2 rows/owner/day), and it stays correct if either module's rows-per-generation
+    ratio ever changes.
+  - **`service.py` owns all quota counting** — the other four modules each gained
+    exactly one guard call and zero counting logic. One documented `LIMITS` dict holds
+    every cap in the product (Free 3 subjects / 10 docs per subject / 20 generations per
+    day; Pro 50 / 200 / 200; Business unlimited via `None`, which short-circuits the
+    count query entirely), so tuning a tier is a one-line change. **The user should
+    confirm/adjust these numbers** — they're the task's defaults.
+  - **Tenant scoping is the security crux here**: a usage count that read across owners
+    would let one user's activity consume — or bypass — another's quota. Every count
+    filters `owner_id` directly (each table carries its own denormalized `owner_id`, so
+    no join can go wrong); the per-subject document count filters `owner_id` **and**
+    `subject_id`, since either alone is wrong in a different way. Asserted per-cap in
+    the tests.
+  - **Ordering contract, decided and documented in code**: `ensure_can_*` runs at the
+    START of each create path — before the R2 upload, before the Claude call, before any
+    row is written — so a rejected request does no billable work and persists nothing.
+    `record_generation` **stages the increment without committing**, so the caller's
+    existing `session.commit()` persists the counter and the generated rows in the *same
+    transaction* (neither can land without the other), and it only runs *after*
+    generation succeeded — a failed Claude call doesn't burn the user's daily quota.
+    The check/increment race at the exact cap boundary is documented as an accepted ±1
+    overshoot on a soft cost-bounding cap, rather than paying for `SELECT ... FOR UPDATE`
+    lock contention.
+  - **Days are UTC** (`_utc_day`) with an injectable `now` on every affected function —
+    a local-time boundary would depend on server timezone and be untestable.
+  - `PlanLimitExceededError` → **402 Payment Required** via an **app-wide exception
+    handler** in `main.py`, not an identical `except` block in four routers: the mapping
+    is the same everywhere, so one handler keeps those routers thin and any future
+    guarded path gets it free (per-router try/except remains the pattern for
+    *module-specific* exceptions, which genuinely differ). The body names the limit and
+    cap in prose *and* carries `limit`/`plan`/`cap` as fields, so a client can act on it
+    without parsing text.
+  - `GET /billing/plan` → plan + limits + usage (`subjects`, `generations_today`), so a
+    frontend can show "2 of 3 subjects used". **No plan-change endpoint on purpose** —
+    that's the payment provider's job; a self-serve "set my own plan" route would be an
+    entitlement bypass. Noted for when Polar lands.
+  - Migration `48c8dee79a2c`, applied to Neon; enum labels confirmed lowercase via
+    `pg_enum` (the `values_callable` fix), unique constraint + indexes verified,
+    `alembic check` clean. Its `downgrade()` also DROPs the enum types — autogenerate
+    omits that, and without it a downgrade leaves them behind and the next upgrade fails
+    with "type already exists" (the pre-existing `documentstatus` migration has this
+    gap; deliberately not repeated).
+  - Tests: `test_billing.py` (26, offline/SQLite, no mocking — this module touches no
+    Claude/Cohere/R2/Inngest): every cap asserted **exactly at its boundary** (Nth
+    allowed, N+1th raises with the right limit/plan/cap); default-Free-when-no-row; Pro
+    lifting a cap and Business unlimited; the document cap being per-subject not
+    per-account; the generation cap counting quiz + flashcards **together** (combined
+    cap); `record_generation` creating-then-incrementing one row per slot; its
+    no-commit contract asserted by rolling the caller's transaction back and confirming
+    the counter rolled back too; the UTC-day reset pinned with an injected `now`
+    (exhausted at 23:59, fresh one second past midnight) and asserted day-bucketed
+    rather than a rolling 24h window; **tenant isolation per cap**; and over-HTTP: a 402
+    with the right fields, a rejected create persisting nothing, and inserting a Pro row
+    (what Polar's webhook will do) lifting the cap immediately. Backend **244 passed**
+    (9 deselected live, up from 218/9), `ruff` clean. **The 218 pre-existing tests
+    needed no changes** — none of them exceeded a Free cap.
+  - **Live-verified against real Neon** with a throwaway owner id (the real account's
+    data untouched, confirmed): a no-row owner defaulted to Free with cap 3 → created 3
+    subjects (all 201) → `GET /billing/plan` reported `subjects: 3` → the 4th returned
+    **402** with `{"limit":"subjects","plan":"free","cap":3}` and "Upgrade your plan to
+    continue" → confirmed the rejected create persisted nothing (still exactly 3) →
+    inserted a Pro `UserPlan` row (simulating the future Polar webhook) → the same
+    request that just 402'd returned **201**. All rows cleaned up afterward.
+
 ## Next (Phase 4+)
-- **Polar billing** — blocked; see "Blockers" below. The only open Phase 4 item.
+- **Billing frontend** — usage meters ("2 of 3 subjects used") + upgrade prompts on the
+  402 path, consuming `GET /billing/plan`. Not blocked by Polar.
+- **Polar payment wiring** — blocked; see "Blockers" below. The entitlement layer it
+  plugs into is done: its webhook just upserts `UserPlan`.
 - Remaining per `docs/plan.md`: multilingual polish, Business/Teams B2B (Phase 5).
 - Still owed from earlier: a real-browser click-through of the async upload/poll/delete,
   quiz, hybrid-Ask, flashcards, and progress-dashboard flows with live Clerk auth (noted
   across several increments, never yet done — no browser available in this environment).
 
 ## Blockers / needs from user
-- **Polar billing (Phase 4)** — needs the user's Polar account + API keys before any
-  billing work can start (same pattern as R2/Inngest before those were provided).
-  Progress tracking (the other Phase 4 item) doesn't depend on Polar and is done.
+- **Polar payment wiring (Phase 4)** — needs the user's Polar account + API keys (same
+  pattern as R2/Inngest before those were provided). **Only the payment integration is
+  blocked**: the entitlement layer (plans, caps, enforcement, `GET /billing/plan`) is
+  built and live-verified, and Polar's webhook will simply upsert `UserPlan`.
+- **Confirm/adjust the plan limits** in `billing/service.LIMITS` — currently the task's
+  defaults (Free 3 subjects / 10 docs per subject / 20 generations per day; Pro
+  50/200/200; Business unlimited). One dict, one-line changes.
 - Neon, Clerk, Cohere, Anthropic, Inngest, and R2 keys are all in `backend/.env`.
