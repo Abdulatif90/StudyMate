@@ -16,6 +16,8 @@ from app.modules.ask.router import conversations_router
 from app.modules.ask.router import router as ask_router
 from app.modules.documents.jobs import process_document_fn
 from app.modules.documents.router import router as documents_router
+from app.modules.flashcards.router import flashcards_router
+from app.modules.flashcards.router import router as flashcards_subject_router
 from app.modules.quiz.router import router as quiz_router
 from app.modules.subjects.router import router as subjects_router
 
@@ -39,6 +41,8 @@ app.include_router(documents_router)
 app.include_router(ask_router)
 app.include_router(conversations_router)
 app.include_router(quiz_router)
+app.include_router(flashcards_subject_router)
+app.include_router(flashcards_router)
 
 # Serve the Inngest functions at /api/inngest (Inngest calls back here to run jobs).
 inngest.fast_api.serve(app, get_inngest_client(), [process_document_fn])
