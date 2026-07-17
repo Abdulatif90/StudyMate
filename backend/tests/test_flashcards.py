@@ -426,6 +426,12 @@ def test_generate_and_review_flashcard_end_to_end_against_real_neon_cohere_and_c
                 assert card.repetitions == 0
                 assert card.ease_factor == pytest.approx(2.5)
 
+            # review_flashcard looks the card up in this same session, so it returns
+            # the SAME identity-mapped object as flashcards[0] — snapshot the
+            # pre-review due_at as a plain value first, or comparing "before" and
+            # "after" would just compare the mutated object to itself.
+            original_due_at = flashcards[0].due_at
+
             reviewed = flashcards_service.review_flashcard(
                 session, owner_id, flashcards[0].id, grade=5
             )
@@ -433,7 +439,7 @@ def test_generate_and_review_flashcard_end_to_end_against_real_neon_cohere_and_c
             assert reviewed.repetitions == 1
             assert reviewed.interval_days == 1
             assert reviewed.last_reviewed_at is not None
-            assert reviewed.due_at > flashcards[0].due_at
+            assert reviewed.due_at > original_due_at
         finally:
             for flashcard in flashcards:
                 session.delete(flashcard)
