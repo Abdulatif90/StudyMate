@@ -3,13 +3,13 @@
 > Current state of the StudyMate build. **Read this to resume work** after any break/reset.
 
 ## Current phase
-**Phase 0 — Setup: complete.** **Phase 1 — Core RAG: complete.** **Phase 2 — Quiz:
-backend + frontend done** — quiz generation via Claude tool-use structured output
-(generate/list/get/delete) plus the full quiz UI (generate, take/self-test, review with
-score + explanations, delete). Next in Phase 2 per `docs/plan.md`: FTS hybrid search
-(Postgres full-text + RRF). Phase 1 recap: Subjects, documents (R2 + Inngest ingest with
-auto-summary, deletable), Ask/RAG (retrieve → Cohere Rerank → Claude, streaming),
-Conversations, and the frontend for all of it.
+**Phase 0 — Setup: complete.** **Phase 1 — Core RAG: complete.** **Phase 2 — Quiz + FTS
+hybrid: complete** — quiz generation via Claude tool-use structured output + full quiz
+UI, and hybrid retrieval (pgvector + Postgres full-text, fused with RRF, then Cohere
+Rerank). Next is **Phase 3 — Flashcards + SM-2 SRS** per `docs/plan.md`. Phase 1 recap:
+Subjects, documents (R2 + Inngest ingest with auto-summary, deletable), Ask/RAG
+(hybrid retrieve → Cohere Rerank → Claude, streaming), Conversations, and the frontend
+for all of it.
 
 ## Done
 - [x] Repo skeleton + `.gitignore`
@@ -976,14 +976,52 @@ Conversations, and the frontend for all of it.
     end-to-end through the real stack in the backend increment, and `tsc` guarantees the
     UI consumes those exact typed shapes.
 
-## Next (Phase 2+)
-- **FTS hybrid search (Postgres full-text + RRF)** — next Phase 2 increment per
-  `docs/plan.md`/DECISIONS.md #4 (avoids Lexara's per-query in-memory BM25 rebuild).
-- Remaining Phase 2+ per `docs/plan.md`: flashcards (SM-2), progress tracking,
-  multilingual polish, billing (Polar).
-- Still owed from earlier: a real-browser click-through of the async upload/poll/delete
-  and now quiz flows with live Clerk auth (noted across several increments, never yet
-  done — no browser available in this environment).
+- [x] Hybrid retrieval — Postgres full-text (FTS) + vector, fused with Reciprocal Rank
+  Fusion (RRF), then Cohere Rerank. Closes Phase 2 (DECISIONS.md #4 — FTS lives in
+  Postgres, not rebuilt in Python per query).
+  - **FTS in Postgres**: migration `066f42dbed80` adds `document_chunks.text_search_vector`
+    as a `GENERATED ALWAYS AS (to_tsvector('simple', text)) STORED` column + a GIN index.
+    Generated/stored → computed once per row on write and **auto-populated for existing
+    rows by the ALTER** (no separate backfill); regenerates when `text` changes. `'simple'`
+    config: no language-specific stemming/stopword removal (right for multilingual
+    material) and IMMUTABLE (required for a generated column — the 1-arg `to_tsvector`
+    is only STABLE and can't be used). Managed in **raw SQL, not on the `DocumentChunk`
+    model**, so the SQLite test engine (no tsvector) can still `create_all`;
+    `alembic/env.py` gained an `include_object` that excludes this Postgres-only
+    column/index from autogenerate so a future `--autogenerate` never proposes dropping
+    it (verified: `alembic check` → "No new upgrade operations detected"). Applied to
+    Neon, confirmed via `information_schema` (`is_generated=ALWAYS`) + `pg_indexes` (GIN).
+  - **`search_chunks` is now hybrid** (Postgres branch): two owner+subject-scoped
+    candidate arms — the existing pgvector cosine arm and a new lexical arm
+    (`websearch_to_tsquery`/`ts_rank` over the GIN-indexed tsvector, config matching the
+    column's `'simple'`) — fused by `rrf.py`'s `reciprocal_rank_fusion` (pure, DB-free:
+    fuses on **rank position**, `score = Σ 1/(k+rank)`, `k=60`, since cosine distance and
+    `ts_rank` are different scales and can't be added), bounded to `RERANK_CANDIDATE_POOL`,
+    then the same `_rerank_candidates` (Cohere Rerank) final stage. The RRF score rides
+    along so a rerank *failure* falls back to fused order.
+  - **Every guarantee preserved**: both arms carry `owner_id + subject_id` (the FTS arm
+    is a new tenant-leak surface — filter not optional); the SQLite branch still returns
+    filtered-but-unranked (FTS/`<=>` are Postgres-only), so the offline scoping tests
+    pass unchanged; graceful rerank fallback intact; Ask (stream + non-stream) unchanged
+    — same `search_chunks` entry point, no ask-side edits.
+  - Tests: `test_rrf.py` (9, offline, pure — order preserved, both-arms item outranks
+    single-arm, agreed-top wins, one/both/no arms empty, deterministic tie-break,
+    exact `1/(k+1)` score, k dampening). `test_search.py`: SQLite scoping unchanged +
+    a live test asserting hybrid surfaces an exact keyword/code match (`ISO-9001`) as
+    the top result through the real pipeline (the FTS arm's whole point). Backend
+    **159 passed** (8 deselected live, up from 150/7), `ruff` clean.
+  - **Live-verified** against real Neon + Cohere + Claude: the live search tests
+    (hybrid returns the exact-keyword chunk first; on-topic still ranks first) and both
+    live **Ask** tests (non-stream + streaming) — grounded, cited answers through the
+    hybrid path end-to-end. Neon confirmed clean afterward.
+
+## Next (Phase 3+)
+- **Phase 3 — Flashcards + SM-2 SRS** per `docs/plan.md` (next phase).
+- Remaining per `docs/plan.md`: progress tracking, multilingual polish, billing (Polar,
+  Phase 4), Business/Teams B2B (Phase 5).
+- Still owed from earlier: a real-browser click-through of the async upload/poll/delete,
+  quiz, and hybrid-Ask flows with live Clerk auth (noted across several increments,
+  never yet done — no browser available in this environment).
 
 ## Blockers / needs from user
 - None — Neon, Clerk, Cohere, Anthropic, Inngest, and R2 keys are all in `backend/.env`.

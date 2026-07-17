@@ -2,6 +2,60 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-17 — Hybrid retrieval: Postgres FTS + vector, fused with RRF (closes Phase 2)
+- Added the lexical arm to retrieval and fused it with the existing vector arm via
+  Reciprocal Rank Fusion, before the Cohere Rerank stage. DECISIONS.md #4 requires FTS
+  to live in Postgres (not a per-query in-memory BM25 rebuild like Lexara).
+- **`feat(backend)` — FTS in Postgres**: migration `066f42dbed80` adds
+  `document_chunks.text_search_vector` as a `GENERATED ALWAYS AS (to_tsvector('simple',
+  text)) STORED` column + a GIN index over it.
+  - Generated/stored, so Postgres computes the tsvector once per row on write **and for
+    every existing row when the column is added** — no separate backfill (the pitfall);
+    it regenerates automatically when `text` changes. No trigger, no app code to keep it
+    in sync.
+  - `'simple'` config on purpose: multilingual app, and `simple` does no
+    language-specific stemming/stopword removal (`english` would mangle non-English
+    terms). The two-arg form is IMMUTABLE, which a generated column requires — the
+    one-arg `to_tsvector(text)` depends on a session GUC (STABLE) and is rejected.
+  - Managed in **raw SQL, not on the `DocumentChunk` SQLModel** — a `tsvector` generated
+    column would break the SQLite test engine's `create_all` (no tsvector type, no
+    `to_tsvector`). To stop autogenerate from then seeing a DB column absent from the
+    model and proposing to drop it, `alembic/env.py` gained an `include_object` filter
+    that excludes this Postgres-only column + index. Verified with `alembic check` →
+    "No new upgrade operations detected". Applied to Neon; confirmed the generated column
+    (`is_generated=ALWAYS`, expr `to_tsvector('simple', text)`) via `information_schema`
+    and the GIN index via `pg_indexes`.
+- **`feat(backend)` — hybrid `search_chunks` + RRF**: the Postgres branch now runs two
+  owner+subject-scoped arms — the existing pgvector cosine arm and a new lexical arm
+  (`websearch_to_tsquery`/`ts_rank` over the GIN-indexed tsvector; `websearch_to_tsquery`
+  tolerates arbitrary user input without raising; config matches the column's `'simple'`,
+  confirmed against Neon before wiring) — and fuses them with `rrf.py`'s
+  `reciprocal_rank_fusion`. RRF is a pure, DB-free helper: it fuses on **rank position**
+  (`score = Σ 1/(k+rank)`, `k=60` from the Cormack et al. paper), because cosine distance
+  and `ts_rank` are on different scales and can't be added directly — the exact reason
+  RRF is the standard here. The fused pool is bounded to `RERANK_CANDIDATE_POOL` (one
+  Rerank call, same cost profile as before) and handed to the unchanged `_rerank_candidates`
+  Cohere stage; the RRF score rides along so a rerank *failure* falls back to fused order.
+- **Guarantees preserved**: both arms carry `owner_id + subject_id` — the FTS arm is a
+  brand-new place a cross-tenant leak could hide, so the filter is not optional there;
+  the SQLite branch is untouched (FTS and `<=>` are Postgres-only, so off Postgres it
+  still returns the filtered-but-unranked chunks) → the offline scoping tests pass
+  unchanged; graceful rerank fallback intact; Ask (stream + non-stream) needed **no
+  change** — it goes through the same `search_chunks` entry point.
+- Tests: `test_rrf.py` (9, offline/pure — single-list order preserved, an item in both
+  arms outranks a single-arm item, agreed-top wins, one/both/no arms empty, deterministic
+  tie-break by first appearance, the exact `1/(k+1)` score, and `k` dampening the
+  rank-1-vs-2 gap). `test_search.py`: SQLite scoping tests unchanged (FTS skipped off
+  Postgres) + a new live test asserting the hybrid path surfaces an exact keyword/code
+  match (`ISO-9001`) as the top result — the FTS arm's whole reason for existing — with
+  the FTS arm owner+subject-scoped. Backend **159 passed** (8 deselected live, up from
+  150/7), `ruff` clean.
+- **Live-verified** against real Neon + Cohere + Claude: the live search tests (hybrid
+  returns the exact-keyword chunk first; on-topic still ranks first) and both live **Ask**
+  tests (non-stream + streaming) — grounded, correctly-cited answers end-to-end through
+  the hybrid path. Neon confirmed clean afterward.
+- Phase 2 (Quiz + FTS hybrid) is now complete; Phase 3 (Flashcards + SM-2) is next.
+
 ## 2026-07-17 — Quiz frontend (generate / take / review / delete)
 - The UI for the Phase 2 quiz backend. Students can generate a quiz for a subject, take
   it as a real self-test, reveal the score + explanations, and delete it. Follows the
