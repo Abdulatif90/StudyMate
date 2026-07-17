@@ -40,9 +40,16 @@ export default function SubjectsPage() {
 
   return (
     <div className="mx-auto max-w-2xl p-4 sm:p-8">
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-8 flex items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Subjects</h1>
-        <UserButton />
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={<Link href="/dashboard">Dashboard</Link>}
+          />
+          <UserButton />
+        </div>
       </div>
 
       <Card className="mb-8">

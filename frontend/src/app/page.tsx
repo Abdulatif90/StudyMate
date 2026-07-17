@@ -1,3 +1,4 @@
+import { Show } from "@clerk/nextjs";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
@@ -9,12 +10,29 @@ export default function Home() {
         Upload your study materials and get cited, sourced answers to your questions.
       </p>
       <div className="flex flex-col gap-4 sm:flex-row">
-        <Button nativeButton={false} render={<Link href="/subjects">Go to Subjects</Link>} />
-        <Button
-          variant="outline"
-          nativeButton={false}
-          render={<Link href="/sign-in">Sign in</Link>}
-        />
+        <Show
+          when="signed-in"
+          fallback={
+            <>
+              <Button
+                nativeButton={false}
+                render={<Link href="/subjects">Go to Subjects</Link>}
+              />
+              <Button
+                variant="outline"
+                nativeButton={false}
+                render={<Link href="/sign-in">Sign in</Link>}
+              />
+            </>
+          }
+        >
+          <Button nativeButton={false} render={<Link href="/dashboard">Dashboard</Link>} />
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={<Link href="/subjects">Go to Subjects</Link>}
+          />
+        </Show>
       </div>
     </div>
   );

@@ -123,6 +123,11 @@ export default function SubjectDetailPage() {
           <Button
             variant="outline"
             nativeButton={false}
+            render={<Link href={`/subjects/${subjectId}/progress`}>Progress</Link>}
+          />
+          <Button
+            variant="outline"
+            nativeButton={false}
             render={<Link href={`/subjects/${subjectId}/flashcards`}>Flashcards</Link>}
           />
           <Button
