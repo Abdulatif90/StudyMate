@@ -33,3 +33,30 @@ class PlanRead(BaseModel):
     plan: Plan
     limits: PlanLimitsRead
     usage: PlanUsageRead
+
+
+class CheckoutCreateRequest(BaseModel):
+    """Which plan to buy. The caller names a *plan*, never a Polar product id — product
+    ids are server-side config (see config.polar_product_id_*), so a client can't point a
+    checkout at an arbitrary product. There is no `owner_id` here either: it comes from
+    the caller's verified token, so nobody can check out on someone else's behalf.
+    """
+
+    plan: Plan
+    #: Where Polar sends the customer after paying. Optional: with no value Polar shows
+    #: its own hosted confirmation page, which is correct until the billing frontend
+    #: exists to receive the redirect.
+    success_url: str | None = None
+
+
+class CheckoutCreateResponse(BaseModel):
+    #: Polar-hosted checkout page to redirect the browser to.
+    checkout_url: str
+
+
+class WebhookResponse(BaseModel):
+    """What the webhook reports back to Polar. `status` is one of `applied`,
+    `ignored`, or `ignored_stale` — an accepted-but-not-actioned event is a 200 with an
+    explicit outcome, not a silent success (rule 3)."""
+
+    status: str

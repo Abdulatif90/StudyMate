@@ -11,23 +11,32 @@ bypass — another's quota. Every query below filters by `owner_id`, and each ag
 table already carries its own denormalized `owner_id` column, so that's a plain equality
 filter (same reasoning as `progress.service`), never a join that could go wrong.
 
-**Provider-agnostic.** No Polar, no payment SDK, no secrets. This is the entitlement
-layer; when Polar keys exist, its webhook upserts `UserPlan` and everything here keeps
-working unchanged. There is deliberately no plan-*change* endpoint yet.
+**The entitlement layer stays provider-agnostic.** Everything above the "Polar" section
+at the bottom — `LIMITS`, the counts, the `ensure_can_*` guards, `record_generation` —
+knows nothing about who takes the money. Polar's *only* job in this codebase is to upsert
+one `UserPlan` row (DECISIONS.md #7); the enforcement built on that row is unchanged by
+its arrival. There is still deliberately no plan-*change* endpoint: that's the payment
+provider's job, and a self-serve "set my own plan" route would be an entitlement bypass.
 """
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from enum import StrEnum
 
+from polar_sdk.models import CheckoutCreate, PolarError
 from sqlmodel import Session, func, select
 
+from app.core import polar_client
+from app.core.config import get_settings
 from app.modules.billing.models import GenerationKind, GenerationUsage, Plan, UserPlan
 from app.modules.documents.models import Document
 from app.modules.subjects.models import Subject
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -219,3 +228,252 @@ def record_generation(
     else:
         usage.count += 1
     session.add(usage)
+
+
+# --- Polar (payments) --------------------------------------------------------
+#
+# Polar's only job is to upsert `UserPlan` (DECISIONS.md #7). Everything above this line
+# is unaware of it. The two halves are:
+#   1. checkout  — authenticated; this is where the owner_id -> Polar customer link is
+#      planted, because it's the only point in the flow where we know who the caller is.
+#   2. webhook   — public/unauthenticated; resolves the owner back out of a *verified*
+#      payload and writes the plan.
+
+
+#: Plans that can actually be purchased. **Free is not sold**: Free is the *absence* of a
+#: paid plan (no `UserPlan` row, or an explicit downgrade to it), so there is no product
+#: to check out and no money to take. Checking out "free" would be a $0 no-op.
+PURCHASABLE_PLANS: frozenset[Plan] = frozenset({Plan.PRO, Plan.BUSINESS})
+
+
+class PlanNotPurchasableError(Exception):
+    """Raised when a checkout is requested for a plan that isn't sold (i.e. Free)."""
+
+    def __init__(self, plan: Plan) -> None:
+        self.plan = plan
+        super().__init__(f"The {plan.value} plan cannot be purchased.")
+
+
+class PolarCheckoutError(Exception):
+    """Raised when Polar rejects/fails a checkout creation. Deliberately distinct from
+    `PolarConfigError` (a deploy mistake) — this one is an upstream failure, and the
+    router maps the two to different statuses rather than swallowing either."""
+
+
+def _product_id_for_plan(plan: Plan) -> str:
+    settings = get_settings()
+    product_ids: dict[Plan, tuple[str, str | None]] = {
+        Plan.PRO: ("POLAR_PRODUCT_ID_PRO", settings.polar_product_id_pro),
+        Plan.BUSINESS: ("POLAR_PRODUCT_ID_BUSINESS", settings.polar_product_id_business),
+    }
+    env_name, product_id = product_ids[plan]
+    if not product_id:
+        raise polar_client.PolarConfigError(
+            f"Polar is not configured for the {plan.value} plan — missing {env_name}. "
+            "Add it to backend/.env — see backend/.env.example."
+        )
+    return product_id
+
+
+def plan_for_product_id(product_id: str) -> Plan | None:
+    """Reverse of `_product_id_for_plan`: which plan a Polar product grants, or `None` if
+    the product isn't one we sell. `None` is not an error — the org may sell products
+    this app doesn't map (the caller decides what to do), and guessing a plan for an
+    unknown product would hand out entitlements we never sold."""
+    settings = get_settings()
+    mapping = {
+        settings.polar_product_id_pro: Plan.PRO,
+        settings.polar_product_id_business: Plan.BUSINESS,
+    }
+    # A missing/unset id must never match an incoming product_id.
+    mapping.pop(None, None)
+    return mapping.get(product_id)
+
+
+def create_checkout(owner_id: str, plan: Plan, success_url: str | None = None) -> str:
+    """Create a Polar checkout for `plan` and return its URL.
+
+    **This is where owner linkage is planted, and it's the crux of the whole flow.** The
+    webhook arrives with no Clerk JWT, so it can only know whose plan to change if we
+    record that link now — here, where the caller *is* authenticated and `owner_id` comes
+    from their verified token. `external_customer_id` puts the Clerk owner_id on the Polar
+    customer; the webhook reads it back out of a signature-verified payload
+    (`subscription.customer.external_id`).
+
+    It is deliberately NOT taken from anything the client sends: the caller cannot ask to
+    upgrade somebody else, because they never get to name the owner at all.
+    """
+    if plan not in PURCHASABLE_PLANS:
+        raise PlanNotPurchasableError(plan)
+
+    product_id = _product_id_for_plan(plan)
+    checkout = CheckoutCreate(
+        products=[product_id],
+        external_customer_id=owner_id,
+    )
+    if success_url is not None:
+        checkout.success_url = success_url
+
+    try:
+        result = polar_client.get_client().checkouts.create(request=checkout)
+    except PolarError as exc:
+        # Wrapped, never swallowed (rule 3): the router turns this into a real error
+        # status. Returning a 200 with no URL would strand the user on a dead button.
+        raise PolarCheckoutError(f"Polar rejected the checkout request: {exc}") from exc
+    return result.url
+
+
+def _as_utc(moment: datetime) -> datetime:
+    """Normalize a datetime to UTC-aware.
+
+    Needed because the two sides of the ordering comparison below disagree: Polar's event
+    timestamp is timezone-aware, but `UserPlan.updated_at` round-trips through a
+    `TIMESTAMP WITHOUT TIME ZONE` column and comes back **naive**. Comparing the two
+    directly raises `TypeError`. Values are always UTC by construction (`_utc_day`'s
+    reasoning applies here too), so a naive value is simply tagged as UTC.
+    """
+    return moment.replace(tzinfo=UTC) if moment.tzinfo is None else moment.astimezone(UTC)
+
+
+#: Events that GRANT a plan. `subscription.active` covers a new paid subscription and a
+#: recovered payment. `subscription.updated` covers a mid-period tier switch (Pro ->
+#: Business), which fires no `active` event of its own — without it an upgrade would be
+#: silently ignored. Both are re-checked against the subscription's *status* below, so an
+#: `updated` that isn't actually an active subscription grants nothing.
+_GRANTING_EVENTS = frozenset({"subscription.active", "subscription.updated"})
+
+#: Events that REVOKE a plan back to Free. **`subscription.revoked` only, never
+#: `subscription.canceled`** — a subtle but expensive distinction the SDK spells out:
+#: `canceled` means "cancellation scheduled, the customer may still have access until the
+#: end of the period they already paid for", while `revoked` means "access lost now"
+#: (cancellation taking effect, or payment retries exhausted). Downgrading on `canceled`
+#: would cut off a paying customer mid-period. `past_due` is likewise not here: payment
+#: may still recover, and `revoked` fires if it doesn't.
+_REVOKING_EVENTS = frozenset({"subscription.revoked"})
+
+#: Subscription statuses that entitle the customer to their plan. `trialing` counts —
+#: a trial is meant to grant access.
+_ENTITLED_STATUSES = frozenset({"active", "trialing"})
+
+
+def resolve_subscription_event(event: object) -> tuple[str, Plan, datetime] | None:
+    """Map a **verified** Polar webhook event to `(owner_id, plan, event_at)`, or `None`
+    if it's not an event that should change anybody's plan.
+
+    `None` covers every "understood but not actionable" case — an event type we don't act
+    on, a subscription that isn't entitled, a product we don't sell, or a customer with no
+    `external_id` (e.g. a subscription created straight from the Polar dashboard rather
+    than through our checkout). These are logged and reported, never silently dropped
+    (rule 3), but they are not *errors*: failing them would only make Polar retry an
+    event that will never succeed.
+    """
+    event_type = getattr(event, "TYPE", None)
+    if event_type not in _GRANTING_EVENTS | _REVOKING_EVENTS:
+        logger.info("Ignoring unhandled Polar event type %s", event_type)
+        return None
+
+    subscription = event.data  # type: ignore[attr-defined]
+
+    # **Owner linkage, read only from the verified payload.** `external_id` is the Clerk
+    # owner_id we planted server-side at checkout (see create_checkout). It is never read
+    # from a client-supplied field on this request — the request body's authenticity is
+    # exactly what the signature check established.
+    owner_id = subscription.customer.external_id
+    if not owner_id:
+        logger.warning(
+            "Polar %s event for subscription %s has no customer external_id — cannot "
+            "resolve an owner, ignoring. (Was this subscription created outside our "
+            "checkout?)",
+            event_type,
+            subscription.id,
+        )
+        return None
+
+    event_at = event.timestamp  # type: ignore[attr-defined]
+
+    if event_type in _REVOKING_EVENTS:
+        return owner_id, Plan.FREE, event_at
+
+    status = getattr(subscription.status, "value", subscription.status)
+    if status not in _ENTITLED_STATUSES:
+        logger.info(
+            "Ignoring Polar %s event — subscription %s is %s, not an entitled status. "
+            "(Loss of access arrives as subscription.revoked.)",
+            event_type,
+            subscription.id,
+            status,
+        )
+        return None
+
+    plan = plan_for_product_id(subscription.product_id)
+    if plan is None:
+        logger.warning(
+            "Polar %s event references product %s, which maps to no plan — ignoring. "
+            "Check POLAR_PRODUCT_ID_* against the products in the Polar dashboard.",
+            event_type,
+            subscription.product_id,
+        )
+        return None
+
+    return owner_id, plan, event_at
+
+
+def handle_webhook_event(session: Session, event: object) -> str:
+    """Apply a **verified** Polar event. Returns a short outcome string for the response
+    body/logs. The caller MUST have verified the signature first — this trusts `event`.
+    """
+    resolved = resolve_subscription_event(event)
+    if resolved is None:
+        return "ignored"
+
+    owner_id, plan, event_at = resolved
+    written = apply_subscription_event(session, owner_id, plan, event_at)
+    return "applied" if written else "ignored_stale"
+
+
+def apply_subscription_event(
+    session: Session,
+    owner_id: str,
+    plan: Plan,
+    event_at: datetime,
+) -> bool:
+    """Upsert exactly one owner's `UserPlan`. Returns True if the plan was written,
+    False if the event was ignored as stale/duplicate.
+
+    **Tenant scoping**: `owner_id` is the primary key, and it comes from the verified
+    payload — this touches exactly one row and cannot reach another owner's plan.
+
+    **Idempotency + ordering** (Polar retries, and can deliver out of order): the write is
+    guarded on `event_at` vs the stored `updated_at`, and `updated_at` is set to the
+    *event's* timestamp, not wall-clock time. That's what makes the comparison meaningful:
+    if it stored processing time, a legitimately newer event that merely arrived a moment
+    later would look older than the row and be dropped. A duplicate delivery has an
+    equal timestamp and is skipped; a stale one is older and is skipped. Both are no-ops
+    rather than errors — a retry that changes nothing is a success, not a failure.
+    """
+    event_at = _as_utc(event_at)
+    user_plan = session.get(UserPlan, owner_id)
+
+    if user_plan is None:
+        session.add(UserPlan(owner_id=owner_id, plan=plan, updated_at=event_at))
+        session.commit()
+        return True
+
+    if _as_utc(user_plan.updated_at) >= event_at:
+        logger.info(
+            "Ignoring stale/duplicate Polar event for owner (event_at=%s, updated_at=%s)",
+            event_at,
+            user_plan.updated_at,
+        )
+        return False
+
+    # **Downgrade sets Plan.FREE rather than deleting the row**, even though "no row"
+    # also means Free (models.UserPlan). Deleting would throw away `updated_at` — the
+    # ordering guard above — so a stale `subscription.active` redelivered afterwards
+    # would find no row, look fresh, and silently re-grant a paid plan for free. Keeping
+    # the row costs one tiny row per ex-subscriber and keeps the guard intact.
+    user_plan.plan = plan
+    user_plan.updated_at = event_at
+    session.add(user_plan)
+    session.commit()
+    return True
