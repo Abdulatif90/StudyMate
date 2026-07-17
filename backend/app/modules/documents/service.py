@@ -10,6 +10,7 @@ import logging
 import uuid
 
 import inngest
+import sqlalchemy as sa
 from sqlmodel import Session, delete, select
 
 from app.core import r2_client
@@ -23,8 +24,15 @@ from app.modules.documents.parsing import (
     extract_text,
 )
 from app.modules.documents.rerank import RerankError, rerank
+from app.modules.documents.rrf import reciprocal_rank_fusion
 from app.modules.documents.summarization import SummarizationError, summarize_document
 from app.modules.subjects.service import get_subject
+
+# The Postgres text-search config the FTS arm queries with — MUST match the config the
+# `text_search_vector` generated column was built with (`simple`, see migration
+# 066f42dbed80), or lexical matching silently breaks. `simple` does no language-specific
+# stemming/stopword removal, right for multilingual material.
+_FTS_CONFIG = "simple"
 
 MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB
 
@@ -379,16 +387,22 @@ def search_chunks(
     query: str,
     top_k: int = 8,
 ) -> list[tuple[DocumentChunk, float]]:
-    """Semantic search over one subject's chunks: retrieve → Cohere Rerank. Returns
-    (chunk, score) pairs, most relevant first, at most `top_k` — see
+    """Hybrid search over one subject's chunks: a vector-similarity arm and a lexical
+    full-text arm, fused with Reciprocal Rank Fusion, then narrowed by Cohere Rerank.
+    Returns (chunk, score) pairs, most relevant first, at most `top_k` — see
     `_rerank_candidates` for what `score` means on the reranked vs. fallback path.
 
-    pgvector's `<=>` cosine-distance operator only exists on Postgres; off it (the
-    SQLite test engine), every filter below (owner, subject, embedding IS NOT NULL)
-    still applies — enough to unit-test tenant/subject scoping — but similarity
-    ordering/scoring and reranking are both skipped, since there's no vector ordering
-    to rerank in the first place. Real ranking (including rerank) is verified against
-    live Neon instead (see tests/test_search.py).
+    Both `<=>` (pgvector cosine distance) and `@@`/tsvector (full-text) are Postgres-only;
+    off it (the SQLite test engine), every tenant filter below still applies — enough to
+    unit-test owner/subject scoping — but both ranking arms are skipped (there's nothing
+    to rank or fuse), so it returns the filtered-but-unranked chunks. Real hybrid ranking
+    is verified against live Neon instead (see tests/test_search.py).
+
+    Why two arms + RRF (not just vector): the vector arm captures semantic similarity but
+    can underweight an *exact* keyword/term match (rare jargon, codes, proper nouns); the
+    FTS arm catches those. Their scores are on different scales (cosine distance vs.
+    `ts_rank`), so they're fused on rank position via RRF (see rrf.py), not added
+    directly. Rerank stays the final, most-accurate stage over the fused pool.
     """
     require_owned_subject(session, owner_id, subject_id)
 
@@ -402,14 +416,44 @@ def search_chunks(
         chunks = session.exec(select(DocumentChunk).where(*filters).limit(top_k)).all()
         return [(chunk, 0.0) for chunk in chunks]
 
+    # Bound each arm (and the fused pool) the same way the single vector arm was bounded
+    # before — one Rerank call over a bounded candidate set, regardless of corpus size.
+    candidate_limit = max(top_k, RERANK_CANDIDATE_POOL)
+
+    # Arm 1 — vector similarity (pgvector cosine distance).
     query_vector = embed_query(query)
     distance = DocumentChunk.embedding.cosine_distance(query_vector)
-    # Same `filters` as the SQLite branch above — widening the pool only changes the
-    # LIMIT, not which tenant's/subject's chunks are eligible.
-    candidate_limit = max(top_k, RERANK_CANDIDATE_POOL)
-    statement = (
+    vector_rows = session.exec(
         select(DocumentChunk, distance).where(*filters).order_by(distance).limit(candidate_limit)
+    ).all()
+    vector_ranking = [chunk for chunk, _distance in vector_rows]
+
+    # Arm 2 — lexical full-text search over the GIN-indexed `text_search_vector` column.
+    # Carries the SAME owner+subject scoping as the vector arm — the FTS arm is a new
+    # place a cross-tenant leak could hide, so the filter is not optional here.
+    # `websearch_to_tsquery` tolerates arbitrary user input (quotes, "or", ...) without
+    # raising on syntax. `_FTS_CONFIG` matches the generated column's config exactly.
+    tsvector = sa.literal_column("document_chunks.text_search_vector")
+    tsquery = sa.func.websearch_to_tsquery(_FTS_CONFIG, query)
+    fts_rank = sa.func.ts_rank(tsvector, tsquery)
+    fts_rows = session.exec(
+        select(DocumentChunk, fts_rank)
+        .where(
+            DocumentChunk.owner_id == owner_id,
+            DocumentChunk.subject_id == subject_id,
+            tsvector.op("@@")(tsquery),
+        )
+        .order_by(fts_rank.desc())
+        .limit(candidate_limit)
+    ).all()
+    fts_ranking = [chunk for chunk, _rank in fts_rows]
+
+    # Fuse the two rankings by position (RRF), keep the fused pool bounded, then hand it
+    # to the existing Rerank stage. The RRF score rides along so a rerank *failure* falls
+    # back to fused order (not just one arm's) — see `_rerank_candidates`.
+    by_id = {chunk.id: chunk for chunk in (*vector_ranking, *fts_ranking)}
+    fused = reciprocal_rank_fusion(
+        [[chunk.id for chunk in vector_ranking], [chunk.id for chunk in fts_ranking]]
     )
-    results = session.exec(statement).all()
-    candidates = [(chunk, 1 - dist) for chunk, dist in results]
+    candidates = [(by_id[chunk_id], score) for chunk_id, score in fused[:candidate_limit]]
     return _rerank_candidates(query, candidates, top_k)
