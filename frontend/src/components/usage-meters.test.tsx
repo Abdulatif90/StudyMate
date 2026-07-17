@@ -28,6 +28,28 @@ describe("UsageMeters", () => {
     ).toBeInTheDocument();
   });
 
+  it("tracks the same hue as the fill, at-limit or not (never a neutral gray track)", () => {
+    // Below cap: primary fill, primary-tinted track.
+    const { rerender } = render(
+      <UsageMeters
+        plan={planRead({ usage: { subjects: 2, generations_today: 0 } })}
+      />,
+    );
+    const belowCapTrack = screen.getByRole("img", { name: "Subjects: 2 of 3 used" });
+    expect(belowCapTrack).toHaveClass("bg-primary/15");
+    expect(belowCapTrack.firstChild).toHaveClass("bg-primary");
+
+    // At cap: destructive fill, destructive-tinted track — same ramp, not a gray track.
+    rerender(
+      <UsageMeters
+        plan={planRead({ usage: { subjects: 3, generations_today: 0 } })}
+      />,
+    );
+    const atCapTrack = screen.getByRole("img", { name: "Subjects: 3 of 3 used" });
+    expect(atCapTrack).toHaveClass("bg-destructive/15");
+    expect(atCapTrack.firstChild).toHaveClass("bg-destructive");
+  });
+
   it("shows an unlimited count with no bar for a null cap", () => {
     render(
       <UsageMeters

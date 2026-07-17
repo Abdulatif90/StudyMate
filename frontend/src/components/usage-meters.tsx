@@ -30,7 +30,13 @@ export function UsageMeters({ plan }: { plan: PlanRead }) {
           </div>
           {!meter.unlimited && (
             <div
-              className="h-2 w-full overflow-hidden rounded-full bg-muted"
+              className={cn(
+                // Meter form (dataviz skill): the unfilled track is a lighter step of
+                // the SAME ramp as the fill, not a neutral gray — so severity reads
+                // across the whole bar, not just the filled portion.
+                "h-2 w-full overflow-hidden rounded-full",
+                meter.atLimit ? "bg-destructive/15" : "bg-primary/15",
+              )}
               role="img"
               aria-label={`${meter.label}: ${meter.used} of ${meter.cap} used`}
             >
