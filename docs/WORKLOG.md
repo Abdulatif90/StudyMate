@@ -2,6 +2,80 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-17 — Progress tracking backend: read-only aggregation (Phase 4 start)
+- Phase 4 is "Progress + Polar billing". Polar needs the user's account/API keys (not
+  yet provided — blocked, same pattern as R2/Inngest were before). Did Progress first:
+  a read-only rollup of a student's existing data into per-subject and overall
+  study-progress stats.
+- **`feat(progress)`**: new `app/modules/progress/` — **no models**, mirroring `ask`'s
+  shape (it also owns no tables of its own). Every query reads
+  `Document`/`Flashcard`/`Quiz` directly, filtered by `owner_id` alone — each of those
+  tables already carries its own denormalized `owner_id` column (the same
+  defense-in-depth tenant-scoping used everywhere in this codebase), so "only this
+  caller's data" is a plain equality filter, no join through `Subject` needed at all.
+  Verified the exact `session.exec(select(func.count())...).one()` (returns a plain
+  `int`) and grouped-row (`(status, count)` tuples) return shapes empirically before
+  writing the real queries — first `func.count()` usage anywhere in this codebase.
+  - `_document_status_counts`: one `GROUP BY` query for ready/pending/failed — the
+    natural SQL shape for "counts by category," not three separately-filtered COUNTs.
+  - `_flashcard_progress`: `due` (`due_at <= now`, `now` overridable — same
+    deterministic-clock pattern as `flashcards_service.list_due_flashcards`), and a
+    `new`/`learning`/`mature` bucketing that only needs 3 queries, not 4: `new`
+    (`repetitions == 0 AND last_reviewed_at IS NULL` — never reviewed at all) and
+    `mature` (`interval_days >= MATURE_INTERVAL_DAYS_THRESHOLD`, = 21, documented —
+    matches Anki's own young/mature cutoff) are mutually exclusive by construction (a
+    card only gets a non-zero interval via a review, and a review always sets
+    `last_reviewed_at`), so `learning = total - new - mature` is an exact partition
+    subtraction — and it correctly counts a *lapsed* card (repetitions reset to 0 by a
+    low SM-2 grade, but `last_reviewed_at` still set from before) as `learning`, not
+    `new` again — the one bucket rule that's easy to get wrong. `due` is a separate,
+    orthogonal COUNT (new/learning/mature cards can each independently be due or not).
+  - **Quiz count is quizzes *generated*, not a score history** — documented as a
+    deliberate scope decision, not an oversight: quiz attempts/scores aren't persisted
+    anywhere (grading is entirely client-side — nothing is ever submitted back to the
+    server, per the quiz module's answer-key decision). A `QuizAttempt` model +
+    submission endpoint would be needed to track performance; noted as a follow-up in
+    `docs/PROGRESS.md`, not built here — keeps this increment focused on aggregating
+    data that already durably exists.
+  - `get_subject_progress` calls `require_owned_subject` before any aggregate runs — a
+    progress endpoint leaking *counts* for a subject the caller can't otherwise see is
+    still a tenant leak. `get_overall_progress` is owner-scoped only (no subject
+    filter), summing across every subject the caller owns.
+  - `router.py`: `GET /subjects/{subject_id}/progress` + `GET /progress`, same
+    subject-scoped-`router` / flat-`overall_router` split as `ask.router`'s
+    `router`/`conversations_router`. Wired into `main.py`.
+- Tests: `test_progress.py` (10, offline/SQLite) — **the only module test file so far
+  with zero mocking**, since progress touches no Claude/Cohere/R2/Inngest at all, just
+  DB reads. A hand-computed 5-flashcard fixture (documented inline with its expected
+  bucket math) exercises every SM-2 bucket including the lapsed-card case at once;
+  covers a zeroed subject with no data, a sibling subject's data excluded from a
+  per-subject rollup, 404s for missing/unowned subjects, overall progress correctly
+  summing multiple subjects, a zeroed overall for no subjects, and — the classic leak
+  point per the task — **another owner's identical dataset never bleeding into
+  `/progress`, checked from both directions** (as the original caller, and as the
+  other owner). One direct service-level test pins `get_subject_progress`'s
+  overridable `now`; the HTTP-level tests use wall-clock-relative fixture dates since
+  the router itself has no client-suppliable `now` parameter (not sensible for an
+  HTTP caller to control "now" for a due-count). Caught one real test bug along the
+  way (not production code): the first version of the fixture used fixed 2026-01-01
+  dates for "past"/"future", which broke because the *router's* `due` calculation
+  uses real wall-clock time (2026-07-17 in this session), so every fixed fixture date
+  registered as "due" — fixed by making the fixture dates relative to
+  `datetime.now(UTC)` instead. Backend **218 passed** (9 deselected live, up from
+  208/9 — no live test needed, no Postgres-specific aggregate here), `ruff` clean.
+- **Live-verified against real Neon data**: hand-computed the true aggregates via
+  direct SQL against the user's own real Clerk-authenticated data (not seeded by this
+  verification) — one real subject with 1 ready document, 10 flashcards (all new, all
+  due), and 2 quizzes; a second real subject with nothing uploaded yet (all zero) —
+  then confirmed `GET /subjects/{id}/progress` (both subjects) and `GET /progress`
+  (summed across both) return those exact numbers, plus a 404 for an unowned subject
+  id. Entirely read-only — no data created, modified, or deleted. (Non-issue caught
+  along the way: an initial direct-SQL check briefly returned stale/lower counts right
+  after connecting — a Neon serverless cold-start read-consistency blip, not a bug;
+  re-querying fresh immediately before each assertion resolved it.)
+- Phase 4's Progress half is done; Polar billing is blocked on the user's account/keys.
+  The progress *frontend* (a dashboard) is the next increment.
+
 ## 2026-07-17 — Flashcards frontend: generate + SM-2 review session (closes Phase 3)
 - The UI for the Phase 3 flashcards backend. Students generate cards and run an SM-2
   review session with the four Anki-style grade buttons. Consumes the already-typed

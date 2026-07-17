@@ -4,14 +4,16 @@
 
 ## Current phase
 **Phase 0 — Setup: complete.** **Phase 1 — Core RAG: complete.** **Phase 2 — Quiz + FTS
-hybrid: complete.** **Phase 3 — Flashcards + SM-2: complete** — SM-2 spaced-repetition
-scheduling, Claude tool-use flashcard generation, generate/list/due/review/delete
-backend, and the full frontend (generate, an SM-2 review session with Again/Hard/Good/
-Easy grading, delete) — all live-verified end-to-end. Next is **Phase 4 — Progress
-tracking + Polar billing 🔴** per `docs/plan.md`. Phase 1–2 recap: Subjects, documents
-(R2 + Inngest ingest with auto-summary, deletable), hybrid Ask/RAG (Postgres FTS +
-vector + RRF + Cohere Rerank, streaming), Conversations, Quiz (tool-use generation +
-full UI) — all with their own frontends already shipped.
+hybrid: complete.** **Phase 3 — Flashcards + SM-2: complete.** **Phase 4 — Progress
+tracking: backend done; Polar billing blocked on keys.** Progress is a new read-only
+`app/modules/progress/` (no models — pure aggregation over documents/flashcards/quizzes),
+live-verified against real Neon data. Polar billing can't start until the user provides
+a Polar account/API keys (same blocker pattern as R2/Inngest earlier). The progress
+*frontend* (a dashboard) is the next increment. Phase 1–3 recap: Subjects, documents (R2
++ Inngest ingest with auto-summary, deletable), hybrid Ask/RAG (Postgres FTS + vector +
+RRF + Cohere Rerank, streaming), Conversations, Quiz (tool-use generation + full UI),
+Flashcards + SM-2 (tool-use generation + full review-session UI) — all with their own
+frontends already shipped.
 
 ## Done
 - [x] Repo skeleton + `.gitignore`
@@ -1127,13 +1129,84 @@ full UI) — all with their own frontends already shipped.
     out of a fresh `/due` fetch (0 remaining). Cleaned up via real `DELETE`s; Neon and
     R2 both confirmed clean afterward.
 
+- [x] Progress tracking backend — read-only aggregation over existing data. First
+  Phase 4 increment (Polar billing, the other half of Phase 4, is blocked — see
+  "Blockers" below).
+  - New `app/modules/progress/` — **no models of its own**, same shape as `ask`: every
+    query reads `Document`/`Flashcard`/`Quiz` directly, filtered by `owner_id` alone
+    (each already carries its own denormalized `owner_id` column, so "only this
+    caller's data" needs no join through `Subject`). Efficient aggregates throughout —
+    `COUNT`/`GROUP BY` via SQLAlchemy `func`, never "load every row and count in
+    Python" (confirmed the exact `session.exec(select(func.count())...).one()` /
+    grouped-row return shapes empirically before writing the real queries).
+  - `service.py`: `_document_status_counts` (one `GROUP BY` for ready/pending/failed —
+    natural fit for "counts by category" over three separate filtered `COUNT`s).
+    `_flashcard_progress` (`due`/`new`/`learning`/`mature`) — `new` (never reviewed:
+    `repetitions == 0 AND last_reviewed_at IS NULL`) and `mature`
+    (`interval_days >= MATURE_INTERVAL_DAYS_THRESHOLD`) are mutually exclusive by
+    construction (a card only gets a non-zero interval via a review, which always sets
+    `last_reviewed_at`), so `learning = total - new - mature` needs no fourth query —
+    and correctly counts a *lapsed* card (`repetitions` reset to 0 but
+    `last_reviewed_at` still set) as `learning`, not `new` again. `due` is a separate,
+    orthogonal `COUNT` (a card can be new-and-due, learning-and-due, or
+    mature-and-due). `MATURE_INTERVAL_DAYS_THRESHOLD = 21`, documented — matches
+    Anki's own young/mature cutoff, a familiar reference point rather than an arbitrary
+    number. `_quiz_count`.
+  - **Quiz count is quizzes *generated*, not a performance history** — a deliberate
+    scope decision, documented in the code: quiz *attempts/scores* aren't persisted
+    anywhere (grading is entirely client-side, see the quiz module's answer-key
+    decision — nothing is ever submitted back to the server). Tracking quiz
+    performance would need a new `QuizAttempt` model (`quiz_id` FK, `owner_id`,
+    `score`, `total`, `created_at`) + a submission endpoint + its own migration/tests/
+    tenant-scoping — **noted here as a follow-up, not built in this focused,
+    read-only-over-existing-data increment.**
+  - `get_subject_progress` calls `require_owned_subject` first — a progress endpoint
+    that revealed *counts* for a subject the caller doesn't own would itself be a
+    tenant leak, so ownership is checked before any aggregate runs (→
+    `SubjectNotFoundError` → 404). `get_overall_progress` is owner-scoped only, summing
+    across every subject the caller owns.
+  - `router.py`: `GET /subjects/{subject_id}/progress` (per-subject) and `GET
+    /progress` (overall) — same subject-scoped-router / flat-router split as
+    `ask.router`. Wired into `main.py`.
+  - Tests (`test_progress.py`, 10, offline/SQLite, **no mocking anywhere in the file**
+    — no Claude/Cohere/R2/Inngest in this module at all, it's pure DB aggregation):
+    a hand-computed 5-flashcard fixture exercises every SM-2 bucket at once (including
+    the easy-to-get-wrong lapsed-card case above); a zeroed-out subject with no data; a
+    sibling subject's data excluded from a per-subject rollup; 404 for missing/another-
+    owner's subject; overall progress correctly summing across *all* the caller's
+    subjects; a zeroed overall for a caller with none; **another owner's identical
+    dataset never bleeding into `/progress`, checked from both directions** (the
+    classic place a cross-tenant count leaks); and one direct service-level test
+    pinning `get_subject_progress`'s overridable `now` (mirrors
+    `flashcards_service.list_due_flashcards`'s same deterministic-clock pattern — the
+    HTTP-level tests instead use wall-clock-relative fixture dates, since the router
+    has no client-suppliable `now`). Backend **218 passed** (9 deselected live, up from
+    208/9 — no new live test needed: no Postgres-specific aggregate here), `ruff`
+    clean.
+  - **Live-verified against real Neon data** (the user's own real Clerk-authenticated
+    subjects/documents/flashcards/quizzes from earlier browser testing, not seeded by
+    this verification) — hand-computed the true aggregates via direct SQL first (1
+    ready document, 10 new/due flashcards, 2 quizzes on one real subject; all-zero on a
+    second real subject with no material uploaded yet), then confirmed
+    `GET /subjects/{id}/progress` and `GET /progress` return **exactly** those numbers
+    for both subjects individually and summed overall, plus a 404 for an unowned
+    subject id. Read-only the whole way — nothing created, modified, or deleted.
+    (Caught one non-issue along the way: an initial SQL check briefly returned stale
+    counts immediately after connecting — a Neon serverless cold-start read-consistency
+    blip, not a bug; re-querying fresh resolved it before any assertion was written
+    against it.)
+
 ## Next (Phase 4+)
-- **Phase 4 — Progress tracking + Polar billing 🔴** per `docs/plan.md` (next phase).
+- **Progress dashboard (frontend)** — a page rendering `SubjectProgress`/
+  `OverallProgress` (per-subject + overall) — next increment.
+- **Polar billing** — blocked; see "Blockers" below.
 - Remaining per `docs/plan.md`: multilingual polish, Business/Teams B2B (Phase 5).
 - Still owed from earlier: a real-browser click-through of the async upload/poll/delete,
   quiz, hybrid-Ask, and flashcards flows with live Clerk auth (noted across several
   increments, never yet done — no browser available in this environment).
 
 ## Blockers / needs from user
-- None — Neon, Clerk, Cohere, Anthropic, Inngest, and R2 keys are all in `backend/.env`.
-  Polar can wait until billing is actually built.
+- **Polar billing (Phase 4)** — needs the user's Polar account + API keys before any
+  billing work can start (same pattern as R2/Inngest before those were provided).
+  Progress tracking (the other Phase 4 item) doesn't depend on Polar and is done.
+- Neon, Clerk, Cohere, Anthropic, Inngest, and R2 keys are all in `backend/.env`.
