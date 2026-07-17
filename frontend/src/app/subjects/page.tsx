@@ -8,12 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { useApiClient } from "@/lib/api/useApiClient";
+import { parsePlanLimitError, type PlanLimitError } from "@/lib/planLimitError";
 
 export default function SubjectsPage() {
   const api = useApiClient();
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
+  const [limitError, setLimitError] = useState<PlanLimitError | null>(null);
 
   const subjectsQuery = useQuery({
     queryKey: ["subjects"],
@@ -26,12 +29,19 @@ export default function SubjectsPage() {
 
   const createSubject = useMutation({
     mutationFn: async (newName: string) => {
-      const { data, error } = await api.POST("/subjects", {
+      const { data, error, response } = await api.POST("/subjects", {
         body: { name: newName },
       });
-      if (error) throw error;
+      if (error) {
+        // A 402 means the plan's subject cap is hit — capture it (status lives on the
+        // response, not the body) so the UI can show an upgrade prompt instead of a
+        // generic failure. Any other error falls through to the generic message.
+        setLimitError(parsePlanLimitError(response.status, error));
+        throw error;
+      }
       return data;
     },
+    onMutate: () => setLimitError(null),
     onSuccess: () => {
       setName("");
       queryClient.invalidateQueries({ queryKey: ["subjects"] });
@@ -80,11 +90,13 @@ export default function SubjectsPage() {
               {createSubject.isPending ? "Adding…" : "Add"}
             </Button>
           </form>
-          {createSubject.isError && (
+          {limitError ? (
+            <UpgradePrompt message={limitError.detail} />
+          ) : createSubject.isError ? (
             <p className="text-destructive mt-2 text-sm">
               Couldn&apos;t create subject. Please try again.
             </p>
-          )}
+          ) : null}
         </CardContent>
       </Card>
 

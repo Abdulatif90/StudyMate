@@ -284,6 +284,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/billing/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Plan */
+        get: operations["get_plan_billing_plan_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Checkout
+         * @description Start a Polar checkout for a paid plan. Authenticated: `owner_id` comes from the
+         *     caller's verified Clerk token and is what gets linked to the Polar customer, so a
+         *     caller can only ever buy a plan for themselves.
+         */
+        post: operations["create_checkout_billing_checkout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Polar Webhook
+         * @description Polar -> us. **Public endpoint, no Clerk auth** (Polar has no user token to send),
+         *     so the signature IS the authentication.
+         *
+         *     Order matters and is load-bearing:
+         *       1. read the **raw** body — the signature covers those exact bytes, so parsing to
+         *          JSON and re-serializing would change them and break verification;
+         *       2. verify the signature;
+         *       3. only then touch the payload or the DB.
+         *     An unverified webhook would let anyone POST themselves onto Business for free, which
+         *     is why there is no path to step 3 that skips step 2 — including when no secret is
+         *     configured, which raises rather than defaulting to "accept".
+         *
+         *     `async def` on purpose: `await request.body()` needs it, and it's the only way to get
+         *     the raw bytes.
+         */
+        post: operations["polar_webhook_billing_webhook_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/inngest": {
         parameters: {
             query?: never;
@@ -350,6 +422,23 @@ export interface components {
         Body_create_document_subjects__subject_id__documents_post: {
             /** File */
             file: string;
+        };
+        /**
+         * CheckoutCreateRequest
+         * @description Which plan to buy. The caller names a *plan*, never a Polar product id — product
+         *     ids are server-side config (see config.polar_product_id_*), so a client can't point a
+         *     checkout at an arbitrary product. There is no `owner_id` here either: it comes from
+         *     the caller's verified token, so nobody can check out on someone else's behalf.
+         */
+        CheckoutCreateRequest: {
+            plan: components["schemas"]["Plan"];
+            /** Success Url */
+            success_url?: string | null;
+        };
+        /** CheckoutCreateResponse */
+        CheckoutCreateResponse: {
+            /** Checkout Url */
+            checkout_url: string;
         };
         /** ConversationRead */
         ConversationRead: {
@@ -523,6 +612,44 @@ export interface components {
             /** Quiz Count */
             quiz_count: number;
         };
+        /**
+         * Plan
+         * @enum {string}
+         */
+        Plan: "free" | "pro" | "business";
+        /**
+         * PlanLimitsRead
+         * @description `null` means unlimited for that dimension (Business).
+         */
+        PlanLimitsRead: {
+            /** Max Subjects */
+            max_subjects: number | null;
+            /** Max Documents Per Subject */
+            max_documents_per_subject: number | null;
+            /** Max Generations Per Day */
+            max_generations_per_day: number | null;
+        };
+        /** PlanRead */
+        PlanRead: {
+            plan: components["schemas"]["Plan"];
+            limits: components["schemas"]["PlanLimitsRead"];
+            usage: components["schemas"]["PlanUsageRead"];
+        };
+        /**
+         * PlanUsageRead
+         * @description Current usage against the caps that are countable account-wide.
+         *
+         *     `max_documents_per_subject` has no entry here on purpose — it's a *per-subject*
+         *     cap, so there's no single account-wide number for it. The frontend gets the cap in
+         *     `limits` (to state the rule) and the per-subject count from the existing
+         *     `GET /subjects/{id}/progress` documents total.
+         */
+        PlanUsageRead: {
+            /** Subjects */
+            subjects: number;
+            /** Generations Today */
+            generations_today: number;
+        };
         /** QuizGenerateRequest */
         QuizGenerateRequest: {
             /**
@@ -661,6 +788,16 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /**
+         * WebhookResponse
+         * @description What the webhook reports back to Polar. `status` is one of `applied`,
+         *     `ignored`, or `ignored_stale` — an accepted-but-not-actioned event is a 200 with an
+         *     explicit outcome, not a silent success (rule 3).
+         */
+        WebhookResponse: {
+            /** Status */
+            status: string;
         };
     };
     responses: never;
@@ -1398,6 +1535,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OverallProgress"];
+                };
+            };
+        };
+    };
+    get_plan_billing_plan_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanRead"];
+                };
+            };
+        };
+    };
+    create_checkout_billing_checkout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckoutCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckoutCreateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    polar_webhook_billing_webhook_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookResponse"];
                 };
             };
         };

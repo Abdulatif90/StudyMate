@@ -13,8 +13,10 @@ it: `POST /billing/checkout` (authenticated) and a public, signature-verified
 `POST /billing/webhook` whose *only* job is upserting one `UserPlan` row. The entitlement
 layer itself stays provider-agnostic. **Nothing is blocked on keys any more**; the one open
 item is confirming the webhook against a real Polar delivery (needs a `polar listen`
-tunnel — see Blockers), and Polar is sandbox-only so far. Remaining in Phase 4: the
-usage-meter/upgrade-prompt frontend. Phase 1–3 recap: Subjects, documents
+tunnel — see Blockers), and Polar is sandbox-only so far. The **billing frontend** is now
+done too — a `/billing` page (plan + usage meters + upgrade→Polar-checkout) plus a 402
+upgrade prompt on subject-create — leaving only the browser click-through and the real
+webhook delivery open. Phase 1–3 recap: Subjects, documents
 (R2 + Inngest ingest with auto-summary, deletable), hybrid Ask/RAG (Postgres FTS + vector
 + RRF + Cohere Rerank, streaming), Conversations, Quiz (tool-use generation + full UI),
 Flashcards + SM-2 (tool-use generation + full review-session UI) — all with their own
@@ -1432,14 +1434,40 @@ frontends already shipped.
        does **not** prove Polar's real delivery format or that the configured secret
        matches how events will actually be delivered. See "Blockers".
 
+- [x] **Billing frontend — usage meters + upgrade prompts** (Phase 4). Consumes the two
+  existing billing endpoints; **no backend change**. `schema.d.ts` regenerated so
+  `PlanRead`/`Plan`/`CheckoutCreate*` are typed (offline via `app.openapi()` →
+  `openapi-typescript`, identical to the live-server script).
+  - **`/billing` page** (route added to `middleware.ts` protection): current plan + usage
+    meters + upgrade options (only tiers above the current one). Upgrade button →
+    `POST /billing/checkout` with a `success_url` of `${origin}/billing?upgraded=1` →
+    redirect to Polar's hosted `checkout_url`. On return, `?upgraded=1` shows a
+    plan-activating note and refetches the plan (webhook lands the change async). Reads the
+    flag from `window.location.search` in an effect, not `useSearchParams` (no Suspense
+    boundary needed).
+  - **402 upgrade prompt**: subject-create now surfaces the plan-limit 402 as
+    `<UpgradePrompt>` (backend's own limit/cap message + Upgrade→`/billing`) instead of a
+    generic error. Reusable `UpgradePrompt` + `parsePlanLimitError` make the doc-upload /
+    quiz / flashcard 402 paths a one-liner later (not yet wired).
+  - **Pure helpers, tested**: `planLimits.ts` (`meterPercent` rounded/clamped, 0 for
+    unlimited/zero-cap never NaN; `usageMeters` — subjects + daily-generations, `atLimit`
+    at the exact cap, unlimited path) and `planLimitError.ts` (`parsePlanLimitError` —
+    validates the untyped 402 body, null for non-402/malformed, message fallback).
+    `max_documents_per_subject` intentionally not metered (per-subject cap, no account-wide
+    number) — stated as a rule on the page. `UsageMeters` bars are `role="img"` with the
+    used/cap text in the aria-label (never colour alone), `destructive` at the cap.
+  - Frontend **106 passed** (25 files, up from 90/21), `tsc`/`eslint` clean, `npm run build`
+    succeeds (`/billing` static). **Not browser-verified** (no browser here) — the
+    checkout redirect + `?upgraded` refetch want a manual pass with real Clerk auth.
+
 ## Next (Phase 4+)
-- **Confirm the Polar webhook against real delivery** — the one gap in this increment;
+- **Confirm the Polar webhook against real delivery** — the one gap in the payment path;
   see "Blockers". Everything else in the payment path is live-verified.
-- **Billing frontend** — usage meters ("2 of 3 subjects used") + upgrade prompts on the
-  402 path, consuming `GET /billing/plan`, plus an upgrade button hitting
-  `POST /billing/checkout`. No longer blocked at all. It should also pass a `success_url`
-  (the backend already forwards one; it's omitted for now, so Polar shows its own hosted
-  confirmation page).
+- **Browser pass on the billing frontend** — the `/billing` page, the checkout→Polar
+  redirect, and the `?upgraded=1` return-and-refetch all still want a manual click-through
+  with real Clerk auth (no browser in this environment). Also fold the reusable
+  `UpgradePrompt`/`parsePlanLimitError` into the document-upload / quiz / flashcard 402
+  paths (currently wired only into subject-create).
 - Remaining per `docs/plan.md`: multilingual polish, Business/Teams B2B (Phase 5).
 - Still owed from earlier: a real-browser click-through of the async upload/poll/delete,
   quiz, hybrid-Ask, flashcards, and progress-dashboard flows with live Clerk auth (noted

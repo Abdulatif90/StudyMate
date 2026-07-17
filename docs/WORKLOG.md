@@ -2,6 +2,47 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-18 — Billing frontend: usage meters + upgrade prompts (Phase 4)
+- Consumes the two billing endpoints that already existed (`GET /billing/plan`,
+  `POST /billing/checkout`) — **no backend change this increment**. Regenerated
+  `frontend/src/lib/api/schema.d.ts` (offline, from `app.openapi()` → `openapi-typescript`,
+  identical to the live-server `generate-api-types` script) so the billing routes/schemas
+  (`PlanRead`, `PlanLimitsRead`, `PlanUsageRead`, `CheckoutCreateRequest/Response`, `Plan`)
+  are typed — no hand-edits.
+- **New `/billing` page** (protected — added `/billing(.*)` to `middleware.ts`): current
+  plan, usage meters, and upgrade options. Upgrade offers only plans *above* the current
+  tier (Free → Pro+Business, Pro → Business, Business → none). The upgrade button calls
+  `POST /billing/checkout` with `{plan, success_url}` and redirects the browser to Polar's
+  hosted `checkout_url`. `success_url` is `${origin}/billing?upgraded=1`; on return the page
+  shows a "payment went through, plan activating" note and refetches the plan (the webhook
+  lands the change asynchronously, so it may lag by a moment). Read the `upgraded` flag via
+  `window.location.search` in an effect rather than `useSearchParams`, to avoid forcing a
+  Suspense boundary.
+- **Upgrade prompt on the 402 path**: the subject-create mutation now inspects the response
+  and, on a 402, renders `<UpgradePrompt>` (the backend's own message, which already names
+  the limit + cap) with an Upgrade → `/billing` button, instead of the generic failure line.
+  Wired only into subject-create for now (the visible Free cap); the reusable
+  `UpgradePrompt` + `parsePlanLimitError` helper make adding it to document-upload /
+  quiz / flashcard generation a one-liner later.
+- **Pure helpers, unit-tested** (this codebase's helpers-tested / pages-untested pattern):
+  `lib/planLimits.ts` (`meterPercent` — rounded/clamped 0–100, 0 for unlimited/zero cap
+  never NaN; `usageMeters` — subjects + daily-generations meters, `atLimit` at the exact
+  cap, unlimited handling) and `lib/planLimitError.ts` (`parsePlanLimitError` — validates
+  the untyped 402 body shape, null for non-402/malformed, generic-message fallback).
+  `max_documents_per_subject` is deliberately not metered — it's a per-subject cap with no
+  account-wide number, so it's stated as a rule on the page instead.
+- **Components**: `UsageMeters` (bars as `role="img"` with the "used of cap" text in the
+  aria-label — never colour alone, per FRONTEND.md; `destructive` fill + text at the cap,
+  no bar for unlimited) and `UpgradePrompt`. Dashboard header gained a "Plan & billing"
+  link. All semantic tokens, mobile-first.
+- Tests: `planLimits.test.ts`, `planLimitError.test.ts`, `usage-meters.test.tsx`,
+  `upgrade-prompt.test.tsx`. Frontend **106 passed** (25 files, up from 90/21),
+  `tsc --noEmit` clean, `eslint` clean, `npm run build` succeeds (`/billing` compiles as a
+  static route).
+- **Not browser-verified with real Clerk auth** — the standing no-browser gap in this
+  environment (noted on every frontend page here). The checkout→Polar redirect and the
+  ?upgraded refetch specifically want a manual click-through once a browser is available.
+
 ## 2026-07-17 — Polar payment wiring: checkout + webhook (Phase 4 billing, SANDBOX)
 - The last blocked Phase 4 item, unblocked by the user's sandbox keys. Polar's only job
   is upserting one `UserPlan` row (DECISIONS.md #7); the entitlement layer was **not**
