@@ -250,6 +250,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/subjects/{subject_id}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Subject Progress */
+        get: operations["get_subject_progress_subjects__subject_id__progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Overall Progress */
+        get: operations["get_overall_progress_progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/inngest": {
         parameters: {
             query?: never;
@@ -408,6 +442,17 @@ export interface components {
          * @enum {string}
          */
         DocumentStatus: "pending" | "ready" | "failed";
+        /** DocumentStatusCounts */
+        DocumentStatusCounts: {
+            /** Total */
+            total: number;
+            /** Ready */
+            ready: number;
+            /** Pending */
+            pending: number;
+            /** Failed */
+            failed: number;
+        };
         /** FlashcardGenerateRequest */
         FlashcardGenerateRequest: {
             /**
@@ -415,6 +460,19 @@ export interface components {
              * @default 10
              */
             num_cards: number;
+        };
+        /** FlashcardProgress */
+        FlashcardProgress: {
+            /** Total */
+            total: number;
+            /** Due */
+            due: number;
+            /** New */
+            new: number;
+            /** Learning */
+            learning: number;
+            /** Mature */
+            mature: number;
         };
         /** FlashcardRead */
         FlashcardRead: {
@@ -455,6 +513,15 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** OverallProgress */
+        OverallProgress: {
+            /** Subject Count */
+            subject_count: number;
+            documents: components["schemas"]["DocumentStatusCounts"];
+            flashcards: components["schemas"]["FlashcardProgress"];
+            /** Quiz Count */
+            quiz_count: number;
         };
         /** QuizGenerateRequest */
         QuizGenerateRequest: {
@@ -554,6 +621,18 @@ export interface components {
         SubjectCreate: {
             /** Name */
             name: string;
+        };
+        /** SubjectProgress */
+        SubjectProgress: {
+            /**
+             * Subject Id
+             * Format: uuid
+             */
+            subject_id: string;
+            documents: components["schemas"]["DocumentStatusCounts"];
+            flashcards: components["schemas"]["FlashcardProgress"];
+            /** Quiz Count */
+            quiz_count: number;
         };
         /** SubjectRead */
         SubjectRead: {
@@ -1268,6 +1347,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_subject_progress_subjects__subject_id__progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subject_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubjectProgress"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_overall_progress_progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverallProgress"];
                 };
             };
         };
