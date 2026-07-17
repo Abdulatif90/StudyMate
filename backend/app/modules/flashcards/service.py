@@ -15,6 +15,8 @@ from datetime import UTC, datetime
 
 from sqlmodel import Session, select
 
+from app.modules.billing.models import GenerationKind
+from app.modules.billing.service import ensure_can_generate, record_generation
 from app.modules.documents.service import require_owned_subject, sample_subject_chunk_texts
 from app.modules.flashcards.generation import generate_flashcard_set
 from app.modules.flashcards.models import Flashcard
@@ -62,6 +64,11 @@ def generate_flashcards(
     if not excerpts:
         raise NoFlashcardMaterialError(subject_id)
 
+    # Daily-generation guard BEFORE the Claude call below, so a quota-rejected request
+    # never spends a billable API call. Raises PlanLimitExceededError (-> 402, handled
+    # app-wide in main.py). See billing.service for the check/record ordering contract.
+    ensure_can_generate(session, owner_id)
+
     cards = generate_flashcard_set(excerpts, num_cards)
 
     # New cards start due immediately (due_at = now, repetitions/interval already
@@ -75,6 +82,11 @@ def generate_flashcards(
         for card in cards
     ]
     session.add_all(flashcards)
+    # ONE generation event, regardless of how many cards it produced — this is exactly
+    # why the counter is its own table rather than a COUNT of Flashcard rows (see
+    # billing.models.GenerationUsage). Staged on the same session so the commit below
+    # persists counter + cards atomically; only reached after generation succeeded.
+    record_generation(session, owner_id, GenerationKind.FLASHCARD)
     session.commit()
     for flashcard in flashcards:
         session.refresh(flashcard)

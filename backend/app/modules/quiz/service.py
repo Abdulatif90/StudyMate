@@ -12,6 +12,8 @@ import uuid
 
 from sqlmodel import Session, select
 
+from app.modules.billing.models import GenerationKind
+from app.modules.billing.service import ensure_can_generate, record_generation
 from app.modules.documents.service import require_owned_subject, sample_subject_chunk_texts
 from app.modules.quiz.generation import generate_quiz_questions
 from app.modules.quiz.models import Quiz, QuizQuestion
@@ -50,6 +52,11 @@ def generate_quiz(
     if not excerpts:
         raise NoQuizMaterialError(subject_id)
 
+    # Daily-generation guard BEFORE the Claude call below, so a quota-rejected request
+    # never spends a billable API call. Raises PlanLimitExceededError (-> 402, handled
+    # app-wide in main.py). See billing.service for the check/record ordering contract.
+    ensure_can_generate(session, owner_id)
+
     # generate_quiz_questions returns questions whose correct_index is already validated
     # to be within options range (see generation._parse_questions) — no out-of-range
     # index can reach the DB to break a future grading flow.
@@ -70,6 +77,11 @@ def generate_quiz(
                 order=order,
             )
         )
+    # Count this generation against today's allowance — staged on the same session, so
+    # the commit below persists the counter and the quiz atomically (neither can land
+    # without the other). Only after generation succeeded: a failed Claude call above
+    # raised and never reached here, so it doesn't burn the user's quota.
+    record_generation(session, owner_id, GenerationKind.QUIZ)
     session.commit()
     session.refresh(quiz)
     logging.getLogger(__name__).info(

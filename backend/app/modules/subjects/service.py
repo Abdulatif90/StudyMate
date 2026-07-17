@@ -7,11 +7,16 @@ import uuid
 
 from sqlmodel import Session, select
 
+from app.modules.billing.service import ensure_can_create_subject
 from app.modules.subjects.models import Subject
 from app.modules.subjects.schemas import SubjectCreate
 
 
 def create_subject(session: Session, owner_id: str, data: SubjectCreate) -> Subject:
+    # Plan-limit guard first, before any work — see billing.service. Raises
+    # PlanLimitExceededError (-> 402, handled app-wide in main.py).
+    ensure_can_create_subject(session, owner_id)
+
     subject = Subject(owner_id=owner_id, name=data.name)
     session.add(subject)
     session.commit()

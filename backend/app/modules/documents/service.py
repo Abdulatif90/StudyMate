@@ -15,6 +15,7 @@ from sqlmodel import Session, delete, select
 
 from app.core import r2_client
 from app.core.inngest_client import get_inngest_client, require_event_key
+from app.modules.billing.service import ensure_can_upload_document
 from app.modules.documents.chunking import chunk_text
 from app.modules.documents.embedding import EmbeddingError, embed_query, embed_texts
 from app.modules.documents.models import Document, DocumentChunk, DocumentStatus
@@ -84,6 +85,11 @@ def create_document(
     Size is validated (below) *before* the R2 upload — never upload then reject.
     """
     require_owned_subject(session, owner_id, subject_id)
+
+    # Plan-limit guard before ANY work — specifically before the R2 upload below, so a
+    # quota-rejected upload never costs storage or leaves an orphaned object. Raises
+    # PlanLimitExceededError (-> 402, handled app-wide in main.py). See billing.service.
+    ensure_can_upload_document(session, owner_id, subject_id)
 
     if content_type not in SUPPORTED_CONTENT_TYPES:
         raise UnsupportedFileTypeError(f"Unsupported content type: {content_type}")
