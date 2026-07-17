@@ -2,6 +2,58 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-17 — Flashcards frontend: generate + SM-2 review session (closes Phase 3)
+- The UI for the Phase 3 flashcards backend. Students generate cards and run an SM-2
+  review session with the four Anki-style grade buttons. Consumes the already-typed
+  `/subjects/{id}/flashcards[/due]` + `/flashcards/{id}[/review]` routes.
+- **`chore(frontend)`**: regenerated `schema.d.ts` — `FlashcardRead`/
+  `FlashcardGenerateRequest`/`ReviewRequest` + the 4 routes now typed.
+- **`feat(frontend)` — helpers**: `lib/flashcardError.ts` (`friendlyFlashcardError`,
+  mirrors `friendlyQuizError` — 422 no material, 502 generation failure, off the real
+  `response.status`). `lib/gradeButtons.ts` — the one place the 0-5 SM-2 contract to
+  `POST /flashcards/{id}/review` is pinned on the frontend: `GRADE_BUTTONS` (Again=1,
+  Hard=3, Good=4, Easy=5 — Anki-style four buttons, deliberately not six raw numbers
+  dumped on the learner) and `isLapseGrade` (mirrors the backend's
+  `sm2.PASSING_GRADE=3` — only Again is a lapse). `lib/reviewProgress.ts` — pure
+  session position/remaining/completion from a fixed total + current index, no
+  fetching. 15 vitest tests across the three.
+- **`feat(frontend)` — pages**:
+  - `flashcards/page.tsx` — generate form (`num_cards` 1-50, default 10) + card list.
+    Generate guards double-submit, shows "Generating…"; delete mirrors the existing
+    delete-document/delete-quiz pattern. A live "Review (N)" button (its own `/due`
+    query) links to the session, disabled when nothing's due.
+  - `flashcards/review/page.tsx` — **fetches `/due` once and steps through that fixed
+    snapshot by index**, not a live-refetched list — the key design decision here: if
+    the due-count query in the background refetches after a card is graded (React
+    Query's default behavior), that card disappearing from a *live* `/due` result must
+    not reshuffle which card the learner is looking at mid-session. `reviewProgress.ts`
+    computes position/remaining against that fixed snapshot. Shows the front only;
+    "Show answer" reveals the back; the four grade buttons `POST` the review and
+    advance — Again uses `destructive`, Easy uses the `--success` token (added in the
+    quiz increment) via a `className` override on the `outline` variant (safe under
+    `twMerge`, confirmed no class conflict). Complete/empty states are distinguished:
+    "No cards due right now" (nothing to review) vs. "Done for now! You reviewed N
+    cards" (session finished).
+  - Subject-detail page: a "Flashcards" (outline) button beside Quizzes/Ask.
+- Verified: `tsc --noEmit` clean, `eslint` clean, **80 passed** (19 files, up from
+  65/16), `npm run build` succeeds (both new routes compile). The build's earlier
+  "stale `.next` shared with the dev server" gotcha (hit in the quiz increment) was
+  avoided this time by stopping `next dev` and clearing `.next` before building.
+- **Live-verified**: still no browser available in this environment (the same standing
+  gap noted on every frontend page in this project), so this drove **the exact real
+  HTTP endpoints and payload shapes the pages themselves call** through the full real
+  stack instead of a browser click-through — real Inngest Dev Server + real
+  R2/Neon/Cohere/Claude: upload → `ready` → generate 4 real cards → confirmed all due
+  immediately (exactly what the list page's `Review(4)` badge reflects) → graded one
+  card with each of the four buttons in turn → confirmed Again (grade 1) resets
+  `repetitions` to 0 while Hard/Good/Easy (3/4/5) all advance it to 1 and every grade's
+  `due_at` moved forward → confirmed all four graded cards correctly dropped out of a
+  fresh `/due` fetch (0 remaining), exactly what drives the review page's empty state.
+  Cleaned up via real `DELETE`s; Neon **and** R2 both confirmed clean afterward
+  (throwaway script, not committed).
+- Phase 3 (Flashcards + SM-2) is now complete — backend (previous entry) + frontend
+  (this one). Phase 4 (progress tracking + Polar billing) is next per `docs/plan.md`.
+
 ## 2026-07-17 — Flashcards backend: SM-2 scheduling + Claude tool-use generation (Phase 3 start)
 - First Phase 3 feature. New `app/modules/flashcards/` (models + sm2 + generation +
   service + schemas + router), same established split as documents/ask/quiz.

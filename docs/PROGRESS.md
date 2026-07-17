@@ -4,13 +4,14 @@
 
 ## Current phase
 **Phase 0 — Setup: complete.** **Phase 1 — Core RAG: complete.** **Phase 2 — Quiz + FTS
-hybrid: complete.** **Phase 3 — Flashcards + SM-2: backend done, frontend next** — SM-2
-spaced-repetition scheduling, Claude tool-use flashcard generation, and full
-generate/list/due/review/delete backend, live-verified end-to-end. The flashcards
-*frontend* (review UI, grading) is the next increment. Phase 1–2 recap: Subjects,
-documents (R2 + Inngest ingest with auto-summary, deletable), hybrid Ask/RAG (Postgres
-FTS + vector + RRF + Cohere Rerank, streaming), Conversations, Quiz (tool-use
-generation + full UI) — all with their own frontends already shipped.
+hybrid: complete.** **Phase 3 — Flashcards + SM-2: complete** — SM-2 spaced-repetition
+scheduling, Claude tool-use flashcard generation, generate/list/due/review/delete
+backend, and the full frontend (generate, an SM-2 review session with Again/Hard/Good/
+Easy grading, delete) — all live-verified end-to-end. Next is **Phase 4 — Progress
+tracking + Polar billing 🔴** per `docs/plan.md`. Phase 1–2 recap: Subjects, documents
+(R2 + Inngest ingest with auto-summary, deletable), hybrid Ask/RAG (Postgres FTS +
+vector + RRF + Cohere Rerank, streaming), Conversations, Quiz (tool-use generation +
+full UI) — all with their own frontends already shipped.
 
 ## Done
 - [x] Repo skeleton + `.gitignore`
@@ -1085,13 +1086,52 @@ generation + full UI) — all with their own frontends already shipped.
     clean afterward. Not click-tested in a real browser (no browser/Clerk auth here —
     the flashcards frontend is the next increment anyway).
 
-## Next (Phase 3+)
-- **Flashcards frontend** — generate cards for a subject, review/grade them (0-5),
-  see the schedule advance — next increment.
-- Remaining per `docs/plan.md`: progress tracking, multilingual polish, billing (Polar,
-  Phase 4), Business/Teams B2B (Phase 5).
+- [x] Flashcards frontend — generate, an SM-2 review session, delete. Closes Phase 3.
+  - `app/subjects/[subjectId]/flashcards/page.tsx`: generate form (`num_cards` 1-50,
+    default 10) and the card list (front + muted back, delete). Generate guards
+    double-submit and shows "Generating…" (live Claude call); 422/502 mapped via
+    `friendlyFlashcardError` off the real `response.status` (hand-raised
+    `HTTPException`s aren't in the typed error shape). Delete mirrors the
+    delete-document/delete-quiz pattern exactly. A **"Review (N)"** button shows the
+    live due count (its own `GET /due` query) and links to the review session,
+    disabled at 0.
+  - `app/subjects/[subjectId]/flashcards/review/page.tsx`: fetches `/due` **once** and
+    steps through that fixed snapshot by index (`reviewProgress.ts`) — deliberately not
+    re-deriving "current card" from a live `/due` query each render, since a background
+    refetch dropping the just-graded card would reshuffle the session mid-review.
+    Shows the front; "Show answer" reveals the back; four grade buttons — **Again=1,
+    Hard=3, Good=4, Easy=5** (`gradeButtons.ts`, Anki-style, not six raw SM-2 numbers)
+    — `POST` the review and advance. Again uses the `destructive` token; Easy uses the
+    `--success` token (added in the quiz increment) via a `className` override on the
+    `outline` variant (`twMerge`-safe). Empty/complete states: "No cards due right now"
+    or "Done for now! You reviewed N cards."
+  - Subject-detail page gains a "Flashcards" (outline) button beside Quizzes/Ask.
+  - New pure helpers, all unit-tested: `lib/flashcardError.ts` (`friendlyFlashcardError`
+    — 422/502/other, 3 tests), `lib/gradeButtons.ts` (`GRADE_BUTTONS` pins the exact
+    label→grade mapping sent to `POST /flashcards/{id}/review`, `isLapseGrade` mirrors
+    the backend's `sm2.PASSING_GRADE=3` boundary, 7 tests), `lib/reviewProgress.ts`
+    (session position/remaining/completion from a fixed total + index, pure, 6 tests).
+  - `schema.d.ts` regenerated (`FlashcardRead`/`FlashcardGenerateRequest`/
+    `ReviewRequest` + the 4 routes now typed) — no hand-edits.
+  - Verified: `tsc --noEmit` clean, `eslint` clean, **80 passed** (19 files, up from
+    65/16), `npm run build` succeeds (both new routes compile:
+    `/subjects/[subjectId]/flashcards` and `.../flashcards/review`).
+  - **Live-verified**: no browser available in this environment (standing gap across
+    every frontend page here), so this drove the **exact same real HTTP endpoints and
+    payload shapes the pages call** through the full real stack (real Inngest Dev
+    Server + real R2/Neon/Cohere/Claude) instead — upload → `ready` → generate 4 real
+    cards → confirm all due immediately (matches the list page's `Review(4)` badge) →
+    grade one card with each of the four buttons (Again/Hard/Good/Easy) → confirmed
+    Again resets `repetitions` to 0 while Hard/Good/Easy all advance it to 1, every
+    grade's `due_at` moved forward → confirmed all four graded cards correctly dropped
+    out of a fresh `/due` fetch (0 remaining). Cleaned up via real `DELETE`s; Neon and
+    R2 both confirmed clean afterward.
+
+## Next (Phase 4+)
+- **Phase 4 — Progress tracking + Polar billing 🔴** per `docs/plan.md` (next phase).
+- Remaining per `docs/plan.md`: multilingual polish, Business/Teams B2B (Phase 5).
 - Still owed from earlier: a real-browser click-through of the async upload/poll/delete,
-  quiz, hybrid-Ask, and now flashcards flows with live Clerk auth (noted across several
+  quiz, hybrid-Ask, and flashcards flows with live Clerk auth (noted across several
   increments, never yet done — no browser available in this environment).
 
 ## Blockers / needs from user
