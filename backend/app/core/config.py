@@ -39,6 +39,26 @@ class Settings(BaseSettings):
     r2_secret_access_key: str | None = None
     r2_bucket_name: str | None = None
 
+    # Polar (billing/payments). Optional so the app/tests boot without them;
+    # app/core/polar_client.py raises at point of use.
+    polar_access_token: str | None = None
+    polar_webhook_secret: str | None = None
+    # "sandbox" or "production" — drives which API base URL the SDK targets.
+    # Defaults to sandbox so a misconfigured deploy can never accidentally charge a
+    # real card; production is an explicit opt-in.
+    polar_server: str = "sandbox"
+
+    # Product -> plan mapping, by **product id** rather than product name.
+    # Ids are stable and opaque; a name is a mutable dashboard label, and renaming a
+    # product would silently break entitlement mapping (this org's own products were
+    # already named inconsistently — "FREE"/"PRO"/"Business"). Ids also keep the
+    # webhook's hot path local: mapping by name would need an extra Polar API call per
+    # event, adding latency and a new failure mode to a path that must be cheap and
+    # reliable. No id for Free on purpose: Free is the *absence* of a paid plan (see
+    # billing/models.UserPlan), so it is never sold and never checked out.
+    polar_product_id_pro: str | None = None
+    polar_product_id_business: str | None = None
+
     # Comma-separated (not JSON) so a plain `.env` value like
     # `CORS_ORIGINS=http://localhost:3000,https://app.example.com` just works —
     # pydantic-settings expects JSON for genuine list-typed fields, which is more

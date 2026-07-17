@@ -31,3 +31,7 @@ inngest>=0.5
 
 # File storage (Cloudflare R2, S3-compatible) — app/core/r2_client.py
 boto3>=1.34
+
+# Billing (Polar, Merchant of Record) — app/core/polar_client.py. Brings in
+# `standardwebhooks`, which backs the webhook signature verification.
+polar-sdk>=0.31
