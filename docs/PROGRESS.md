@@ -1497,6 +1497,36 @@ frontends already shipped.
     clean, `npm run build` succeeds. **Not browser-verified** (same standing gap) — the
     three new prompts want a manual trip past each plan cap with real Clerk auth.
 
+- [x] **next-intl foundation + language switcher + first page slice** (Phase 5 groundwork;
+  the stack listed next-intl but it had never been wired). Frontend-only, no backend
+  change.
+  - **next-intl 4.13.2, "without i18n routing" mode**: active locale in a `locale` cookie,
+    **no `[locale]` URL segment, no next-intl middleware** — `clerkMiddleware` stays the
+    only middleware. Verified the API shapes against the *installed* package before wiring
+    (getRequestConfig `{locale, messages}`; `NextIntlClientProvider` auto-inherits from the
+    Server Component; no middleware needed in this mode).
+  - Wiring: `next.config.ts` (`createNextIntlPlugin`), `src/i18n/request.ts` (cookie →
+    catalog, `en` fallback), `src/i18n/locales.ts` (`resolveLocale` hardening so an edited
+    cookie can't import a missing catalog), `src/i18n/setLocale.ts` (server action), root
+    `layout.tsx` async with `<html lang={await getLocale()}>` + `NextIntlClientProvider`.
+  - **Locales: en (default) / uz / ko / ru.** `messages/en.json` is source-of-truth;
+    `uz/ko/ru` mirror its keys. **⚠️ uz/ko/ru are machine/LLM-drafted and need
+    native-speaker review** — not production-quality (Russian plural forms especially). See
+    `frontend/messages/README.md`.
+  - **LanguageSwitcher**: native `<select>`, semantic tokens, ≥44px, Languages icon +
+    aria-label; `setLocale` action → `router.refresh()`. In the dashboard + subjects
+    headers.
+  - **First slice converted**: home, subjects list, dashboard (incl. an ICU plural).
+    sign-in/sign-up render Clerk's own widgets (no app strings of ours — Clerk's own UI
+    localization is a separate follow-up).
+  - Tests +11: `locales.test.ts`, `language-switcher.test.tsx` (with a new
+    `lib/test/renderWithIntl` helper), `messages.test.ts` (**catalog key parity** + every
+    locale's ICU plural formats without throwing). Frontend **118 passed** (28 files),
+    `tsc`/`eslint` clean, `npm run build` succeeds. **Not browser-verified** — the
+    switch→cookie→refresh round-trip wants a real browser (standing gap).
+  - Side-note: `frontend/.env` has no `NEXT_PUBLIC_API_URL`, but `lib/api/client.ts` falls
+    back to `http://localhost:8000`, so build/dev are unaffected.
+
 ## Next (Phase 4+)
 - **Confirm the Polar webhook against real delivery** — the one gap in the payment path;
   see "Blockers". Everything else in the payment path is live-verified.
@@ -1504,7 +1534,20 @@ frontends already shipped.
   redirect, and the `?upgraded=1` return-and-refetch, plus the four 402 upgrade prompts
   (subjects/documents/quiz/flashcards) all still want a manual click-through with real
   Clerk auth (no browser in this environment).
-- Remaining per `docs/plan.md`: multilingual polish, Business/Teams B2B (Phase 5).
+- **i18n follow-ups** (foundation is in; these are the tracked remainder):
+  - **Native review of `uz`/`ko`/`ru` catalogs** — the drafts are machine/LLM-generated
+    starting points, not production-quality (esp. Russian plural forms). Highest-priority
+    i18n item before any locale is user-facing "for real".
+  - **Convert the remaining pages** to `useTranslations`: subject detail
+    (`/subjects/[subjectId]`), quizzes (+ quiz detail), flashcards (+ review), ask,
+    progress, and billing — plus the shared components with their own copy (UpgradePrompt,
+    UsageMeters, ProgressStats, question/answer-message). Each converted component that has
+    an existing test must switch to `renderWithIntl`.
+  - **Clerk UI localization** — sign-in/sign-up render Clerk's own widgets; localize them
+    via `@clerk/localizations` (map the 4 locales) if their English UI matters.
+  - Consider typed messages (augment next-intl's `Messages` from `en.json`) so missing
+    keys become a tsc error, and a lint/CI check for catalog parity.
+- Remaining per `docs/plan.md`: Business/Teams B2B (Phase 5).
 - Still owed from earlier: a real-browser click-through of the async upload/poll/delete,
   quiz, hybrid-Ask, flashcards, and progress-dashboard flows with live Clerk auth (noted
   across several increments, never yet done — no browser available in this environment).

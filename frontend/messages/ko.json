@@ -1,0 +1,38 @@
+{
+  "Common": {
+    "loading": "불러오는 중…"
+  },
+  "Language": {
+    "label": "언어"
+  },
+  "Nav": {
+    "dashboard": "대시보드",
+    "goToSubjects": "과목으로 이동",
+    "billing": "요금제 및 결제"
+  },
+  "Home": {
+    "tagline": "학습 자료를 업로드하고 질문에 대한 출처가 표시된 답변을 받아보세요.",
+    "signIn": "로그인"
+  },
+  "Subjects": {
+    "heading": "과목",
+    "newSubject": "새 과목",
+    "nameLabel": "이름",
+    "namePlaceholder": "예: 생물학 101",
+    "add": "추가",
+    "adding": "추가하는 중…",
+    "createError": "과목을 만들지 못했습니다. 다시 시도해 주세요.",
+    "loadError": "과목을 불러오지 못했습니다.",
+    "empty": "아직 과목이 없습니다 — 위에서 추가하세요.",
+    "createdOn": "{date}에 생성됨"
+  },
+  "Dashboard": {
+    "heading": "대시보드",
+    "loadError": "진행 상황을 불러오지 못했습니다.",
+    "welcomeTitle": "StudyMate에 오신 것을 환영합니다",
+    "welcomeBody": "시작하려면 과목을 만들고 문서를 업로드하세요 — 학습 진행 상황이 여기에 표시됩니다.",
+    "getStarted": "시작하기",
+    "acrossSubjects": "{count, plural, other {과목 #개}}",
+    "viewAll": "모든 과목 보기"
+  }
+}

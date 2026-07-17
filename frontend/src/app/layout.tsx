@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
+import { NextIntlClientProvider } from "next-intl";
+import { getLocale } from "next-intl/server";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
@@ -19,16 +21,24 @@ export const metadata: Metadata = {
   description: "AI study assistant — cited Q&A over your own materials.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Active locale comes from the "locale" cookie via i18n/request.ts (no [locale] URL
+  // segment — "without i18n routing" mode). Drives <html lang> for a11y/SEO.
+  const locale = await getLocale();
+
   return (
     <ClerkProvider signInUrl="/sign-in" signUpUrl="/sign-up">
-      <html lang="en">
+      <html lang={locale}>
         <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-          <Providers>{children}</Providers>
+          {/* Rendered from a Server Component, so NextIntlClientProvider auto-inherits
+              the locale + messages resolved in i18n/request.ts — no explicit props. */}
+          <NextIntlClientProvider>
+            <Providers>{children}</Providers>
+          </NextIntlClientProvider>
         </body>
       </html>
     </ClerkProvider>

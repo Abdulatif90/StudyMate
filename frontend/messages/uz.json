@@ -1,0 +1,38 @@
+{
+  "Common": {
+    "loading": "Yuklanmoqda…"
+  },
+  "Language": {
+    "label": "Til"
+  },
+  "Nav": {
+    "dashboard": "Boshqaruv paneli",
+    "goToSubjects": "Fanlarga o‘tish",
+    "billing": "Tarif va to‘lov"
+  },
+  "Home": {
+    "tagline": "O‘quv materiallaringizni yuklang va savollaringizga manbali, iqtiboslangan javoblar oling.",
+    "signIn": "Kirish"
+  },
+  "Subjects": {
+    "heading": "Fanlar",
+    "newSubject": "Yangi fan",
+    "nameLabel": "Nomi",
+    "namePlaceholder": "masalan, Biologiya 101",
+    "add": "Qo‘shish",
+    "adding": "Qo‘shilmoqda…",
+    "createError": "Fan yaratib bo‘lmadi. Qayta urinib ko‘ring.",
+    "loadError": "Fanlarni yuklab bo‘lmadi.",
+    "empty": "Hali fanlar yo‘q — yuqoridan qo‘shing.",
+    "createdOn": "Yaratilgan {date}"
+  },
+  "Dashboard": {
+    "heading": "Boshqaruv paneli",
+    "loadError": "Ma’lumotlarni yuklab bo‘lmadi.",
+    "welcomeTitle": "StudyMate’ga xush kelibsiz",
+    "welcomeBody": "Boshlash uchun fan yarating va hujjat yuklang — o‘quv jarayoningiz shu yerda ko‘rinadi.",
+    "getStarted": "Boshlash",
+    "acrossSubjects": "{count, plural, one {# ta fan bo‘yicha} other {# ta fan bo‘yicha}}",
+    "viewAll": "Barcha fanlarni ko‘rish"
+  }
+}

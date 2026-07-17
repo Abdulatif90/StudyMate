@@ -2,6 +2,59 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-18 — next-intl foundation + language switcher + first page slice (Phase 5 groundwork)
+- Wired **next-intl 4.13.2** in the **"without i18n routing"** mode
+  (https://next-intl.dev/docs/getting-started/app-router/without-i18n-routing): the active
+  locale lives in a `locale` **cookie**, not the URL — so there's **no `[locale]` segment,
+  no route restructuring, and no next-intl middleware**. `clerkMiddleware` in
+  `src/middleware.ts` stays the only middleware, untouched.
+- **Step 0 introspection against the installed package** (not memory): confirmed
+  `getRequestConfig` returns `{ locale, messages }`; `NextIntlClientProvider` **auto-inherits
+  locale+messages** when rendered from a Server Component (v4 — no explicit props needed in
+  the layout, explicit only in tests); and the no-middleware claim holds for v4's
+  without-routing mode.
+- Files: `next.config.ts` wrapped with `createNextIntlPlugin("./src/i18n/request.ts")`;
+  `src/i18n/request.ts` (reads the cookie via the async Next 15 `cookies()`, falls back to
+  `en`, dynamic-imports the catalog); `src/i18n/locales.ts` (locale list + `resolveLocale`
+  hardening — an unknown/edited cookie can't point the import at a missing catalog);
+  `src/i18n/setLocale.ts` (server action writing the cookie); root `layout.tsx` now
+  **async**, `<html lang={await getLocale()}>`, wraps children in `NextIntlClientProvider`.
+- **Locales: en (default), uz, ko, ru.** `messages/en.json` is the source of truth;
+  `uz/ko/ru.json` mirror its keys. **⚠️ uz/ko/ru are machine/LLM-drafted starting points
+  and NOT production-quality — they need native-speaker review** (flagged in
+  `messages/README.md` and PROGRESS "Next"). The Russian `few`/`many` plural forms and
+  `по` + dative phrasing in `Dashboard.acrossSubjects` are the most likely to need fixing.
+- **LanguageSwitcher** (`src/components/language-switcher.tsx`): native `<select>` (no
+  shadcn Select primitive in this repo), semantic tokens, ≥44px target, Languages icon +
+  `aria-label` (not identifiable by position alone). On change → `setLocale` server action
+  → `router.refresh()`. Placed next to `UserButton` in the dashboard and subjects headers.
+- **First page slice converted** to `useTranslations`: **home, subjects list, dashboard**
+  (incl. an ICU `plural` for "Across N subjects"). **sign-in/sign-up render Clerk's own
+  `<SignIn>`/`<SignUp>` widgets — they carry no app strings of ours, so there was nothing to
+  translate there; Clerk's own UI localization (`@clerk/localizations`) is a separate
+  follow-up.** All other pages (subject detail, quizzes, flashcards, ask, progress, billing)
+  stay English for now — tracked in PROGRESS "Next".
+- **Test-harness impact handled**: added `src/lib/test/renderWithIntl.tsx` (wraps in
+  `NextIntlClientProvider` with the real `en` catalog) for any translated component under
+  test. Only pages (untested here by the codebase's pattern) and the new LanguageSwitcher
+  were touched, so no existing component test needed the wrapper.
+- Tests (+11, all offline): `locales.test.ts` (5 — `resolveLocale`/`isLocale` reject
+  unknown → `en`, incl. a `../../etc/passwd`-style value), `language-switcher.test.tsx`
+  (3 — renders one option per locale, reflects the active locale, calls `setLocale` on
+  change; `next/navigation` + the server action mocked), `messages.test.ts` (3 — **key
+  parity across all four catalogs**, and every locale's `acrossSubjects` ICU plural formats
+  without throwing for counts 0/1/2/5/11/21/100 — the one failure mode build/en-only tests
+  miss). Frontend **118 passed** (28 files, up from 107/25), `tsc --noEmit` clean, `eslint`
+  clean, `npm run build` succeeds (`/` and the converted pages are now `ƒ` dynamic —
+  expected, they read the locale cookie).
+- **Env side-check** (unrelated to i18n): `frontend/.env` has no `NEXT_PUBLIC_API_URL`, but
+  `lib/api/client.ts` falls back to `http://localhost:8000`, so build/dev resolve fine —
+  no action needed unless the backend moves off that origin.
+- **Not browser-verified** — no browser in this environment, so the language-switch
+  cookie→refresh→re-render round-trip is unverified in a real browser (standing gap). The
+  cookie read/validation, catalog parity, plural formatting, provider wiring, and build are
+  all verified offline.
+
 ## 2026-07-18 — 402 upgrade prompt extended to documents/quiz/flashcards (Phase 4)
 - Closes the gap the billing-frontend increment below flagged as "a one-liner later":
   the 402 → `<UpgradePrompt>` UX was wired into subject-create only; now every

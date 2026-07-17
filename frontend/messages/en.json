@@ -1,0 +1,38 @@
+{
+  "Common": {
+    "loading": "Loading…"
+  },
+  "Language": {
+    "label": "Language"
+  },
+  "Nav": {
+    "dashboard": "Dashboard",
+    "goToSubjects": "Go to Subjects",
+    "billing": "Plan & billing"
+  },
+  "Home": {
+    "tagline": "Upload your study materials and get cited, sourced answers to your questions.",
+    "signIn": "Sign in"
+  },
+  "Subjects": {
+    "heading": "Subjects",
+    "newSubject": "New subject",
+    "nameLabel": "Name",
+    "namePlaceholder": "e.g. Biology 101",
+    "add": "Add",
+    "adding": "Adding…",
+    "createError": "Couldn't create subject. Please try again.",
+    "loadError": "Couldn't load subjects.",
+    "empty": "No subjects yet — add one above.",
+    "createdOn": "Created {date}"
+  },
+  "Dashboard": {
+    "heading": "Dashboard",
+    "loadError": "Couldn't load progress.",
+    "welcomeTitle": "Welcome to StudyMate",
+    "welcomeBody": "Create a subject and upload a document to get started — your study progress will show up here.",
+    "getStarted": "Get started",
+    "acrossSubjects": "{count, plural, one {Across # subject} other {Across # subjects}}",
+    "viewAll": "View all subjects"
+  }
+}
