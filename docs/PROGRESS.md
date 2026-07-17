@@ -5,14 +5,16 @@
 ## Current phase
 **Phase 0 — Setup: complete.** **Phase 1 — Core RAG: complete.** **Phase 2 — Quiz + FTS
 hybrid: complete.** **Phase 3 — Flashcards + SM-2: complete.** **Phase 4 — Progress
-tracking complete (backend + frontend); plan/usage entitlement layer complete (backend);
-Polar payment wiring blocked on keys.** Progress is a read-only `app/modules/progress/`
-plus a per-subject page and an overall `/dashboard`. `app/modules/billing/` now holds a
-**provider-agnostic** entitlement layer — Free/Pro/Business plans and enforced usage caps
-— that Polar will later plug into by upserting one `UserPlan` row from its webhook; no
-Polar SDK/secrets exist yet. Remaining in Phase 4: the Polar payment wiring itself
-(**blocked** — needs the user's Polar account/API keys, same pattern as R2/Inngest
-earlier) and a usage-meter/upgrade-prompt frontend. Phase 1–3 recap: Subjects, documents
+tracking complete (backend + frontend); billing complete on the backend (entitlement layer
++ Polar checkout/webhook, SANDBOX).** Progress is a read-only `app/modules/progress/` plus
+a per-subject page and an overall `/dashboard`. `app/modules/billing/` holds an entitlement
+layer — Free/Pro/Business plans and enforced usage caps — plus the Polar wiring that feeds
+it: `POST /billing/checkout` (authenticated) and a public, signature-verified
+`POST /billing/webhook` whose *only* job is upserting one `UserPlan` row. The entitlement
+layer itself stays provider-agnostic. **Nothing is blocked on keys any more**; the one open
+item is confirming the webhook against a real Polar delivery (needs a `polar listen`
+tunnel — see Blockers), and Polar is sandbox-only so far. Remaining in Phase 4: the
+usage-meter/upgrade-prompt frontend. Phase 1–3 recap: Subjects, documents
 (R2 + Inngest ingest with auto-summary, deletable), hybrid Ask/RAG (Postgres FTS + vector
 + RRF + Cohere Rerank, streaming), Conversations, Quiz (tool-use generation + full UI),
 Flashcards + SM-2 (tool-use generation + full review-session UI) — all with their own
@@ -1339,22 +1341,131 @@ frontends already shipped.
     inserted a Pro `UserPlan` row (simulating the future Polar webhook) → the same
     request that just 402'd returned **201**. All rows cleaned up afterward.
 
+- [x] **Polar payment wiring — the last blocked Phase 4 item, now unblocked and done**
+  (SANDBOX). Checkout + webhook → `UserPlan`. The entitlement layer was **not**
+  redesigned: `LIMITS`, `ensure_can_*`, `record_generation`, the 402 handler are all
+  untouched, and there is still no plan-change endpoint. `polar-sdk>=0.31` added.
+  - **Step 0 caught a design-breaking mismatch before any code was written.** The three
+    sandbox products (FREE $0 / PRO $20 / Business $100) were all **one-time purchases**
+    (`recurring_interval: None`), not subscriptions. One-time products never emit
+    `subscription.*` events — they emit `order.paid` — so the specced webhook would have
+    been a fully-tested, green, *silently dead* integration: checkout works, plans never
+    change. Nothing ever cancels or expires either, so $100 would have bought permanent
+    unlimited Business. Escalated rather than guessed; the user chose recurring monthly.
+    **Two new recurring monthly products created via the API** (Pro `5d19dae1…` $20/mo,
+    Business `653e839c…` $100/mo), preserving the original price points. The three
+    original one-time products were left untouched for the user to clean up.
+  - **LIMITS vs the dashboard: no conflict** (the comparison the task asked for). The
+    products carry no caps anywhere — empty descriptions, no metadata, no benefits — so
+    nothing in Polar contradicts `LIMITS`, which remains the only thing enforcing
+    anything. Names map cleanly onto the existing `Plan` enum.
+  - `app/core/polar_client.py`: one shared client, `sandbox`/`production` via
+    `POLAR_SERVER` (**defaults to sandbox** so a misconfigured deploy can't charge a real
+    card). Missing creds → `PolarConfigError` at point of use naming the exact env var —
+    same loud-failure pattern as r2/inngest/embedding. Secrets never logged, returned, or
+    put in an exception message (asserted by a test). Deliberately Polar-only: it knows
+    nothing about `Plan`/`UserPlan`, so `app/core` still never imports `app/modules`.
+  - **Product → plan by id, not name** (`POLAR_PRODUCT_ID_PRO`/`_BUSINESS`): ids are
+    stable, names are mutable labels — and this org's own products were already named
+    inconsistently ("FREE"/"PRO"/"Business"), which is exactly how name-matching breaks.
+    Mapping by name would also cost an API call per webhook. **No Free product id**: Free
+    is the *absence* of a paid plan, so it's never sold (checkout 400s on it).
+  - **Owner linkage is the crux.** The webhook has no Clerk JWT, so `create_checkout`
+    plants the Clerk `owner_id` as `external_customer_id` while the caller *is*
+    authenticated; the webhook reads it back from
+    `subscription.customer.external_id` — only out of a signature-verified payload, never
+    from a client-controllable field. A caller can't buy a plan for anyone else (tested:
+    an `owner_id` in the request body is ignored in favour of the token's).
+  - **Signature verification before anything else touches the payload or DB.** Raw
+    `await request.body()` (re-serializing parsed JSON changes the bytes and breaks
+    verification); the SDK's `validate_event` delegates to Standard Webhooks —
+    constant-time compare + a timestamp freshness window, so replay protection is free and
+    no crypto is hand-rolled. Bad signature → 403, nothing written. **A missing secret
+    raises (500), never "unset → accept"** — an unverified webhook is a free-Business
+    bypass.
+  - **`revoked` downgrades, `canceled` does NOT** — the increment's subtlest decision,
+    taken from the SDK's own docstrings rather than assumption: `canceled` is "cancellation
+    scheduled, customer *may still have access until the end of the current period*",
+    while `revoked` is "loses access immediately". Downgrading on `canceled` would cut off
+    a customer who already paid through period end. `past_due` likewise waits (payment may
+    recover; `revoked` fires if it doesn't). `subscription.updated` **is** handled, so a
+    mid-period Pro→Business switch — which fires no `active` event — isn't silently missed.
+  - **Downgrade sets `Plan.FREE` rather than deleting the row**, despite "no row" also
+    meaning Free: deleting would discard `updated_at`, the ordering guard, so a stale
+    `active` redelivered afterwards would find no row, look fresh, and silently re-grant a
+    paid plan for free. **`updated_at` stores the *event's* timestamp, not wall-clock** —
+    with processing time, a legitimately newer event that merely arrived a moment later
+    would look older than the row and be dropped. `_as_utc` normalizes both sides: Polar's
+    timestamps are aware, but `updated_at` round-trips through a `TIMESTAMP WITHOUT TIME
+    ZONE` column and returns **naive**, which would otherwise `TypeError` on comparison.
+  - Unknown product / missing `external_id` / unhandled event type → **200 `ignored`**,
+    logged, nothing written: they're not errors (a non-2xx would make Polar retry forever
+    an event that can never succeed), but they're never silently swallowed either.
+    Checkout failures surface as real statuses (400 unpurchasable / 500 misconfig / 502
+    upstream), never a 200 with no URL.
+  - Tests: `test_polar.py` (37, network-free — the *client* is mocked, but **signatures
+    are not**: payloads are signed with real HMAC via the same Standard Webhooks library
+    the verifier uses and posted as real bytes at the real endpoint, since a stubbed
+    signature check would prove nothing). Covers the checkout call shape + owner linkage;
+    valid signature upserting; invalid signature, unsigned request, and a body **tampered
+    after signing** all rejected with nothing written; missing secret failing loudly;
+    subscribe lifting the subject cap over real HTTP and revoke reinstating it;
+    canceled/past_due not downgrading; a tier switch; duplicate and **both** out-of-order
+    directions; tenant isolation. Backend **281 passed** (10 deselected live, up from
+    244/9), `ruff` clean. **The 244 pre-existing tests needed no changes.**
+  - **Live-verified, in two halves — and the second half is only partly live:**
+    1. **Checkout: genuinely live.** A real sandbox checkout created via the real API with
+       a throwaway owner id, then read back from Polar to confirm `external_customer_id`
+       persisted upstream. (Found along the way: `checkouts.list(external_customer_id=…)`
+       can't find an *unpaid* checkout — that filter resolves through the customer
+       relation, and `customer_id` is `None` until payment — so the test matches on the
+       returned URL instead. The URL's last segment is a client secret, not the id.)
+    2. **Webhook: NOT verified against real Polar delivery.** No `polar listen` tunnel was
+       available (no Polar CLI in this environment), so **Polar has never actually
+       delivered an event to this endpoint.** What *was* verified: the real app under
+       uvicorn on a real socket against real Neon, driven with payloads signed by the
+       **real** `POLAR_WEBHOOK_SECRET` from `.env` — valid → 200 `applied` + `pro` in Neon;
+       **bad signature → 403 with the plan unchanged**; duplicate → `ignored_stale`;
+       canceled → `ignored`, still `pro`; updated → `business`; stale → `ignored_stale`;
+       revoked → `free`. Throwaway owner id; Neon confirmed at 0 `UserPlan` rows before
+       and after. That proves the transport, the signature check and the DB write — it
+       does **not** prove Polar's real delivery format or that the configured secret
+       matches how events will actually be delivered. See "Blockers".
+
 ## Next (Phase 4+)
+- **Confirm the Polar webhook against real delivery** — the one gap in this increment;
+  see "Blockers". Everything else in the payment path is live-verified.
 - **Billing frontend** — usage meters ("2 of 3 subjects used") + upgrade prompts on the
-  402 path, consuming `GET /billing/plan`. Not blocked by Polar.
-- **Polar payment wiring** — blocked; see "Blockers" below. The entitlement layer it
-  plugs into is done: its webhook just upserts `UserPlan`.
+  402 path, consuming `GET /billing/plan`, plus an upgrade button hitting
+  `POST /billing/checkout`. No longer blocked at all. It should also pass a `success_url`
+  (the backend already forwards one; it's omitted for now, so Polar shows its own hosted
+  confirmation page).
 - Remaining per `docs/plan.md`: multilingual polish, Business/Teams B2B (Phase 5).
 - Still owed from earlier: a real-browser click-through of the async upload/poll/delete,
   quiz, hybrid-Ask, flashcards, and progress-dashboard flows with live Clerk auth (noted
   across several increments, never yet done — no browser available in this environment).
 
 ## Blockers / needs from user
-- **Polar payment wiring (Phase 4)** — needs the user's Polar account + API keys (same
-  pattern as R2/Inngest before those were provided). **Only the payment integration is
-  blocked**: the entitlement layer (plans, caps, enforcement, `GET /billing/plan`) is
-  built and live-verified, and Polar's webhook will simply upsert `UserPlan`.
-- **Confirm/adjust the plan limits** in `billing/service.LIMITS` — currently the task's
+- **Verify the webhook against real Polar delivery** — the only open item on billing.
+  Polar has never actually delivered an event to `/billing/webhook`; everything else in
+  the flow is live-verified (see the Polar increment above). Needs, from the user:
+  1. `polar listen http://localhost:8000/billing/webhook` (Polar's own CLI tunnel — not
+     installed in this environment), then a real sandbox checkout paid with a test card.
+  2. **Confirm which webhook secret is in play**: `polar listen` prints its own secret,
+     which may DIFFER from the dashboard endpoint's. `POLAR_WEBHOOK_SECRET` in `.env`
+     must match whichever is actually delivering, or every event 403s.
+  A dashboard webhook endpoint pointing at a public URL would work equally well.
+- **Clean up the old one-time Polar products** (FREE $0 / PRO $20 / Business $100, all
+  `recurring_interval: None`). They're superseded by the new recurring monthly Pro/Business
+  and were deliberately left untouched. They are not wired to anything, so they're inert —
+  but a one-time product can never drive a subscription, so nothing should point at them.
+- **Confirm/adjust the plan limits** in `billing/service.LIMITS` — still the task's
   defaults (Free 3 subjects / 10 docs per subject / 20 generations per day; Pro
-  50/200/200; Business unlimited). One dict, one-line changes.
-- Neon, Clerk, Cohere, Anthropic, Inngest, and R2 keys are all in `backend/.env`.
+  50/200/200; Business unlimited). One dict, one-line changes. Note the sandbox products
+  state no caps at all, so `LIMITS` is the *only* thing enforcing them — nothing
+  contradicts it, but nothing corroborates it either.
+- **Polar is SANDBOX-only so far.** Going live needs `POLAR_SERVER=production`, a
+  production org token, production product ids, and a production webhook secret —
+  production has its own separate dashboard, products and tokens.
+- Neon, Clerk, Cohere, Anthropic, Inngest, R2, and Polar (sandbox) keys are all in
+  `backend/.env`.
