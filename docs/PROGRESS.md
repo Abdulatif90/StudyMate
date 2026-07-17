@@ -1528,6 +1528,24 @@ frontends already shipped.
     back to `http://localhost:8000`, so build/dev are unaffected.
 
 ## Next (Phase 4+)
+- **Frontend redesign roadmap (in progress)** — a phased UI/UX overhaul, one increment per
+  commit batch, each gated on a `tekshir` review before the next starts. FRONTEND.md was
+  amended in Increment 1 with the new rules (§2.7–8 palette, §3 overlays/toasts, §4 app
+  shell). Sequence:
+  1. **Docs + design-system foundation** — FRONTEND.md rules; calm-academic OKLCH palette
+     (indigo primary + teal accent + warm neutrals + `--warning` + real chart ramp), Base
+     UI `ui/*` wrappers (dialog, alert-dialog, toast + `<Toaster/>`, select/menu),
+     `useConfirm` helper, next-themes dark-mode toggle. **(this increment)**
+  2. **Shared app shell + navigation** — one `AppShell` (persistent nav + ThemeToggle +
+     UserButton + language-switcher slot), adopted via an `app/(app)/` route-group layout;
+     remove per-page headers. (Do this BEFORE the i18n page-conversion so the
+     LanguageSwitcher drops into the shell slot.)
+  3. **Interaction gaps** — wire subject delete (`DELETE /subjects/{id}`), replace all 4
+     `window.confirm` with `useConfirm`, route mutation errors through `toast()` (402
+     `<UpgradePrompt>` stays inline, restyled).
+  4. **Differentiate Dashboard vs Progress** — Dashboard becomes a hub (greeting, plan/usage
+     summary, quick actions, subject list w/ mini-stats); per-subject progress keeps
+     `ProgressStats`, restyled with the new tokens/chart palette.
 - **Confirm the Polar webhook against real delivery** — the one gap in the payment path;
   see "Blockers". Everything else in the payment path is live-verified.
 - **Browser pass on the billing frontend** — the `/billing` page, the checkout→Polar

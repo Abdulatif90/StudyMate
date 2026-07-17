@@ -35,8 +35,42 @@ Router + Tailwind v4 + shadcn/ui, semantic tokens in OKLCH (`src/app/globals.css
    (color-blind & accessibility).
 6. **Focus visible:** interactive elements keep `focus-visible:ring-2 ring-ring`.
    Never remove focus outlines.
+7. **Accent = teal (calm-academic direction).** Primary stays indigo (rule 3); the
+   accent is a distinct teal, and neutrals carry a slight warmth (a hint of chroma in
+   `--muted`/`--secondary`/`--border`), never pure gray. Add `--warning` /
+   `--warning-foreground` alongside `--destructive`/`--success`. All in OKLCH, both
+   `:root` and `.dark`.
+8. **Charts use a real categorical ramp.** `--chart-1..5` must be distinguishable hues
+   (not the stock grayscale), contrast-checked in light and dark. Load the `dataviz`
+   skill before choosing chart colors or building any meter/stat tile.
 
-## 3. General
+## 3. Overlays, confirmations & feedback (mandatory)
+Stack note: this repo uses the **Base UI** shadcn variant — primitives come from
+`@base-ui/react/*` (`/alert-dialog`, `/dialog`, `/toast`, `/select`, `/menu`), wrapped as
+`src/components/ui/*`. Reuse those wrappers before hand-rolling.
+1. **Never `window.confirm` / `window.alert` / `alert()`.** Destructive or irreversible
+   actions use the `ui/alert-dialog` confirmation (via the shared `useConfirm` helper):
+   title, description, a destructive confirm label, and a cancel.
+2. **Never surface transient failures as inline `<p className="text-destructive">`.**
+   Route mutation success/failure through the `toast()` helper (Base UI `ui/toast`, one
+   `<Toaster/>` in `app/providers.tsx`). Inline text is only for persistent in-context state.
+3. **Exception — the 402 plan-limit prompt stays inline.** `<UpgradePrompt>` is a
+   conversion CTA, not a transient error; keep it in-flow (restyled), optionally mirrored
+   by a toast with an "Upgrade" action.
+4. **Overlays are finger-friendly + accessible:** focus-trapped, Esc-dismissable, ≥44px
+   targets, checked in light + dark.
+
+## 4. App shell & navigation (mandatory)
+1. **One shared shell, no per-page headers.** Authed pages render inside `AppShell`
+   (persistent nav: Dashboard · Subjects · Plan & billing · theme toggle · language
+   switcher slot · `UserButton`). Do not hand-roll a page-local header/nav.
+2. **Every primary destination reachable from the shell on every screen** — billing/
+   upgrade included.
+3. **Dark-mode toggle is a first-class control** in the shell (drives `.dark`); persist
+   the choice.
+4. Mobile-first: the nav collapses into a `ui/menu` sheet/dropdown below `sm`.
+
+## 5. General
 1. Spacing, radius, color — Tailwind scale & tokens only. No magic pixel values.
 2. Every component checked in **both** light and dark.
 3. Reuse shadcn/ui primitives in `src/components/ui` before hand-rolling.
