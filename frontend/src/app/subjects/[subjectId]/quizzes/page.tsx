@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { useApiClient } from "@/lib/api/useApiClient";
+import { parsePlanLimitError, type PlanLimitError } from "@/lib/planLimitError";
 import { friendlyQuizError } from "@/lib/quizError";
 import { formatRelativeTime } from "@/lib/relativeTime";
 
@@ -23,6 +25,7 @@ export default function QuizzesPage() {
   const [numQuestions, setNumQuestions] = useState(5);
   const [title, setTitle] = useState("");
   const [generateError, setGenerateError] = useState<string | null>(null);
+  const [limitError, setLimitError] = useState<PlanLimitError | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const subjectQuery = useQuery({
@@ -54,10 +57,16 @@ export default function QuizzesPage() {
         body: { num_questions: numQuestions, title: title.trim() || null },
       });
       // 404/422/502 aren't in the generated error shape (hand-raised HTTPExceptions),
-      // so map the real response.status — same pattern as the upload flow.
-      if (error) throw new Error(friendlyQuizError(response.status));
+      // so map the real response.status — same pattern as the upload flow. A 402 means
+      // the plan's daily generation cap is hit — captured separately so the UI can show
+      // an upgrade prompt instead of the generic generate-error line.
+      if (error) {
+        setLimitError(parsePlanLimitError(response.status, error));
+        throw new Error(friendlyQuizError(response.status));
+      }
       return data;
     },
+    onMutate: () => setLimitError(null),
     onSuccess: () => {
       setGenerateError(null);
       setTitle("");
@@ -163,7 +172,11 @@ export default function QuizzesPage() {
               Generating questions from your material — this can take a few seconds.
             </p>
           )}
-          {generateError && <p className="mt-2 text-sm text-destructive">{generateError}</p>}
+          {limitError ? (
+            <UpgradePrompt message={limitError.detail} />
+          ) : generateError ? (
+            <p className="mt-2 text-sm text-destructive">{generateError}</p>
+          ) : null}
         </CardContent>
       </Card>
 

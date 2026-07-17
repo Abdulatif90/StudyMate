@@ -1459,15 +1459,51 @@ frontends already shipped.
   - Frontend **106 passed** (25 files, up from 90/21), `tsc`/`eslint` clean, `npm run build`
     succeeds (`/billing` static). **Not browser-verified** (no browser here) — the
     checkout redirect + `?upgraded` refetch want a manual pass with real Clerk auth.
+  - **Follow-up fix, same day**: the `dataviz` skill's own Meter-form spec ("a single
+    ratio against a limit") requires the unfilled track to be a lighter step of the
+    **same ramp** as the fill (blue-on-blue / red-on-red), not a neutral gray — a rule
+    the initial pass missed (`bg-muted` regardless of fill color). Fixed to
+    `bg-primary/15` / `bg-destructive/15` matching the fill, using this codebase's
+    existing opacity-tinting convention (the same one `button.tsx`'s destructive variant
+    already uses). Test added asserting the track hue always matches the fill hue.
+    Frontend **107 passed** after this fix (corrects the count 2 bullets above).
+
+- [x] **402 upgrade prompt extended to the remaining three guarded create paths**
+  (document upload, quiz generation, flashcard generation) — the billing-frontend
+  increment above wired it into subject-create only and flagged the rest as "a
+  one-liner later." Reused `UpgradePrompt` + `parsePlanLimitError` as-is, no new
+  components/helpers.
+  - Verified reachability first (Step 0): all three routes are genuinely guarded by
+    `ensure_can_upload_document`/`ensure_can_generate` in the backend (confirmed by
+    grepping `ensure_can_` across `app/modules`), so a 402 is real on each path, not
+    wired onto something the backend never rejects.
+  - Same shape in all three pages, mirroring `subjects/page.tsx` exactly: a
+    `limitError` state cleared in `onMutate`, the mutation's `error` branch calls
+    `setLimitError(parsePlanLimitError(response.status, error))` before still throwing
+    the existing `new Error(friendly*Error(response.status))` (415/413/422/502/generic
+    handling untouched — 402 is an additional branch, not a replacement), and the JSX
+    shows `<UpgradePrompt message={limitError.detail}/>` ahead of the existing generic
+    error line when a 402 was parsed.
+  - **No shared hook extracted** — considered (the state+`onMutate`+JSX shape repeats
+    across 3 pages) but the duplication is ~4 lines each and `subjects/page.tsx` (the
+    reference this mirrors) doesn't use one either; introducing an abstraction only 3
+    of 4 call sites would use failed the YAGNI bar the task itself set.
+  - **No new page-level tests** — this codebase's established pattern is
+    helpers/components tested, pages `tsc`/`eslint`/live-browser-verified (no page in
+    the repo has its own test file); the logic being wired in
+    (`parsePlanLimitError`/`UpgradePrompt`) already has full unit/component coverage
+    from the increment above, so nothing new needed a test of its own.
+  - Frontend: **107 passed** (unchanged — no new tests), `tsc --noEmit` clean, `eslint`
+    clean, `npm run build` succeeds. **Not browser-verified** (same standing gap) — the
+    three new prompts want a manual trip past each plan cap with real Clerk auth.
 
 ## Next (Phase 4+)
 - **Confirm the Polar webhook against real delivery** — the one gap in the payment path;
   see "Blockers". Everything else in the payment path is live-verified.
 - **Browser pass on the billing frontend** — the `/billing` page, the checkout→Polar
-  redirect, and the `?upgraded=1` return-and-refetch all still want a manual click-through
-  with real Clerk auth (no browser in this environment). Also fold the reusable
-  `UpgradePrompt`/`parsePlanLimitError` into the document-upload / quiz / flashcard 402
-  paths (currently wired only into subject-create).
+  redirect, and the `?upgraded=1` return-and-refetch, plus the four 402 upgrade prompts
+  (subjects/documents/quiz/flashcards) all still want a manual click-through with real
+  Clerk auth (no browser in this environment).
 - Remaining per `docs/plan.md`: multilingual polish, Business/Teams B2B (Phase 5).
 - Still owed from earlier: a real-browser click-through of the async upload/poll/delete,
   quiz, hybrid-Ask, flashcards, and progress-dashboard flows with live Clerk auth (noted

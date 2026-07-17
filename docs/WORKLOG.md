@@ -2,6 +2,37 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-18 — 402 upgrade prompt extended to documents/quiz/flashcards (Phase 4)
+- Closes the gap the billing-frontend increment below flagged as "a one-liner later":
+  the 402 → `<UpgradePrompt>` UX was wired into subject-create only; now every
+  plan-limit-guarded create path (subjects, document upload, quiz generation,
+  flashcard generation) shows a real upgrade prompt instead of a generic error.
+- **Verified reachability before wiring anything** (Step 0): grepped `ensure_can_` across
+  `app/modules` — `documents/service.py` calls `ensure_can_upload_document`,
+  `quiz/service.py` and `flashcards/service.py` both call `ensure_can_generate` — so a
+  402 is genuinely reachable on all three, not assumed.
+- **No backend change, no new components/helpers** — reused `UpgradePrompt` and
+  `parsePlanLimitError` exactly as shipped. Same shape in all three pages
+  (`app/subjects/[subjectId]/page.tsx`, `.../quizzes/page.tsx`, `.../flashcards/page.tsx`),
+  mirroring `subjects/page.tsx`: a `limitError` state cleared in `onMutate`, the
+  mutation's error branch calls `setLimitError(parsePlanLimitError(response.status,
+  error))` before still throwing the existing `new Error(friendly*Error(response.status))`
+  — the 402 branch is additive, the existing 415/413/422/502/generic handling in
+  `friendlyUploadError`/`friendlyQuizError`/`friendlyFlashcardError` is untouched — and
+  the JSX shows `<UpgradePrompt message={limitError.detail}/>` ahead of the existing
+  generic error line whenever a 402 was parsed.
+- **Considered and rejected a shared hook** for the repeated
+  state+`onMutate`+JSX shape: ~4 lines duplicated across 3 pages, and the reference
+  pattern (`subjects/page.tsx`) doesn't use one either — introducing an abstraction only
+  3 of 4 call sites would share failed the task's own YAGNI bar.
+- **No new tests** — this codebase's established pattern is helpers/components tested,
+  pages `tsc`/`eslint`/live-browser-verified (no page here has its own test file); the
+  logic being wired in already has full coverage from the increment below. Frontend:
+  **107 passed** (unchanged), `tsc --noEmit` clean, `eslint` clean, `npm run build`
+  succeeds.
+- **Not browser-verified** (standing no-browser gap) — the three new prompts want a
+  manual trip past each plan cap with real Clerk auth.
+
 ## 2026-07-18 — Billing frontend: usage meters + upgrade prompts (Phase 4)
 - Consumes the two billing endpoints that already existed (`GET /billing/plan`,
   `POST /billing/checkout`) — **no backend change this increment**. Regenerated
@@ -36,7 +67,8 @@ Log of completed work (newest first). Each entry: what was done, tests, commit.
   no bar for unlimited) and `UpgradePrompt`. Dashboard header gained a "Plan & billing"
   link. All semantic tokens, mobile-first.
 - Tests: `planLimits.test.ts`, `planLimitError.test.ts`, `usage-meters.test.tsx`,
-  `upgrade-prompt.test.tsx`. Frontend **106 passed** (25 files, up from 90/21),
+  `upgrade-prompt.test.tsx`. Frontend **107 passed** (25 files, up from 90/21 — corrected
+  from this entry's original 106; the follow-up meter-track fix's test brought it to 107),
   `tsc --noEmit` clean, `eslint` clean, `npm run build` succeeds (`/billing` compiles as a
   static route).
 - **Not browser-verified with real Clerk auth** — the standing no-browser gap in this

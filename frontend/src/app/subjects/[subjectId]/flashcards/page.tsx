@@ -9,8 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { useApiClient } from "@/lib/api/useApiClient";
 import { friendlyFlashcardError } from "@/lib/flashcardError";
+import { parsePlanLimitError, type PlanLimitError } from "@/lib/planLimitError";
 
 const MIN_CARDS = 1;
 const MAX_CARDS = 50;
@@ -21,6 +23,7 @@ export default function FlashcardsPage() {
   const queryClient = useQueryClient();
   const [numCards, setNumCards] = useState(10);
   const [generateError, setGenerateError] = useState<string | null>(null);
+  const [limitError, setLimitError] = useState<PlanLimitError | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const subjectQuery = useQuery({
@@ -63,10 +66,16 @@ export default function FlashcardsPage() {
         body: { num_cards: numCards },
       });
       // 404/422/502 aren't in the generated error shape (hand-raised HTTPExceptions),
-      // so map the real response.status — same pattern as the quiz generate flow.
-      if (error) throw new Error(friendlyFlashcardError(response.status));
+      // so map the real response.status — same pattern as the quiz generate flow. A 402
+      // means the plan's daily generation cap is hit — captured separately so the UI can
+      // show an upgrade prompt instead of the generic generate-error line.
+      if (error) {
+        setLimitError(parsePlanLimitError(response.status, error));
+        throw new Error(friendlyFlashcardError(response.status));
+      }
       return data;
     },
+    onMutate: () => setLimitError(null),
     onSuccess: () => {
       setGenerateError(null);
       queryClient.invalidateQueries({ queryKey: ["subjects", subjectId, "flashcards"] });
@@ -169,7 +178,11 @@ export default function FlashcardsPage() {
               Generating cards from your material — this can take a few seconds.
             </p>
           )}
-          {generateError && <p className="mt-2 text-sm text-destructive">{generateError}</p>}
+          {limitError ? (
+            <UpgradePrompt message={limitError.detail} />
+          ) : generateError ? (
+            <p className="mt-2 text-sm text-destructive">{generateError}</p>
+          ) : null}
         </CardContent>
       </Card>
 

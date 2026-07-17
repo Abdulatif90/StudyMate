@@ -9,10 +9,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { useApiClient } from "@/lib/api/useApiClient";
 import { friendlyDeleteError } from "@/lib/deleteError";
 import { documentStatusVariant } from "@/lib/documentStatus";
 import { documentsRefetchInterval } from "@/lib/documentsPolling";
+import { parsePlanLimitError, type PlanLimitError } from "@/lib/planLimitError";
 import { friendlyUploadError } from "@/lib/uploadError";
 
 export default function SubjectDetailPage() {
@@ -21,6 +23,7 @@ export default function SubjectDetailPage() {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [limitError, setLimitError] = useState<PlanLimitError | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const subjectQuery = useQuery({
@@ -60,9 +63,17 @@ export default function SubjectDetailPage() {
         // `format: binary` as `string`, so this cast is the documented workaround.
         body: formData as unknown as { file: string },
       });
-      if (error) throw new Error(friendlyUploadError(response.status));
+      if (error) {
+        // A 402 means the plan's per-subject document cap is hit — capture it (status
+        // lives on the response, not the body) so the UI can show an upgrade prompt
+        // instead of the generic upload-error line. Any other status still falls
+        // through to friendlyUploadError below (415/413/generic unchanged).
+        setLimitError(parsePlanLimitError(response.status, error));
+        throw new Error(friendlyUploadError(response.status));
+      }
       return data;
     },
+    onMutate: () => setLimitError(null),
     onSuccess: () => {
       setUploadError(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -164,7 +175,11 @@ export default function SubjectDetailPage() {
             Processing (parsing, chunking, embedding) runs in the background — a new
             document shows as “pending” until it’s ready.
           </p>
-          {uploadError && <p className="mt-2 text-sm text-destructive">{uploadError}</p>}
+          {limitError ? (
+            <UpgradePrompt message={limitError.detail} />
+          ) : uploadError ? (
+            <p className="mt-2 text-sm text-destructive">{uploadError}</p>
+          ) : null}
         </CardContent>
       </Card>
 
