@@ -2,12 +2,12 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import Link from "next/link";
 import { useState } from "react";
 import { BookOpen, Trash2 } from "lucide-react";
 import { useConfirm } from "@/components/confirm-provider";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
+import { SubjectCard } from "@/components/subject-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -97,8 +97,8 @@ export default function SubjectsPage() {
   });
 
   return (
-    <div className="mx-auto max-w-5xl p-4 sm:p-8">
-      <h1 className="mb-8 text-2xl font-semibold">{t("Subjects.heading")}</h1>
+    <div>
+      <h1 className="mb-8 text-[22px] font-semibold">{t("Subjects.heading")}</h1>
 
       <Card className="mb-8">
         <CardHeader>
@@ -168,21 +168,16 @@ export default function SubjectsPage() {
       <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {subjectsQuery.data?.map((subject) => (
           <li key={subject.id}>
-            <Card interactive>
-              <CardContent className="flex items-center justify-between gap-3 py-4">
-                {/* The delete button below must be a SIBLING of this Link, not nested
-                    inside it — nesting would make a delete click also navigate. */}
-                <Link href={`/subjects/${subject.id}`} className="group min-w-0 flex-1">
-                  <p className="font-medium group-hover:underline">{subject.name}</p>
-                  <p className="text-muted-foreground text-xs">
-                    {t("Subjects.createdOn", {
-                      date: new Date(subject.created_at).toLocaleDateString(),
-                    })}
-                  </p>
-                </Link>
+            <SubjectCard
+              href={`/subjects/${subject.id}`}
+              name={subject.name}
+              meta={t("Subjects.createdOn", {
+                date: new Date(subject.created_at).toLocaleDateString(),
+              })}
+              action={
                 <Button
                   variant="destructive"
-                  size="icon-sm"
+                  size="icon"
                   className="shrink-0"
                   aria-label={t("Subjects.deleteAriaLabel", { name: subject.name })}
                   disabled={deleteSubject.isPending && deleteSubject.variables === subject.id}
@@ -204,8 +199,8 @@ export default function SubjectsPage() {
                 >
                   <Trash2 className="size-3.5" />
                 </Button>
-              </CardContent>
-            </Card>
+              }
+            />
           </li>
         ))}
       </ul>

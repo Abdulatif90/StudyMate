@@ -55,6 +55,7 @@
     },
     "planCardTitle": "내 요금제",
     "managePlan": "관리",
+    "managePlanLink": "요금제 관리",
     "newSubject": "새 과목",
     "statDocuments": "문서 {count}개",
     "statFlashcardsDue": "{count}개 학습 예정",

@@ -48,7 +48,7 @@ export default function SubjectProgressPage() {
 
   if (subjectQuery.isError) {
     return (
-      <div className="mx-auto max-w-2xl p-4 sm:p-8">
+      <div>
         {backLink}
         <p className="text-destructive">Subject not found.</p>
       </div>
@@ -57,7 +57,7 @@ export default function SubjectProgressPage() {
 
   if (progressQuery.isError) {
     return (
-      <div className="mx-auto max-w-2xl p-4 sm:p-8">
+      <div>
         {backLink}
         <ErrorState
           message="Couldn't load progress."
@@ -70,7 +70,7 @@ export default function SubjectProgressPage() {
 
   if (progressQuery.isLoading || !progressQuery.data) {
     return (
-      <div className="mx-auto max-w-2xl p-4 sm:p-8" role="status" aria-label="Loading progress">
+      <div role="status" aria-label="Loading progress">
         {backLink}
         <Skeleton className="mb-6 h-8 w-32" />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -87,7 +87,7 @@ export default function SubjectProgressPage() {
     progress.documents.total > 0 || progress.flashcards.total > 0 || progress.quiz_count > 0;
 
   return (
-    <div className="mx-auto max-w-2xl p-4 sm:p-8">
+    <div>
       {backLink}
 
       <h1 className="mb-6 text-2xl font-semibold">Progress</h1>

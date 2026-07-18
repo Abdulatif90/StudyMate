@@ -120,7 +120,7 @@ export default function SubjectDetailPage() {
 
   if (subjectQuery.isError) {
     return (
-      <div className="mx-auto max-w-2xl p-4 sm:p-8">
+      <div>
         {backLink}
         <p className="text-destructive">Subject not found.</p>
       </div>
@@ -128,7 +128,7 @@ export default function SubjectDetailPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl p-4 sm:p-8">
+    <div>
       {backLink}
 
       <div className="mb-8 flex flex-wrap items-center justify-between gap-2">

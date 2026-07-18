@@ -55,6 +55,7 @@
     },
     "planCardTitle": "Your plan",
     "managePlan": "Manage",
+    "managePlanLink": "Manage plan",
     "newSubject": "New subject",
     "statDocuments": "{count, plural, one {# document} other {# documents}}",
     "statFlashcardsDue": "{count} due",

@@ -2,27 +2,47 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/error-state";
+import { PlanCard } from "@/components/plan-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { UsageMeters } from "@/components/usage-meters";
 import { useApiClient } from "@/lib/api/useApiClient";
-import { PLAN_LABELS, PLAN_PRICES } from "@/lib/planLimits";
+import { PLAN_LABELS } from "@/lib/planLimits";
 import type { components } from "@/lib/api/schema";
 
 type Plan = components["schemas"]["Plan"];
 
-// Upgrade targets available from each plan: only plans "above" the current one. Business
-// is the top tier, so it offers nothing further. Free is never listed as a target — it's
-// the absence of a paid plan and can't be checked out (the backend 400s on it anyway).
-const UPGRADE_OPTIONS: Record<Plan, Exclude<Plan, "free">[]> = {
+// Ordered comparison grid — every plan, not just upgrade targets, so a Pro user can
+// still see what Business unlocks and a Free user sees Business too, not just the
+// next tier up. The design prompt's "fuller comparison layout" is this: the billing
+// page is the one place all three plans + their full feature lists are shown side by
+// side (the dashboard's condensed UsageStatCard grid never repeats this).
+const PLAN_ORDER: Plan[] = ["free", "pro", "business"];
+
+const PLAN_PRICE: Record<Plan, { price: string; suffix: string }> = {
+  free: { price: "$0", suffix: "" },
+  pro: { price: "$20", suffix: "/month" },
+  business: { price: "$100", suffix: "/month" },
+};
+
+// Mirrors billing.service.LIMITS (backend) — stated here as plain feature bullets
+// rather than re-deriving them from `plan.limits`, since a card must describe EVERY
+// plan's caps, not just the caller's own current one.
+const PLAN_FEATURES: Record<Plan, string[]> = {
+  free: ["3 subjects", "10 documents per subject", "20 generations per day"],
+  pro: ["50 subjects", "200 documents per subject", "200 generations per day"],
+  business: ["Unlimited subjects", "Unlimited documents", "Unlimited generations"],
+};
+
+const POPULAR_PLAN: Plan = "pro";
+
+// Only plans "above" the current one can actually be checked out — Free is never sold
+// (the backend 400s on it) and a plan can't "upgrade" to itself or downward here.
+const CHECKOUT_TARGETS: Record<Plan, Exclude<Plan, "free">[]> = {
   free: ["pro", "business"],
   pro: ["business"],
   business: [],
-};
-
-const PLAN_BLURB: Record<Exclude<Plan, "free">, string> = {
-  pro: "50 subjects · 200 documents each · 200 generations/day",
-  business: "Unlimited subjects, documents, and generations",
 };
 
 export default function BillingPage() {
@@ -68,11 +88,11 @@ export default function BillingPage() {
   });
 
   const plan = planQuery.data;
-  const upgradeTargets = plan ? UPGRADE_OPTIONS[plan.plan] : [];
+  const checkoutTargets = plan ? CHECKOUT_TARGETS[plan.plan] : [];
 
   return (
-    <div className="mx-auto max-w-2xl p-4 sm:p-8">
-      <h1 className="mb-6 text-2xl font-semibold">Plan &amp; billing</h1>
+    <div>
+      <h1 className="mb-6 text-[22px] font-semibold">Plan &amp; billing</h1>
 
       {justUpgraded && (
         <div className="mb-6 rounded-lg border border-success/40 bg-success/5 p-4 text-sm">
@@ -81,13 +101,25 @@ export default function BillingPage() {
         </div>
       )}
 
-      {planQuery.isLoading && <p>Loading…</p>}
+      {planQuery.isLoading && (
+        <div role="status" aria-label="Loading plan">
+          <Skeleton className="mb-6 h-28 w-full rounded-xl" />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Skeleton className="h-64 w-full rounded-xl" />
+            <Skeleton className="h-64 w-full rounded-xl" />
+          </div>
+        </div>
+      )}
       {planQuery.isError && (
-        <p className="text-destructive">Couldn&apos;t load your plan.</p>
+        <ErrorState
+          message="Couldn't load your plan."
+          retryLabel="Retry"
+          onRetry={() => planQuery.refetch()}
+        />
       )}
 
       {plan && (
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-8">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center justify-between gap-2 text-base">
@@ -107,42 +139,48 @@ export default function BillingPage() {
             </CardContent>
           </Card>
 
-          {upgradeTargets.length > 0 ? (
-            <div className="flex flex-col gap-3">
-              <h2 className="text-sm font-medium text-muted-foreground">
-                {plan.plan === "free" ? "Upgrade" : "Change plan"}
-              </h2>
-              {upgradeTargets.map((target) => (
-                <Card key={target}>
-                  <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="font-medium">
-                        {PLAN_LABELS[target]}{" "}
-                        <span className="text-muted-foreground">· {PLAN_PRICES[target]}</span>
-                      </p>
-                      <p className="text-sm text-muted-foreground">{PLAN_BLURB[target]}</p>
-                    </div>
-                    <Button
-                      className="shrink-0"
-                      disabled={checkout.isPending}
-                      onClick={() => checkout.mutate(target)}
-                    >
-                      {checkout.isPending ? "Redirecting…" : `Upgrade to ${PLAN_LABELS[target]}`}
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
+          <div>
+            <h2 className="mb-3 text-[13px] font-semibold tracking-wide text-muted-foreground uppercase">
+              Compare plans
+            </h2>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {PLAN_ORDER.map((candidate) => {
+                const isCurrent = candidate === plan.plan;
+                const { price, suffix } = PLAN_PRICE[candidate];
+                const canCheckout = checkoutTargets.includes(candidate as Exclude<Plan, "free">);
+                return (
+                  <PlanCard
+                    key={candidate}
+                    name={PLAN_LABELS[candidate]}
+                    price={price}
+                    priceSuffix={suffix}
+                    features={PLAN_FEATURES[candidate]}
+                    popular={candidate === POPULAR_PLAN}
+                    popularLabel="Most popular"
+                    isCurrent={isCurrent}
+                    ctaLabel={
+                      isCurrent
+                        ? "Current plan"
+                        : checkout.isPending && checkout.variables === candidate
+                          ? "Redirecting…"
+                          : canCheckout
+                            ? `Upgrade to ${PLAN_LABELS[candidate]}`
+                            : "Not available"
+                    }
+                    ctaDisabled={!canCheckout || checkout.isPending}
+                    onCta={
+                      canCheckout
+                        ? () => checkout.mutate(candidate as Exclude<Plan, "free">)
+                        : undefined
+                    }
+                  />
+                );
+              })}
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              You&apos;re on the top plan — everything is unlimited.
-            </p>
-          )}
+          </div>
 
           {checkout.isError && (
-            <p className="text-destructive text-sm">
-              Couldn&apos;t start checkout. Please try again.
-            </p>
+            <p className="text-sm text-destructive">Couldn&apos;t start checkout. Please try again.</p>
           )}
         </div>
       )}

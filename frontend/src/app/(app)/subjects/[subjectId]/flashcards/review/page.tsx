@@ -77,7 +77,7 @@ export default function ReviewFlashcardsPage() {
 
   if (dueQuery.isError) {
     return (
-      <div className="mx-auto max-w-xl p-4 sm:p-8">
+      <div>
         {backLink}
         <p className="text-destructive">Couldn&apos;t load due flashcards.</p>
       </div>
@@ -86,7 +86,7 @@ export default function ReviewFlashcardsPage() {
 
   if (dueQuery.isLoading || sessionCards === null) {
     return (
-      <div className="mx-auto max-w-xl p-4 sm:p-8">
+      <div>
         {backLink}
         <p>Loading…</p>
       </div>
@@ -97,7 +97,7 @@ export default function ReviewFlashcardsPage() {
 
   if (progress.isComplete) {
     return (
-      <div className="mx-auto max-w-xl p-4 sm:p-8">
+      <div>
         {backLink}
         <Card>
           <CardContent className="flex flex-col items-center gap-2 py-10 text-center">
@@ -123,7 +123,7 @@ export default function ReviewFlashcardsPage() {
   const card = sessionCards[currentIndex];
 
   return (
-    <div className="mx-auto max-w-xl p-4 sm:p-8">
+    <div>
       {backLink}
 
       <p className="mb-4 text-sm text-muted-foreground" aria-live="polite">

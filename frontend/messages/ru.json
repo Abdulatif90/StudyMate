@@ -55,6 +55,7 @@
     },
     "planCardTitle": "Ваш тариф",
     "managePlan": "Управление",
+    "managePlanLink": "Управление тарифом",
     "newSubject": "Новый предмет",
     "statDocuments": "{count, plural, one {# документ} few {# документа} many {# документов} other {# документов}}",
     "statFlashcardsDue": "{count} к повторению",

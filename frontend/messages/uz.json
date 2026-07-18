@@ -55,6 +55,7 @@
     },
     "planCardTitle": "Tarifingiz",
     "managePlan": "Boshqarish",
+    "managePlanLink": "Tarifni boshqarish",
     "newSubject": "Yangi fan",
     "statDocuments": "{count} ta hujjat",
     "statFlashcardsDue": "{count} ta muddati kelgan",

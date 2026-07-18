@@ -255,7 +255,7 @@ export default function AskPage() {
   const conversationGroups = groupConversationsByDate(subjectConversations);
 
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-6 p-4 sm:p-8 md:flex-row">
+    <div className="flex flex-col gap-6 md:flex-row">
       <aside className="shrink-0 border-b pb-6 md:w-56 md:border-b-0 md:pb-0">
         <Link
           href={`/subjects/${subjectId}`}

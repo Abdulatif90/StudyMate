@@ -40,7 +40,7 @@ export default function TakeQuizPage() {
 
   if (quizQuery.isError) {
     return (
-      <div className="mx-auto max-w-2xl p-4 sm:p-8">
+      <div>
         {backLink}
         <p className="text-destructive">Quiz not found.</p>
       </div>
@@ -49,7 +49,7 @@ export default function TakeQuizPage() {
 
   if (quizQuery.isLoading || !quizQuery.data) {
     return (
-      <div className="mx-auto max-w-2xl p-4 sm:p-8">
+      <div>
         {backLink}
         <p>Loading…</p>
       </div>
@@ -72,7 +72,7 @@ export default function TakeQuizPage() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl p-4 sm:p-8">
+    <div>
       {backLink}
 
       <h1 className="mb-2 text-2xl font-semibold break-words">{quiz.title || "Quiz"}</h1>

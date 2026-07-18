@@ -9,13 +9,6 @@ export const PLAN_LABELS: Record<Plan, string> = {
   business: "Business",
 };
 
-/** Static price copy for the purchasable plans (recurring monthly, sandbox pricing).
- * Free is the absence of a paid plan and is never sold, so it has no price row here. */
-export const PLAN_PRICES: Record<Exclude<Plan, "free">, string> = {
-  pro: "$20/mo",
-  business: "$100/mo",
-};
-
 export interface UsageMeter {
   key: "subjects" | "generations";
   label: string;

@@ -4,24 +4,17 @@ import { useUser } from "@clerk/nextjs";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
-import {
-  BookOpen,
-  ChevronRight,
-  Circle,
-  CircleCheck,
-  FileText,
-  Layers,
-  ListChecks,
-  Plus,
-} from "lucide-react";
+import { BookOpen, Circle, CircleCheck, Plus } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
+import { SubjectCard } from "@/components/subject-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { UsageMeters } from "@/components/usage-meters";
+import { UsageStatCard } from "@/components/usage-stat-card";
 import { useApiClient } from "@/lib/api/useApiClient";
 import { onboardingSteps } from "@/lib/onboardingChecklist";
+import { usageMeters } from "@/lib/planLimits";
 import { subjectCardStats } from "@/lib/subjectCardStats";
 import type { components } from "@/lib/api/schema";
 
@@ -36,13 +29,16 @@ const STEP_ICON = { done: CircleCheck, pending: Circle } as const;
 
 function DashboardSkeleton() {
   return (
-    <div className="mx-auto max-w-5xl p-4 sm:p-8" role="status" aria-label="Loading dashboard">
+    <div role="status" aria-label="Loading dashboard">
       <Skeleton className="mb-2 h-8 w-56" />
       <Skeleton className="mb-8 h-4 w-40" />
-      <Skeleton className="mb-6 h-32 w-full rounded-xl" />
+      <div className="mb-6 grid grid-cols-2 gap-4">
+        <Skeleton className="h-20 w-full rounded-xl" />
+        <Skeleton className="h-20 w-full rounded-xl" />
+      </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {[0, 1, 2].map((i) => (
-          <Skeleton key={i} className="h-28 w-full rounded-xl" />
+          <Skeleton key={i} className="h-16 w-full rounded-xl" />
         ))}
       </div>
     </div>
@@ -110,16 +106,14 @@ export default function DashboardPage() {
 
   if (progressQuery.isError || subjectsQuery.isError) {
     return (
-      <div className="mx-auto max-w-5xl p-4 sm:p-8">
-        <ErrorState
-          message={t("Dashboard.loadError")}
-          retryLabel={t("Common.retry")}
-          onRetry={() => {
-            progressQuery.refetch();
-            subjectsQuery.refetch();
-          }}
-        />
-      </div>
+      <ErrorState
+        message={t("Dashboard.loadError")}
+        retryLabel={t("Common.retry")}
+        onRetry={() => {
+          progressQuery.refetch();
+          subjectsQuery.refetch();
+        }}
+      />
     );
   }
 
@@ -129,10 +123,11 @@ export default function DashboardPage() {
   const steps = onboardingSteps(progress);
   const allStepsDone = steps.every((step) => step.done);
   const firstName = user?.firstName;
+  const meters = planQuery.data ? usageMeters(planQuery.data) : [];
 
   return (
-    <div className="mx-auto max-w-5xl p-4 sm:p-8">
-      <h1 className="mb-8 text-2xl font-semibold">
+    <div>
+      <h1 className="mb-8 text-[22px] font-semibold">
         {firstName ? t("Dashboard.greetingNamed", { name: firstName }) : t("Dashboard.greeting")}
       </h1>
 
@@ -183,20 +178,22 @@ export default function DashboardPage() {
         />
       ) : (
         <div className="flex flex-col gap-6">
-          {planQuery.data && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between gap-2 text-base">
-                  <span>{t("Dashboard.planCardTitle")}</span>
-                  <Link href="/billing" className="text-sm font-normal text-primary hover:underline">
-                    {t("Dashboard.managePlan")}
-                  </Link>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <UsageMeters plan={planQuery.data} />
-              </CardContent>
-            </Card>
+          {meters.length > 0 && (
+            <div>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h2 className="text-[13px] font-semibold tracking-wide text-muted-foreground uppercase">
+                  {t("Dashboard.planCardTitle")}
+                </h2>
+                <Link href="/billing" className="text-sm font-medium text-primary hover:underline">
+                  {t("Dashboard.managePlan")}
+                </Link>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                {meters.map((meter) => (
+                  <UsageStatCard key={meter.key} meter={meter} />
+                ))}
+              </div>
+            </div>
           )}
 
           <div className="flex items-center justify-between gap-2">
@@ -220,42 +217,20 @@ export default function DashboardPage() {
             {previewSubjects.map((subject) => {
               const subjectProgress = progressBySubjectId.get(subject.id);
               const stats = subjectProgress ? subjectCardStats(subjectProgress) : null;
+              const meta = stats
+                ? [
+                    t("Dashboard.statDocuments", { count: stats[0].value }),
+                    t("Dashboard.statFlashcardsDue", { count: stats[1].value }),
+                    t("Dashboard.statQuizzes", { count: stats[2].value }),
+                  ].join(" · ")
+                : t("Common.loading");
               return (
-                <Link key={subject.id} href={`/subjects/${subject.id}`} className="block">
-                  <Card interactive className="h-full">
-                    <CardContent className="flex h-full flex-col justify-between gap-3 py-4">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="min-w-0 truncate font-medium">{subject.name}</p>
-                        <ChevronRight
-                          aria-hidden
-                          className="size-4 shrink-0 text-muted-foreground transition-transform group-hover/card:translate-x-0.5"
-                        />
-                      </div>
-                      {stats ? (
-                        <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                          <span className="inline-flex items-center gap-1">
-                            <FileText className="size-3.5" aria-hidden />
-                            {t("Dashboard.statDocuments", { count: stats[0].value })}
-                          </span>
-                          <span className="inline-flex items-center gap-1">
-                            <Layers className="size-3.5" aria-hidden />
-                            {t("Dashboard.statFlashcardsDue", { count: stats[1].value })}
-                          </span>
-                          <span className="inline-flex items-center gap-1">
-                            <ListChecks className="size-3.5" aria-hidden />
-                            {t("Dashboard.statQuizzes", { count: stats[2].value })}
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="flex gap-3">
-                          <Skeleton className="h-4 w-16" />
-                          <Skeleton className="h-4 w-16" />
-                          <Skeleton className="h-4 w-16" />
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </Link>
+                <SubjectCard
+                  key={subject.id}
+                  href={`/subjects/${subject.id}`}
+                  name={subject.name}
+                  meta={meta}
+                />
               );
             })}
           </div>

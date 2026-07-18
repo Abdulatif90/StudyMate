@@ -127,7 +127,7 @@ export default function QuizzesPage() {
 
   if (subjectQuery.isError) {
     return (
-      <div className="mx-auto max-w-2xl p-4 sm:p-8">
+      <div>
         {backLink}
         <p className="text-destructive">Subject not found.</p>
       </div>
@@ -135,7 +135,7 @@ export default function QuizzesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl p-4 sm:p-8">
+    <div>
       {backLink}
 
       <h1 className="mb-8 text-2xl font-semibold">Quizzes</h1>

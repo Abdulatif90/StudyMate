@@ -10,7 +10,9 @@ Router + Tailwind v4 + shadcn/ui, semantic tokens in OKLCH (`src/app/globals.css
    Never design desktop-first / never shrink with `max-*` breakpoints.
 2. **Breakpoints = Tailwind defaults only** — `sm 640 · md 768 · lg 1024 · xl 1280`.
    Don't invent custom pixel breakpoints.
-3. **Page container:** `mx-auto` + `max-w-*`, side padding `px-4 sm:px-6 lg:px-8`.
+3. **Page container:** `mx-auto` + `max-w-*`, side padding `px-4 sm:px-6 lg:px-8` — for
+   pages OUTSIDE `AppShell` only (home, sign-in, sign-up). Authed pages under
+   `AppShell` don't repeat this — see §4.4, the shell already owns it.
 4. **Layout via flex/grid + `gap-*`** for spacing — not margins. Grids step up:
    `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`.
 5. **Touch targets ≥ 44px** (`h-10`/`h-11`). Mobile menus/dialogs must be finger-friendly.
@@ -21,25 +23,31 @@ Router + Tailwind v4 + shadcn/ui, semantic tokens in OKLCH (`src/app/globals.css
 ## 2. Colors (best practice)
 1. **Semantic tokens only** — `bg-background text-foreground bg-primary
    text-muted-foreground border-border`, etc. **Never** hardcode `#hex`,
-   `text-gray-500`, `bg-white` — it breaks dark mode.
+   `text-gray-500`, `bg-white` in a component — it breaks dark mode.
 2. **Need a new color?** Add a token to both `:root` and `.dark` in `globals.css`
-   first, then use it. Keep everything in **OKLCH** — no hex mixed in.
-3. **Brand primary = indigo/blue:**
-   - Light: `--primary: oklch(0.55 0.18 265)`
-   - Dark: `--primary: oklch(0.70 0.16 265)`
-   - Pick readable `--primary-foreground` (near-white on light primary).
+   first, then use it. `globals.css` itself deliberately mixes **hex** (the design
+   system's own literal values, kept exact rather than converted) with a few
+   remaining **OKLCH** legacy tokens (`--chart-*`) — components never write raw color
+   values either way, only token references.
+3. **Brand = teal/emerald, gradient as an ACCENT only:**
+   - `--primary: #0d9488` (teal-600) / dark `#14b8a6`. `--accent: #10b981` (emerald-500)
+     / dark `#34d399`.
+   - `--brand-1`/`--brand-2` back the `bg-gradient-brand` utility — reserved for
+     primary buttons, the active sidebar-nav item, the "most popular" plan badge, and
+     the brand mark. **Never** a background/hero panel; the gradient is jewelry, not
+     wallpaper.
+   - Pick readable `--primary-foreground`/`--accent-foreground` per theme.
 4. **Contrast = WCAG AA (mandatory):** body text ≥ 4.5:1, large text/icons ≥ 3:1.
    `muted-foreground` is for secondary text only.
-5. **Meaning via tokens:** error → `destructive`; add `--success` / `--warning`
-   tokens when needed. **Never rely on color alone** — pair with an icon/label
-   (color-blind & accessibility).
+5. **Meaning via tokens, THREE shades per status:** `--destructive`/`--success`/
+   `--warning` (text/icon color) each pair with a `-bg` tint (card/badge backgrounds)
+   and — for success/warning — a `-fill` (progress-bar fill, a stronger, more
+   saturated shade than the text color). **Never rely on color alone** — pair with an
+   icon/label (color-blind & accessibility).
 6. **Focus visible:** interactive elements keep `focus-visible:ring-2 ring-ring`.
    Never remove focus outlines.
-7. **Accent = teal (calm-academic direction).** Primary stays indigo (rule 3); the
-   accent is a distinct teal, and neutrals carry a slight warmth (a hint of chroma in
-   `--muted`/`--secondary`/`--border`), never pure gray. Add `--warning` /
-   `--warning-foreground` alongside `--destructive`/`--success`. All in OKLCH, both
-   `:root` and `.dark`.
+7. **Neutrals are warm, never pure gray** — `--background`/`--card`/`--border`/
+   `--muted-foreground` all carry a slight warmth, both themes.
 8. **Charts use a real categorical ramp.** `--chart-1..5` must be distinguishable hues
    (not the stock grayscale), contrast-checked in light and dark. Load the `dataviz`
    skill before choosing chart colors or building any meter/stat tile.
@@ -61,16 +69,45 @@ Stack note: this repo uses the **Base UI** shadcn variant — primitives come fr
    targets, checked in light + dark.
 
 ## 4. App shell & navigation (mandatory)
-1. **One shared shell, no per-page headers.** Authed pages render inside `AppShell`
-   (persistent nav: Dashboard · Subjects · Plan & billing · theme toggle · language
-   switcher slot · `UserButton`). Do not hand-roll a page-local header/nav.
+1. **One shared shell, no per-page headers.** Authed pages render inside `AppShell` —
+   a fixed left sidebar on `lg`+ (236px, **permanently dark** `bg-sidebar`,
+   REGARDLESS of the app's own light/dark theme — see FRONTEND.md's design-prompt
+   source): brand mark + wordmark, vertical nav (Dashboard · Subjects · Plan &
+   billing), a compact usage widget, and a profile row pinned at the bottom. Below
+   `lg` it collapses into a slim dark top bar + `ui/menu` dropdown. Theme toggle +
+   language switcher live in the content pane's utility row (or the mobile top bar),
+   not the sidebar — both use the general `--background`/`--border` tokens, which
+   would look wrong pinned against the sidebar's own separate always-dark tokens.
+   Do not hand-roll a page-local header/nav.
 2. **Every primary destination reachable from the shell on every screen** — billing/
    upgrade included.
-3. **Dark-mode toggle is a first-class control** in the shell (drives `.dark`); persist
-   the choice.
-4. Mobile-first: the nav collapses into a `ui/menu` sheet/dropdown below `sm`.
+3. **Dark-mode toggle is a first-class control** (drives `.dark` on the CONTENT
+   tokens only — the sidebar never changes); persist the choice.
+4. **The shell owns the content pane's outer width/padding** (`max-w-[920px]`,
+   `px-6 py-8 sm:px-12`, registered once in `AppShell`'s `<main>`) — a page's own
+   top-level element must NOT also wrap itself in `mx-auto max-w-*`/`p-4 sm:p-8`;
+   that double-constrains the width and doubles the padding. A page that needs its
+   own internal layout (e.g. a sidebar+main split) keeps ONLY the structural classes
+   (`flex md:flex-row gap-*`), not a competing width/padding wrapper.
+5. **Cards, not plain `<a>`/`<Link>` text, for any destination that's really a row in
+   a list** (a subject, a plan, a stat) — icon badge + label(+meta) + a chevron or
+   action, using `Card`'s `interactive` prop (hover lift + brand-tinted ring) so the
+   whole row visibly reads as a control. Reserve bare text links for genuinely
+   secondary, inline actions (e.g. "View all").
 
 ## 5. General
 1. Spacing, radius, color — Tailwind scale & tokens only. No magic pixel values.
+   The base spacing scale (4/8/12/16/24/32/48px) already matches Tailwind's own
+   `spacing(1..12)` multiples one-to-one — never reach for an arbitrary value where
+   `p-1`…`p-12` already lands on the target px value.
 2. Every component checked in **both** light and dark.
 3. Reuse shadcn/ui primitives in `src/components/ui` before hand-rolling.
+4. **Every interactive surface needs a hover transition** (120–250ms — Tailwind's
+   `transition-*` utilities default to 150ms, already inside range, so an explicit
+   duration is rarely needed) and **`:active` gives real press feedback**
+   (`Button`'s base class already does this app-wide — don't reintroduce a
+   per-component press effect). No decorative animation that doesn't communicate
+   state (no idle floating/pulsing on a working app screen — marketing/landing pages
+   only). Do reserve one genuine "on-load" animation for numeric progress bars
+   (`AnimatedProgressBar`): they fill from 0 to the real value once, never jump
+   instantly.

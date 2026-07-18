@@ -2,6 +2,70 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-18 — Frontend design system v2 (teal/emerald + dark sidebar)
+A full palette + layout overhaul from a detailed owner spec (`docs/studymate-design-
+prompt.md`). The referenced HTML mockups didn't actually exist on this machine
+(searched Downloads/Desktop/`.claude` job storage/Artifacts) — proceeded from the
+written spec alone, which was thorough enough to implement directly. Supersedes the
+Increment 1–4 OKLCH palette and top-nav shell. Frontend-only.
+Commit: `feat(frontend): design system v2 — teal/emerald brand, dark sidebar shell`.
+- One real decision made with the user first: the spec's sidebar is always dark
+  regardless of the app's own light/dark toggle (Linear/Notion/Vercel-style); content
+  area keeps following the toggle with this codebase's own derived dark variant
+  (the spec only gave light values).
+- `globals.css` rewritten: hex kept literal (not converted to OKLCH) for exact
+  fidelity — a deliberate mixed-format file, documented inline. Teal/emerald
+  `--primary`/`--accent`; `--brand-1`/`--brand-2` back a new `bg-gradient-brand`
+  utility reserved for the few surfaces the spec names (primary buttons, active nav,
+  "most popular" badge, brand mark) — never a background panel. Three shades per
+  status color now (text/`-bg`/`-fill`) instead of one opacity-derived color.
+  `--sidebar*` pinned to the same dark values in both themes. One `--radius` change
+  (10px→8px) cascades correctly through the whole existing multiplier scale —
+  buttons/inputs land at exactly 8px, cards at 11.2px, badges at ~20.8px — without
+  touching any component's className.
+- Found and fixed a real pre-existing bug: `--font-sans` was self-referencing
+  (`var(--font-sans)`), so Geist Sans (loaded in `layout.tsx`) had never actually
+  been applied via Tailwind's `font-sans` utility — confirmed by grepping for its
+  real variable name and finding zero other references. The app had been silently
+  using Tailwind's default sans stack the whole time, which happens to be what the
+  new spec wants anyway. Made it explicit, removed the now-provably-unused Geist
+  Sans load.
+- `AppShell` rebuilt: fixed 236px dark sidebar (`lg`+) — brand mark + serif wordmark,
+  nav with a gradient active accent, an animated usage widget, a profile row
+  (Clerk's `<UserButton>` for the avatar, not reimplemented). `ThemeToggle`/
+  `LanguageSwitcher` moved OUT of the sidebar into the content pane's utility row —
+  both use general theme tokens that would look wrong pinned against the sidebar's
+  own separate always-dark tokens. A real bug caught by the shell's own test: the
+  usage widget's "Manage plan" link reused the exact same text as the main nav's
+  "Plan & billing" item, so `getByRole` failed with "multiple elements found" — a
+  real user-facing ambiguity, not just a test inconvenience. Fixed with a distinct
+  string.
+- Every page under `(app)/` needed a fix, not just the 3 named ones: once
+  `AppShell`'s `<main>` owns the outer width/padding, every page that ALSO wrapped
+  itself in `mx-auto max-w-* p-4 sm:p-8` would double-constrain/double-pad — a real
+  visible regression. Stripped the redundant wrapper from all 7 out-of-scope pages
+  mechanically, content/logic untouched.
+- `Button`: the spec's "primary" maps onto the pre-existing `default` variant (every
+  page's un-styled button already means "the main action"), so the gradient applies
+  app-wide through one shared variant. "ghost"/"icon" already matched the existing
+  `outline` variant and `size="icon"` + `destructive` closely enough that no new
+  variant names were needed.
+- New primitives: `AnimatedProgressBar`, `UsageStatCard`, `SubjectCard` (optional
+  trailing `action` slot kept as a sibling of its `Link`, generalizing the
+  delete-button-nesting fix from an earlier increment), `PlanCard`,
+  `lib/subjectBadgeTint.ts` (stable per-subject color hash).
+- Dashboard/Subjects/Billing rewritten on top of these; Billing now compares all
+  three plans (not just upgrade targets), Dashboard's usage section is a condensed
+  2-tile grid, `UsageMeters` keeps the fuller detail on Billing only.
+- `docs/FRONTEND.md` updated to match the new palette/shell/spacing rules.
+- Tests: 10 new files, ~30 new tests. Frontend **178 passed** (45 files, up from
+  161/39), `tsc`/`eslint` clean, `npm run build` succeeds (same 14 routes).
+- Hit the `rm -rf .next`-while-`next dev`-is-running failure mode a third time this
+  project — caught before the build by checking the port first every time, not left
+  for the user.
+- **Not browser-verified** (standing gap, no browser here): the sidebar's actual
+  look, the progress-bar animation, mobile collapse, and card hover feel.
+
 ## 2026-07-18 — Frontend redesign Increment 4 (final): Dashboard-as-hub + polish
 Closes the redesign roadmap. Frontend-only. Plus the deferred Increment-1 add-ons later
 pages needed: skeleton loaders, `EmptyState`, `ErrorState`.

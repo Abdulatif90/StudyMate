@@ -1834,6 +1834,145 @@ frontends already shipped.
     sign-in/up→`/dashboard` redirect all still want a real click-through with live
     Clerk auth.
 
+- [x] **Frontend design system v2** — a full palette + layout overhaul from a detailed
+  owner-supplied spec (`docs/studymate-design-prompt.md`; the referenced HTML mockups
+  never actually existed on this machine — confirmed by searching Downloads/Desktop/
+  `.claude` job storage/published Artifacts before proceeding from the written spec
+  alone, which turned out to be thorough enough to implement directly). Supersedes the
+  Increments 1–4 calm-academic OKLCH palette and top-nav shell with a teal/emerald
+  brand system and a fixed dark left sidebar. Frontend-only; no backend changes.
+  - **One real, necessary decision made with the user first**: the spec gives only one
+    light palette with an always-dark sidebar, but the app already had a working
+    light/dark toggle. Decided (owner's call): sidebar stays permanently dark
+    regardless of app theme (Linear/Notion/Vercel-style); the content area keeps
+    following the toggle, with this codebase's own derived dark variant for the new
+    tokens (the spec never specified one).
+  - **`globals.css` rewritten**: hex tokens kept literal (not converted to OKLCH) for
+    exact fidelity to the spec's exact values — a deliberate mixed-format file now,
+    documented inline. `--primary`/`--accent` become teal/emerald; `--brand-1`/
+    `--brand-2` back a new `bg-gradient-brand` utility, kept separate from
+    `--primary`/`--accent` so the gradient stays reserved for the few surfaces the
+    spec names (primary buttons, active nav, "most popular" badge, brand mark) and
+    never becomes a background panel. `--success`/`--warning`/`--destructive` each
+    gained a `-bg` tint and (`success`/`warning`) a `-fill` — three shades per status
+    instead of one opacity-derived color. `--sidebar*` pinned to the same dark values
+    in both `:root` and `.dark`. **One `--radius` change (10px → 8px) cascades
+    correctly through the whole existing multiplier scale** without touching any
+    component's className: buttons/inputs (`rounded-lg` = 1×) land at exactly 8px,
+    cards (`rounded-xl` = 1.4×) land at 11.2px (inside the spec's 10–12px target),
+    badges (`rounded-4xl` = 2.6×) land at ~20.8px (the spec's pill radius) — verified
+    the multiplier math before changing the one variable, not per-component.
+  - **Found and fixed a real, pre-existing bug while wiring `--font-sans`**: the old
+    value was `--font-sans: var(--font-sans)` — a self-reference, confirmed by
+    grepping for the ACTUAL Geist Sans variable (`--font-geist-sans`, set in
+    `layout.tsx`) and finding zero other references to it. Geist Sans was loaded but
+    had never actually been applied via Tailwind's `font-sans` utility; the app has
+    been silently falling back to Tailwind's own default sans stack the entire time.
+    Made this explicit (`--font-system-sans`, a real system stack) rather than fixing
+    the bug "forward" into applying Geist — the new spec wants a system stack anyway,
+    so this bug's fallback behavior was already accidentally correct. Removed the now
+    provably-unused Geist Sans font load from `layout.tsx`; kept Geist Mono (used
+    nowhere as `font-mono` either, but unrelated to this change, left alone). Added
+    `--font-brand-serif` (Georgia) for the sidebar wordmark only — FRONTEND.md's own
+    "never mix serif/sans for functional text" rule, echoed by the new spec.
+  - **`AppShell` rebuilt**: a fixed 236px dark sidebar (`lg`+) — brand mark + serif
+    wordmark, vertical nav with a gradient active-state accent, a usage widget
+    (animated mini progress bars for subjects/generations + a "Manage plan" link,
+    `GET /billing/plan`), and a profile row pinned at the bottom (Clerk's `<UserButton>`
+    for the avatar — handles photo-vs-initials itself, not reimplemented — plus
+    `useUser().fullName` and the caller's plan label). Below `lg`, the same slim dark
+    top-bar-plus-dropdown collapse pattern as before. **`ThemeToggle`/
+    `LanguageSwitcher` moved OUT of the sidebar** into the content pane's utility row:
+    both use the general `--background`/`--border` tokens (whichever theme the app is
+    in), which would look wrong pinned against the sidebar's OWN separate
+    always-dark tokens — moving them avoids needing a dark-context variant of either
+    shared component. Confirmed `useUser` is actually exported/typed by the installed
+    `@clerk/nextjs@7.5.18` before relying on it (this project has been burned by a
+    Clerk API surprise before — `SignedIn`/`SignedOut` disappearing in an earlier
+    increment).
+  - **A real bug caught by the AppShell's own test, not by hand**: the usage widget's
+    "Manage plan" link and the main nav's "Plan & billing" item both used the exact
+    same translated text at first — `getByRole("link", { name: /plan & billing/i })`
+    failed with "multiple elements found." Fixed by giving the widget's link its own
+    distinct `Dashboard.managePlanLink` string ("Manage plan") instead of reusing the
+    nav's label — the test caught a real, user-facing ambiguity (two links with the
+    same accessible name doing different things), not just a testing inconvenience.
+  - **Every page under `(app)/` needed a structural fix, not just the 3 named ones**:
+    once `AppShell`'s `<main>` owns the outer `max-w-[920px]`/padding, every page that
+    ALSO wrapped itself in `mx-auto max-w-* p-4 sm:p-8` would double-constrain the
+    width and double the padding — a real, visible regression on every page under the
+    shell, not a cosmetic nit. Stripped the redundant wrapper from all 7 out-of-scope
+    pages (subject detail, ask, flashcards + review, progress, quizzes + quiz detail)
+    mechanically, preserving each page's actual content/logic untouched; the Ask
+    page's wrapper did real layout work (`flex md:flex-row`) so only its
+    width/padding classes were removed, not the flex structure.
+  - **`Button`**: the spec's "primary" (brand-gradient fill) maps onto the pre-existing
+    `default` variant rather than a new parallel name — `default` already means "the
+    main action" on every page that doesn't specify a variant, so the gradient now
+    applies app-wide through the one shared variant instead of a same-looking name
+    most pages wouldn't reach for. The spec's "ghost" (transparent+border secondary)
+    and "icon" (32×32 tinted) already matched the pre-existing `outline` variant and
+    `size="icon"` (already exactly 32px) + `destructive` (already tinted) closely
+    enough that no new variant names were needed for either — confirmed by reading
+    the existing variant definitions before assuming new ones were required. Base
+    class: `active:translate-y-px` → `active:scale-[0.97]` (the spec's exact ask),
+    applied to every variant, not just the new ones.
+  - **New primitives**: `AnimatedProgressBar` (0→target width transition on
+    mount/data-arrival, reused by the sidebar widget and `UsageStatCard`),
+    `UsageStatCard` (dashboard's condensed 2-tile usage summary — amber/green by
+    severity), `SubjectCard` (icon badge + title/meta + chevron-or-action, an optional
+    trailing `action` slot kept as a SIBLING of the wrapping `<Link>` so a delete
+    button inside it can't also navigate — the exact nesting hazard fixed once
+    already, in an earlier increment, now generalized into the shared component
+    instead of re-solved per page), `PlanCard` (pricing comparison card — border/badge
+    for the recommended plan, disabled `outline` CTA for the caller's own current
+    plan). `lib/subjectBadgeTint.ts` (pure, tested): a stable hash-based tint per
+    subject id — deterministic across reloads, spreads across a small fixed palette,
+    since `Subject` has no real category field to key a tint off of.
+  - **Dashboard/Subjects/Billing rewritten** on top of these: Dashboard's usage
+    section is now a 2-column `UsageStatCard` grid (condensed); Subjects' list is a
+    responsive grid of `SubjectCard`s with the delete button as the `action` slot
+    (icon size bumped 28px → 32px to match the spec exactly); Billing shows an
+    ALL-THREE-plans `PlanCard` comparison grid (not just upgrade targets — a Pro user
+    can still see what Business unlocks) with Pro marked "Most popular" and the
+    caller's own plan showing a disabled "Current plan" button, while `UsageMeters`
+    keeps the fuller per-meter detail on this page only (the spec's "don't duplicate
+    the same detailed widget across two pages" rule — Dashboard's condensed tiles and
+    Billing's full meters were already naturally different levels of detail, nothing
+    needed reconciling). Removed `lib/planLimits.ts`'s now-fully-unused `PLAN_PRICES`
+    export (confirmed zero remaining references, including in its own test file,
+    before deleting).
+  - **i18n**: `Dashboard.managePlanLink` added (see the bug above) to all four
+    catalogs — an existing scripted parity test (`src/i18n/messages.test.ts`) caught
+    the other three catalogs missing it immediately, before this got anywhere near a
+    manual audit.
+  - **`docs/FRONTEND.md` updated** to match: §2 (colors) now documents the hex-token
+    decision, the three-shades-per-status pattern, and the gradient-as-accent-only
+    rule; §4 (app shell) documents the permanently-dark sidebar, the shell-owns-the-
+    outer-layout rule (and that pages must NOT repeat it), and cards-not-bare-links
+    for list rows; §5 gained the spacing-scale-already-matches-Tailwind note and the
+    hover-transition/press-feedback/no-idle-animation rules. §1.3's page-container
+    rule narrowed to explicitly exclude `AppShell` pages now that the shell owns that.
+  - Tests: 10 new files (`animated-progress-bar`, `usage-stat-card`, `subject-card`,
+    `plan-card`, `button` — new — plus `subjectBadgeTint`), ~30 new tests, all
+    pure/component-render, matching the established helpers-and-components-tested /
+    pages-thin pattern. Frontend **178 passed** (45 files, up from 161/39),
+    `tsc --noEmit` clean, `eslint` clean, `npm run build` succeeds — same 14
+    routes/URLs.
+  - **Caught mid-session, fixed immediately, not left for the user, AGAIN**: `rm -rf
+    .next` while a dev server was running wedged it a third time this project — same
+    failure mode as Increments 2/3/4, still not automated away. Caught before the
+    build this time by checking the port and stopping the process first every single
+    time before touching `.next`, then restarting `next dev` fresh afterward and
+    confirming a real `200` off the actual socket. **Worth a standing habit, not just
+    a one-off fix**: always check `Get-NetTCPConnection -LocalPort 3000` before any
+    `rm -rf .next` in this project, no exceptions.
+  - **Not browser-verified** (standing gap, no browser in this environment): the
+    sidebar's real rendered look (dark bg, gradient accents, hover states), the
+    usage-widget/progress-bar animation, the mobile top-bar collapse, and every card's
+    actual hover-lift/shadow feel all still want a real click-through. Everything
+    listed above as verified is offline (tsc/eslint/tests/build).
+
 ## Next (Phase 4+)
 - **Frontend redesign roadmap (in progress)** — a phased UI/UX overhaul, one increment per
   commit batch, each gated on a `tekshir` review before the next starts. FRONTEND.md was

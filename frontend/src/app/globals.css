@@ -7,9 +7,10 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --font-sans: var(--font-system-sans);
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-heading: var(--font-system-sans);
+  --font-brand: var(--font-brand-serif);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -27,12 +28,19 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-destructive-bg: var(--destructive-bg);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
+  --color-success-bg: var(--success-bg);
+  --color-success-fill: var(--success-fill);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+  --color-warning-bg: var(--warning-bg);
+  --color-warning-fill: var(--warning-fill);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
+  --color-brand-1: var(--brand-1);
+  --color-brand-2: var(--brand-2);
   --color-muted-foreground: var(--muted-foreground);
   --color-muted: var(--muted);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -43,6 +51,8 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -52,85 +62,132 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Calm-academic palette (OKLCH). Indigo primary (unchanged), teal accent, warm neutrals
-   (a hint of chroma at hue ~80, never pure gray), warning added, and a real categorical
-   --chart ramp from the dataviz reference (blue/green/magenta/yellow/aqua), converted from
-   the validated hexes and contrast-checked per theme. See docs/FRONTEND.md §2. */
+/* Design system v2 (docs/studymate-design-prompt.md) — teal/emerald brand gradient
+   (accent only, never a background), warm off-white neutrals, hex tokens kept literal
+   (not converted to OKLCH) for exact fidelity to the spec's given values — this file
+   now deliberately mixes hex and OKLCH rather than risk any conversion drift on colors
+   the prompt specified precisely. `--radius: 0.5rem` (8px) is the base of the whole
+   scale below it: buttons/inputs (`rounded-lg` = 1× = 8px) and cards (`rounded-xl` =
+   1.4× = 11.2px) land inside the spec's 8px / 10–12px targets without touching every
+   component's className; `rounded-4xl` (2.6× ≈ 20.8px) already covers the "full/pill"
+   badge radius. `--brand-1`/`--brand-2` exist separately from `--primary`/`--accent`
+   specifically so the gradient utility (`bg-gradient-brand`, defined below) can be
+   reserved for the few surfaces the prompt names (primary buttons, active nav accent,
+   the "most popular" plan badge, the brand mark) — everything else uses the solid
+   `--primary`/`--accent` tokens, never the gradient, per the prompt's own restriction.
+   `--sidebar*` is pinned to the SAME dark values in both `:root` and `.dark` — the
+   sidebar stays permanently dark regardless of the app's light/dark theme (the user's
+   explicit call), while every other token below still switches with `.dark`. The dark
+   theme's own values are this codebase's own derivation (the prompt only specified a
+   light palette) — same brand hues, same semantic roles, lightened/desaturated for
+   dark-background contrast, not a literal 1:1 mapping. */
 :root {
-  --background: oklch(0.992 0.003 83);
-  --foreground: oklch(0.2 0.008 75);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.2 0.008 75);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.2 0.008 75);
-  --primary: oklch(0.55 0.18 265);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.965 0.006 83);
-  --secondary-foreground: oklch(0.25 0.01 75);
-  --muted: oklch(0.965 0.006 83);
-  --muted-foreground: oklch(0.53 0.012 75);
-  --accent: oklch(0.53 0.083 195);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --success: oklch(0.52 0.14 150);
-  --success-foreground: oklch(0.985 0 0);
-  --warning: oklch(0.72 0.15 78);
-  --warning-foreground: oklch(0.24 0.04 78);
-  --border: oklch(0.9 0.008 83);
-  --input: oklch(0.9 0.008 83);
-  --ring: oklch(0.55 0.18 265);
+  /* System sans-serif stack, used for ALL functional UI text (body, nav, buttons,
+     headings) per the design prompt — deliberately not a downloaded webfont. This also
+     fixes a real pre-existing bug: `--font-sans` above used to self-reference
+     (`var(--font-sans)`), so Geist Sans (loaded in layout.tsx, wired to
+     `--font-geist-sans`) was never actually applied via Tailwind's `font-sans` utility
+     in the first place — confirmed by grepping for `--font-geist-sans` usage and
+     finding only the dead theme-registration line. Removed the unused Geist Sans load
+     entirely rather than leave dead weight now that this is explicit. */
+  --font-system-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  /* Serif, reserved for the sidebar brand wordmark ONLY — never for functional UI text
+     (FRONTEND.md's own "never mix serif/sans for functional text" rule, echoed by the
+     design prompt's "no mixing serif and sans-serif for functional UI text"). */
+  --font-brand-serif: Georgia, "Times New Roman", serif;
+  --background: #fafaf9;
+  --foreground: #171717;
+  --card: #ffffff;
+  --card-foreground: #171717;
+  --popover: #ffffff;
+  --popover-foreground: #171717;
+  --primary: #0d9488;
+  --primary-foreground: #ffffff;
+  --secondary: #f3f2ee;
+  --secondary-foreground: #171717;
+  --muted: #f3f2ee;
+  --muted-foreground: #6b6a65;
+  --accent: #10b981;
+  --accent-foreground: #ffffff;
+  --destructive: #b91c1c;
+  --destructive-foreground: #ffffff;
+  --destructive-bg: #fef2f2;
+  --success: #166534;
+  --success-foreground: #ffffff;
+  --success-bg: #ecfdf3;
+  --success-fill: #22c55e;
+  --warning: #b45309;
+  --warning-foreground: #ffffff;
+  --warning-bg: #fef3e2;
+  --warning-fill: #f59e0b;
+  --border: #e7e5e0;
+  --input: #e7e5e0;
+  --ring: #0d9488;
+  --brand-1: #0d9488;
+  --brand-2: #10b981;
+  --shadow-sm: 0 1px 2px rgba(20, 20, 10, 0.05);
+  --shadow-md: 0 6px 20px rgba(20, 20, 10, 0.08);
   --chart-1: oklch(0.575 0.163 255.5);
   --chart-2: oklch(0.529 0.18 142.5);
   --chart-3: oklch(0.716 0.141 357.4);
   --chart-4: oklch(0.764 0.161 75.1);
   --chart-5: oklch(0.669 0.141 162.1);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0.004 83);
-  --sidebar-foreground: oklch(0.2 0.008 75);
-  --sidebar-primary: oklch(0.55 0.18 265);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.965 0.006 83);
-  --sidebar-accent-foreground: oklch(0.25 0.01 75);
-  --sidebar-border: oklch(0.9 0.008 83);
-  --sidebar-ring: oklch(0.55 0.18 265);
+  --radius: 0.5rem;
+  --sidebar: #171a19;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #0d9488;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #242726;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: #10b981;
 }
 
 .dark {
-  --background: oklch(0.165 0.005 80);
-  --foreground: oklch(0.975 0.004 83);
-  --card: oklch(0.215 0.006 80);
-  --card-foreground: oklch(0.975 0.004 83);
-  --popover: oklch(0.215 0.006 80);
-  --popover-foreground: oklch(0.975 0.004 83);
-  --primary: oklch(0.7 0.16 265);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.275 0.007 80);
-  --secondary-foreground: oklch(0.975 0.004 83);
-  --muted: oklch(0.275 0.007 80);
-  --muted-foreground: oklch(0.715 0.012 83);
-  --accent: oklch(0.72 0.09 195);
-  --accent-foreground: oklch(0.2 0.01 195);
-  --destructive: oklch(0.704 0.191 22.216);
-  --success: oklch(0.72 0.16 150);
-  --success-foreground: oklch(0.205 0 0);
-  --warning: oklch(0.82 0.15 82);
-  --warning-foreground: oklch(0.24 0.04 78);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.7 0.16 265);
+  --background: #15161a;
+  --foreground: #f2f1ee;
+  --card: #1d1f22;
+  --card-foreground: #f2f1ee;
+  --popover: #1d1f22;
+  --popover-foreground: #f2f1ee;
+  --primary: #14b8a6;
+  --primary-foreground: #062420;
+  --secondary: #24262a;
+  --secondary-foreground: #f2f1ee;
+  --muted: #24262a;
+  --muted-foreground: #a9a79f;
+  --accent: #34d399;
+  --accent-foreground: #052e12;
+  --destructive: #f87171;
+  --destructive-foreground: #450a0a;
+  --destructive-bg: #2a1414;
+  --success: #4ade80;
+  --success-foreground: #052e12;
+  --success-bg: #0f2a1b;
+  --success-fill: #22c55e;
+  --warning: #fbbf24;
+  --warning-foreground: #451a03;
+  --warning-bg: #2a1f0d;
+  --warning-fill: #f59e0b;
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: #14b8a6;
+  --brand-1: #14b8a6;
+  --brand-2: #34d399;
   --chart-1: oklch(0.622 0.161 255.1);
   --chart-2: oklch(0.529 0.18 142.5);
   --chart-3: oklch(0.622 0.171 0.8);
   --chart-4: oklch(0.67 0.143 73.2);
   --chart-5: oklch(0.621 0.128 163.1);
-  --sidebar: oklch(0.215 0.006 80);
-  --sidebar-foreground: oklch(0.975 0.004 83);
-  --sidebar-primary: oklch(0.7 0.16 265);
-  --sidebar-primary-foreground: oklch(0.205 0 0);
-  --sidebar-accent: oklch(0.275 0.007 80);
-  --sidebar-accent-foreground: oklch(0.975 0.004 83);
-  --sidebar-border: oklch(1 0 0 / 12%);
-  --sidebar-ring: oklch(0.7 0.16 265);
+  --sidebar: #171a19;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #0d9488;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #242726;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: #10b981;
 }
 
 @layer base {
@@ -143,4 +200,11 @@
   html {
     @apply font-sans;
   }
+}
+
+/* Reserved for the few surfaces the design prompt explicitly allows a gradient on:
+   primary buttons, the active sidebar-nav accent, the "most popular" plan badge, and
+   the brand mark icon. Never a background/hero panel — see the file-level comment. */
+@utility bg-gradient-brand {
+  background-image: linear-gradient(135deg, var(--brand-1), var(--brand-2));
 }

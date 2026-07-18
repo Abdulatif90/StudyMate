@@ -1,11 +1,10 @@
-import { BookOpen, CreditCard, LayoutDashboard } from "lucide-react";
-import type { ComponentType } from "react";
+import { BookOpen, CreditCard, LayoutDashboard, type LucideIcon } from "lucide-react";
 
 export interface NavItem {
   href: string;
   /** Key into the `Nav` next-intl namespace. */
   translationKey: "dashboard" | "subjects" | "billing";
-  icon: ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  icon: LucideIcon;
 }
 
 /** Every primary destination reachable from the shell on every screen (FRONTEND.md §4.2). */
