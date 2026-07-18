@@ -22,6 +22,7 @@ from app.modules.flashcards.generation import generate_flashcard_set
 from app.modules.flashcards.models import Flashcard
 from app.modules.flashcards.sm2 import ReviewState
 from app.modules.flashcards.sm2 import review as sm2_review
+from app.shared.language import DEFAULT_LANGUAGE
 
 # How many chunk excerpts to sample from the subject as material for one generation
 # call — bounded so the generation prompt (and its cost/latency) stays predictable
@@ -48,6 +49,7 @@ def generate_flashcards(
     owner_id: str,
     subject_id: uuid.UUID,
     num_cards: int,
+    language: str = DEFAULT_LANGUAGE,
 ) -> list[Flashcard]:
     """Generate and persist flashcards for `subject_id`: verify ownership, sample the
     subject's material, generate via Claude tool-use, and store the `Flashcard` rows.
@@ -69,7 +71,7 @@ def generate_flashcards(
     # app-wide in main.py). See billing.service for the check/record ordering contract.
     ensure_can_generate(session, owner_id)
 
-    cards = generate_flashcard_set(excerpts, num_cards)
+    cards = generate_flashcard_set(excerpts, num_cards, language)
 
     # New cards start due immediately (due_at = now, repetitions/interval already
     # default to 0 and ease to DEFAULT_EASE_FACTOR on the model) so they show up in the

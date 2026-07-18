@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useRef, useState } from "react";
@@ -24,6 +24,7 @@ import { friendlyUploadError } from "@/lib/uploadError";
 export default function SubjectDetailPage() {
   const { subjectId } = useParams<{ subjectId: string }>();
   const t = useTranslations();
+  const locale = useLocale();
   const api = useApiClient();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
@@ -59,13 +60,18 @@ export default function SubjectDetailPage() {
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append("file", file);
+      // The auto-summary generated during processing is written in whatever
+      // language the uploader's UI is currently in — see backend
+      // documents.router.create_document / summarization.py.
+      formData.append("language", locale);
       const { data, error, response } = await api.POST("/subjects/{subject_id}/documents", {
         params: { path: { subject_id: subjectId } },
         // openapi-fetch passes FormData straight through to fetch (letting the
         // browser set the multipart boundary) — the generated type expects a
-        // `{ file: string }` JSON body since openapi-typescript renders
-        // `format: binary` as `string`, so this cast is the documented workaround.
-        body: formData as unknown as { file: string },
+        // `{ file: string; language: string }` JSON body since openapi-typescript
+        // renders `format: binary` as `string`, so this cast is the documented
+        // workaround.
+        body: formData as unknown as { file: string; language: string },
       });
       if (error) {
         // A 402 means the plan's per-subject document cap is hit — capture it (status

@@ -65,7 +65,9 @@ def _mock_generation(request, monkeypatch):
     if request.node.get_closest_marker("live"):
         return
     monkeypatch.setattr(
-        flashcards_service, "generate_flashcard_set", lambda excerpts, num_cards: _FAKE_CARDS
+        flashcards_service,
+        "generate_flashcard_set",
+        lambda excerpts, num_cards, language=None: _FAKE_CARDS,
     )
 
 
@@ -170,7 +172,7 @@ def test_generate_flashcards_returns_422_when_subject_has_no_material():
 
 
 def test_generate_flashcards_returns_502_on_generation_failure(monkeypatch):
-    def _raise(excerpts, num_cards):
+    def _raise(excerpts, num_cards, language=None):
         raise FlashcardGenerationError("Claude is unavailable")
 
     monkeypatch.setattr(flashcards_service, "generate_flashcard_set", _raise)
@@ -183,7 +185,7 @@ def test_generate_flashcards_returns_502_on_generation_failure(monkeypatch):
 
 
 def test_generate_flashcards_persists_nothing_on_generation_failure(monkeypatch):
-    def _raise(excerpts, num_cards):
+    def _raise(excerpts, num_cards, language=None):
         raise FlashcardGenerationError("Claude is unavailable")
 
     monkeypatch.setattr(flashcards_service, "generate_flashcard_set", _raise)
@@ -198,7 +200,7 @@ def test_generate_flashcards_persists_nothing_on_generation_failure(monkeypatch)
 def test_generate_flashcards_passes_num_cards_through(monkeypatch):
     captured = {}
 
-    def _capture(excerpts, num_cards):
+    def _capture(excerpts, num_cards, language=None):
         captured["n"] = num_cards
         return _FAKE_CARDS
 
@@ -209,6 +211,38 @@ def test_generate_flashcards_passes_num_cards_through(monkeypatch):
     _generate(subject_id, num_cards=25)
 
     assert captured["n"] == 25
+
+
+def test_generate_flashcards_passes_language_through(monkeypatch):
+    captured = {}
+
+    def _capture(excerpts, num_cards, language=None):
+        captured["language"] = language
+        return _FAKE_CARDS
+
+    monkeypatch.setattr(flashcards_service, "generate_flashcard_set", _capture)
+
+    subject_id = _create_subject()
+    _seed_chunks(_TEST_USER, subject_id, ["Material."])
+    client.post(f"/subjects/{subject_id}/flashcards", json={"language": "uz"})
+
+    assert captured["language"] == "uz"
+
+
+def test_generate_flashcards_defaults_language_to_english(monkeypatch):
+    captured = {}
+
+    def _capture(excerpts, num_cards, language=None):
+        captured["language"] = language
+        return _FAKE_CARDS
+
+    monkeypatch.setattr(flashcards_service, "generate_flashcard_set", _capture)
+
+    subject_id = _create_subject()
+    _seed_chunks(_TEST_USER, subject_id, ["Material."])
+    client.post(f"/subjects/{subject_id}/flashcards", json={})
+
+    assert captured["language"] == "en"
 
 
 def test_generate_flashcards_rejects_out_of_bounds_num_cards():

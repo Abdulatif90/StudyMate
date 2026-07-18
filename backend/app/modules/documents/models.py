@@ -20,6 +20,7 @@ from sqlalchemy import Enum as SAEnum
 from sqlmodel import Column, Field, SQLModel
 
 from app.modules.documents.embedding import EMBEDDING_DIM
+from app.shared.language import DEFAULT_LANGUAGE
 
 
 class DocumentStatus(StrEnum):
@@ -58,6 +59,11 @@ class Document(SQLModel, table=True):
     # document whose summarization step itself failed (best-effort, doesn't fail
     # the whole job).
     summary: str | None = Field(default=None)
+    # Target language (a code from app.shared.language.SUPPORTED_LANGUAGES) for the
+    # auto-summary generated during processing — captured at upload time from the
+    # uploader's UI locale (see documents.router.create_document), since
+    # process_document runs later, async, with no request context of its own.
+    language: str = Field(default=DEFAULT_LANGUAGE)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

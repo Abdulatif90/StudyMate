@@ -34,8 +34,21 @@ def test_summarize_document_returns_response_text(monkeypatch):
     assert result == "A short summary."
     call_kwargs = fake_client.messages.create.call_args.kwargs
     assert call_kwargs["model"] == summarization.CLAUDE_MODEL
-    assert call_kwargs["system"] == summarization._SYSTEM_PROMPT
+    expected_prompt = summarization._build_system_prompt(summarization.DEFAULT_LANGUAGE)
+    assert call_kwargs["system"] == expected_prompt
+    assert "English" in call_kwargs["system"]
     assert call_kwargs["messages"][0]["content"] == "Photosynthesis converts sunlight into energy."
+
+
+def test_summarize_document_targets_the_requested_language(monkeypatch):
+    fake_client = MagicMock()
+    fake_client.messages.create.return_value = _fake_response("Qisqacha xulosa.")
+    monkeypatch.setattr(summarization.anthropic, "Anthropic", MagicMock(return_value=fake_client))
+
+    summarization.summarize_document("Fotosintez yorug'likni energiyaga aylantiradi.", "uz")
+
+    call_kwargs = fake_client.messages.create.call_args.kwargs
+    assert "Uzbek" in call_kwargs["system"]
 
 
 def test_summarize_document_truncates_long_input(monkeypatch):

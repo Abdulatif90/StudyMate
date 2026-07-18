@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlmodel import Session
 
 from app.core.auth import get_current_user_id
@@ -13,6 +13,7 @@ from app.core.db import get_session
 from app.modules.documents import service
 from app.modules.documents.models import Document
 from app.modules.documents.schemas import DocumentRead
+from app.shared.language import DEFAULT_LANGUAGE
 
 router = APIRouter(prefix="/subjects/{subject_id}/documents", tags=["documents"])
 
@@ -21,6 +22,10 @@ router = APIRouter(prefix="/subjects/{subject_id}/documents", tags=["documents"]
 async def create_document(
     subject_id: uuid.UUID,
     file: UploadFile = File(...),
+    # The uploader's UI locale at upload time (see frontend's useLocale()) — stored on
+    # the row and read back by the async job to generate the auto-summary in the
+    # right language. Defaults to English for any caller that omits it.
+    language: str = Form(DEFAULT_LANGUAGE),
     session: Session = Depends(get_session),
     owner_id: str = Depends(get_current_user_id),
 ) -> Document:
@@ -33,6 +38,7 @@ async def create_document(
             filename=file.filename or "untitled",
             content_type=file.content_type or "application/octet-stream",
             raw=raw,
+            language=language,
         )
     except service.SubjectNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Subject not found") from exc

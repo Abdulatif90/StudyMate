@@ -50,7 +50,7 @@ def generate_flashcards(
 ) -> list[FlashcardRead]:
     try:
         flashcards = service.generate_flashcards(
-            session, owner_id, subject_id, num_cards=data.num_cards
+            session, owner_id, subject_id, num_cards=data.num_cards, language=data.language
         )
     except SubjectNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Subject not found") from exc

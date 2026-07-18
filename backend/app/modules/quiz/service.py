@@ -17,6 +17,7 @@ from app.modules.billing.service import ensure_can_generate, record_generation
 from app.modules.documents.service import require_owned_subject, sample_subject_chunk_texts
 from app.modules.quiz.generation import generate_quiz_questions
 from app.modules.quiz.models import Quiz, QuizQuestion
+from app.shared.language import DEFAULT_LANGUAGE
 
 # How many chunk excerpts to sample from the subject as material for one quiz — bounded
 # so the generation prompt (and its cost/latency) stays predictable regardless of how
@@ -36,6 +37,7 @@ def generate_quiz(
     subject_id: uuid.UUID,
     num_questions: int,
     title: str | None = None,
+    language: str = DEFAULT_LANGUAGE,
 ) -> Quiz:
     """Generate and persist a quiz for `subject_id`: verify ownership, sample the
     subject's material, generate questions via Claude tool-use, and store the `Quiz` +
@@ -60,7 +62,7 @@ def generate_quiz(
     # generate_quiz_questions returns questions whose correct_index is already validated
     # to be within options range (see generation._parse_questions) — no out-of-range
     # index can reach the DB to break a future grading flow.
-    questions = generate_quiz_questions(excerpts, num_questions)
+    questions = generate_quiz_questions(excerpts, num_questions, language)
 
     quiz = Quiz(subject_id=subject_id, owner_id=owner_id, title=title)
     session.add(quiz)

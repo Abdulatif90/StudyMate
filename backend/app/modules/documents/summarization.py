@@ -13,6 +13,7 @@ from __future__ import annotations
 import anthropic
 
 from app.core.config import get_settings
+from app.shared.language import DEFAULT_LANGUAGE, language_name
 
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 MAX_TOKENS = 300
@@ -23,13 +24,15 @@ MAX_TOKENS = 300
 # here rather than sent in full.
 MAX_INPUT_CHARS = 12_000
 
-_SYSTEM_PROMPT = (
-    "You are StudyMate, an AI study assistant. Write a short summary (3-5 sentences) "
-    "of the study material excerpt below, covering its main topics and key points, to "
-    "help a student quickly recall what the document contains. Respond in the same "
-    "language the excerpt itself is written in. Respond with the summary text only — "
-    "no preamble, no headings."
-)
+
+def _build_system_prompt(language: str) -> str:
+    return (
+        "You are StudyMate, an AI study assistant. Write a short summary (3-5 sentences) "
+        "of the study material excerpt below, covering its main topics and key points, to "
+        "help a student quickly recall what the document contains. Respond in "
+        f"{language_name(language)}, regardless of what language the excerpt itself is "
+        "written in. Respond with the summary text only — no preamble, no headings."
+    )
 
 
 class SummarizationError(Exception):
@@ -45,10 +48,12 @@ def _get_client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 
-def summarize_document(text: str) -> str:
-    """Summarize `text` (a document's extracted content) via Claude. Returns the
-    summary text. Raises `SummarizationError` on any API/network failure — callers
-    that want best-effort behavior (e.g. `service.process_document`) should catch it.
+def summarize_document(text: str, language: str = DEFAULT_LANGUAGE) -> str:
+    """Summarize `text` (a document's extracted content) via Claude, in `language`
+    (a code from `app.shared.language.SUPPORTED_LANGUAGES`, defaulting to English).
+    Returns the summary text. Raises `SummarizationError` on any API/network
+    failure — callers that want best-effort behavior (e.g. `service.process_document`)
+    should catch it.
     """
     client = _get_client()
     excerpt = text[:MAX_INPUT_CHARS]
@@ -57,7 +62,7 @@ def summarize_document(text: str) -> str:
         response = client.messages.create(
             model=CLAUDE_MODEL,
             max_tokens=MAX_TOKENS,
-            system=_SYSTEM_PROMPT,
+            system=_build_system_prompt(language),
             messages=[{"role": "user", "content": excerpt}],
         )
     except Exception as exc:

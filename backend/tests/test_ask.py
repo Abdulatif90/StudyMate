@@ -80,7 +80,9 @@ def _mock_cohere(monkeypatch):
 def _mock_summarization(monkeypatch):
     # _upload_txt calls process_document directly (see below), which also generates a
     # summary now — mocked so these ask/RAG tests never touch the network for it.
-    monkeypatch.setattr(documents_service, "summarize_document", lambda text: "A short summary.")
+    monkeypatch.setattr(
+        documents_service, "summarize_document", lambda text, language=None: "A short summary."
+    )
 
 
 @pytest.fixture(autouse=True)

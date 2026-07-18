@@ -28,6 +28,7 @@ from app.modules.documents.rerank import RerankError, rerank
 from app.modules.documents.rrf import reciprocal_rank_fusion
 from app.modules.documents.summarization import SummarizationError, summarize_document
 from app.modules.subjects.service import get_subject
+from app.shared.language import DEFAULT_LANGUAGE
 
 # The Postgres text-search config the FTS arm queries with — MUST match the config the
 # `text_search_vector` generated column was built with (`simple`, see migration
@@ -76,11 +77,17 @@ def create_document(
     filename: str,
     content_type: str,
     raw: bytes,
+    language: str = DEFAULT_LANGUAGE,
 ) -> Document:
     """Synchronous, on the request path: validate ownership + the file, upload the
     bytes to R2 under an owner-scoped key, insert a `pending` Document row pointing at
     that object, and return immediately. The heavy work (parse/chunk/embed) happens
     later in `process_document`, triggered by the `document/uploaded` event.
+
+    `language` (a code from `app.shared.language.SUPPORTED_LANGUAGES`) is captured
+    here — the uploader's UI locale at upload time — and stored on the row so the
+    later async `process_document` step knows what language to summarize in without
+    needing any request context of its own.
 
     Size is validated (below) *before* the R2 upload — never upload then reject.
     """
@@ -106,6 +113,7 @@ def create_document(
         filename=filename,
         content_type=content_type,
         status=DocumentStatus.PENDING,
+        language=language,
     )
     document.r2_object_key = r2_client.build_object_key(owner_id, document.id, filename)
     r2_client.put_object(document.r2_object_key, raw, content_type)
@@ -283,7 +291,7 @@ def process_document(session: Session, owner_id: str, document_id: uuid.UUID) ->
     document.summary = None
     if parse_status == DocumentStatus.READY:
         try:
-            document.summary = summarize_document(text)
+            document.summary = summarize_document(text, document.language)
         except SummarizationError:
             logging.getLogger(__name__).warning(
                 "Failed to generate summary for document %s; leaving summary NULL",

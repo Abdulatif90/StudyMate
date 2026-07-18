@@ -72,7 +72,9 @@ def _mock_generation(request, monkeypatch):
     if request.node.get_closest_marker("live"):
         return
     monkeypatch.setattr(
-        quiz_service, "generate_quiz_questions", lambda excerpts, num_questions: _FAKE_QUESTIONS
+        quiz_service,
+        "generate_quiz_questions",
+        lambda excerpts, num_questions, language=None: _FAKE_QUESTIONS,
     )
 
 
@@ -173,7 +175,7 @@ def test_generate_quiz_returns_422_when_subject_has_no_material():
 
 
 def test_generate_quiz_returns_502_on_generation_failure(monkeypatch):
-    def _raise(excerpts, num_questions):
+    def _raise(excerpts, num_questions, language=None):
         raise QuizGenerationError("Claude is unavailable")
 
     monkeypatch.setattr(quiz_service, "generate_quiz_questions", _raise)
@@ -186,7 +188,7 @@ def test_generate_quiz_returns_502_on_generation_failure(monkeypatch):
 
 
 def test_generate_quiz_persists_nothing_on_generation_failure(monkeypatch):
-    def _raise(excerpts, num_questions):
+    def _raise(excerpts, num_questions, language=None):
         raise QuizGenerationError("Claude is unavailable")
 
     monkeypatch.setattr(quiz_service, "generate_quiz_questions", _raise)
@@ -203,7 +205,7 @@ def test_generate_quiz_persists_nothing_on_generation_failure(monkeypatch):
 def test_generate_quiz_passes_num_questions_through(monkeypatch):
     captured = {}
 
-    def _capture(excerpts, num_questions):
+    def _capture(excerpts, num_questions, language=None):
         captured["n"] = num_questions
         return _FAKE_QUESTIONS
 
@@ -214,6 +216,38 @@ def test_generate_quiz_passes_num_questions_through(monkeypatch):
     client.post(f"/subjects/{subject_id}/quizzes", json={"num_questions": 7})
 
     assert captured["n"] == 7
+
+
+def test_generate_quiz_passes_language_through(monkeypatch):
+    captured = {}
+
+    def _capture(excerpts, num_questions, language=None):
+        captured["language"] = language
+        return _FAKE_QUESTIONS
+
+    monkeypatch.setattr(quiz_service, "generate_quiz_questions", _capture)
+
+    subject_id = _create_subject()
+    _seed_chunks(_TEST_USER, subject_id, ["Material."])
+    client.post(f"/subjects/{subject_id}/quizzes", json={"language": "ko"})
+
+    assert captured["language"] == "ko"
+
+
+def test_generate_quiz_defaults_language_to_english(monkeypatch):
+    captured = {}
+
+    def _capture(excerpts, num_questions, language=None):
+        captured["language"] = language
+        return _FAKE_QUESTIONS
+
+    monkeypatch.setattr(quiz_service, "generate_quiz_questions", _capture)
+
+    subject_id = _create_subject()
+    _seed_chunks(_TEST_USER, subject_id, ["Material."])
+    client.post(f"/subjects/{subject_id}/quizzes", json={})
+
+    assert captured["language"] == "en"
 
 
 def test_generate_quiz_rejects_out_of_bounds_num_questions():

@@ -12,8 +12,9 @@ Same Anthropic SDK / error-handling family as `ask/llm.py`, `documents/summariza
 and `quiz/generation.py`: missing `ANTHROPIC_API_KEY` is a deployment mistake, so it
 raises a bare `RuntimeError` at the point of use; a per-request failure is wrapped so the
 caller (`service.generate_flashcards`) can surface a clean error instead of crashing.
-Multilingual: the prompt tells Claude to write in the same language as the source
-material (same approach as summary/ask/quiz).
+Multilingual: the caller passes a target `language` code (see `app.shared.language`)
+and the prompt tells Claude to write in that language regardless of the source
+material's own language (same approach as summary/ask/quiz).
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from dataclasses import dataclass
 import anthropic
 
 from app.core.config import get_settings
+from app.shared.language import DEFAULT_LANGUAGE, language_name
 
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 
@@ -85,16 +87,16 @@ def _get_client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 
-def _build_system_prompt(num_cards: int) -> str:
+def _build_system_prompt(num_cards: int, language: str) -> str:
     return (
         "You are StudyMate, an AI study assistant. Using ONLY the study material "
         f"excerpts provided, write {num_cards} flashcards that test recall of the "
         "material's key facts, terms, and concepts. Each card has a short `front` "
         "(a question, term, or concept) and a concise `back` (the answer or "
-        "definition) — keep both sides brief enough to read at a glance. Write the "
-        "front and back in the same language as the source material. Do not use "
-        f"outside knowledge. Return the cards by calling the `{FLASHCARD_TOOL_NAME}` "
-        "tool — do not write any prose."
+        f"definition) — keep both sides brief enough to read at a glance. Write the "
+        f"front and back in {language_name(language)}, regardless of what language the "
+        "source material is written in. Do not use outside knowledge. Return the cards "
+        f"by calling the `{FLASHCARD_TOOL_NAME}` tool — do not write any prose."
     )
 
 
@@ -131,10 +133,14 @@ def _parse_flashcards(tool_input: dict) -> list[GeneratedFlashcard]:
     return cards
 
 
-def generate_flashcard_set(excerpts: list[str], num_cards: int) -> list[GeneratedFlashcard]:
+def generate_flashcard_set(
+    excerpts: list[str], num_cards: int, language: str = DEFAULT_LANGUAGE
+) -> list[GeneratedFlashcard]:
     """Generate `num_cards` flashcards from `excerpts` (a subject's retrieved chunk
-    texts) via Claude tool-use. Returns validated `GeneratedFlashcard`s. Raises
-    `FlashcardGenerationError` on any API failure or malformed/empty response.
+    texts) via Claude tool-use, written in `language` (a code from
+    `app.shared.language.SUPPORTED_LANGUAGES`, defaulting to English). Returns
+    validated `GeneratedFlashcard`s. Raises `FlashcardGenerationError` on any API
+    failure or malformed/empty response.
     """
     if not excerpts:
         raise FlashcardGenerationError("No material to generate flashcards from")
@@ -149,7 +155,7 @@ def generate_flashcard_set(excerpts: list[str], num_cards: int) -> list[Generate
             # of a quiz question + explanation). Bounded so a huge num_cards can't
             # run away.
             max_tokens=min(8192, 200 * num_cards + 512),
-            system=_build_system_prompt(num_cards),
+            system=_build_system_prompt(num_cards, language),
             tools=[_FLASHCARD_TOOL],
             tool_choice={"type": "tool", "name": FLASHCARD_TOOL_NAME},
             messages=[{"role": "user", "content": f"Study material:\n\n{material}"}],

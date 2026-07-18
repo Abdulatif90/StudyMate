@@ -52,7 +52,12 @@ def generate_quiz(
 ) -> QuizWithQuestions:
     try:
         quiz = service.generate_quiz(
-            session, owner_id, subject_id, num_questions=data.num_questions, title=data.title
+            session,
+            owner_id,
+            subject_id,
+            num_questions=data.num_questions,
+            title=data.title,
+            language=data.language,
         )
     except SubjectNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Subject not found") from exc

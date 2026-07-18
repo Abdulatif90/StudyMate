@@ -12,8 +12,10 @@ Same Anthropic SDK / error-handling family as `ask/llm.py` and
 `documents/summarization.py`: missing `ANTHROPIC_API_KEY` is a deployment mistake, so it
 raises a bare `RuntimeError` at the point of use (like `db.py`/`embedding.py`); a
 per-request failure is wrapped so the caller (`service.generate_quiz`) can surface a
-clean error instead of crashing. Multilingual: the prompt tells Claude to write in the
-same language as the source material (same approach as summary/ask).
+clean error instead of crashing. Multilingual: the caller passes a target `language`
+code (see `app.shared.language`) and the prompt tells Claude to write in that language
+regardless of the source material's own language (same approach as
+summary/ask/flashcards).
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from dataclasses import dataclass
 import anthropic
 
 from app.core.config import get_settings
+from app.shared.language import DEFAULT_LANGUAGE, language_name
 
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
 
@@ -99,15 +102,16 @@ def _get_client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 
-def _build_system_prompt(num_questions: int) -> str:
+def _build_system_prompt(num_questions: int, language: str) -> str:
     return (
         "You are StudyMate, an AI study assistant. Using ONLY the study material "
         f"excerpts provided, write {num_questions} multiple-choice quiz questions that "
         "test understanding of the material — not trivia about its wording. Each "
         "question has exactly one correct answer and 3-4 plausible options. Write the "
-        "questions, options, and explanations in the same language as the source "
-        "material. Do not use outside knowledge. Return the questions by calling the "
-        f"`{QUIZ_TOOL_NAME}` tool — do not write any prose."
+        f"questions, options, and explanations in {language_name(language)}, regardless "
+        "of what language the source material is written in. Do not use outside "
+        f"knowledge. Return the questions by calling the `{QUIZ_TOOL_NAME}` tool — do "
+        "not write any prose."
     )
 
 
@@ -163,10 +167,14 @@ def _parse_questions(tool_input: dict) -> list[GeneratedQuestion]:
     return questions
 
 
-def generate_quiz_questions(excerpts: list[str], num_questions: int) -> list[GeneratedQuestion]:
+def generate_quiz_questions(
+    excerpts: list[str], num_questions: int, language: str = DEFAULT_LANGUAGE
+) -> list[GeneratedQuestion]:
     """Generate `num_questions` MCQs from `excerpts` (a subject's retrieved chunk texts)
-    via Claude tool-use. Returns validated `GeneratedQuestion`s. Raises
-    `QuizGenerationError` on any API failure or malformed/empty response.
+    via Claude tool-use, written in `language` (a code from
+    `app.shared.language.SUPPORTED_LANGUAGES`, defaulting to English). Returns
+    validated `GeneratedQuestion`s. Raises `QuizGenerationError` on any API failure or
+    malformed/empty response.
     """
     if not excerpts:
         raise QuizGenerationError("No material to generate a quiz from")
@@ -180,7 +188,7 @@ def generate_quiz_questions(excerpts: list[str], num_questions: int) -> list[Gen
             # Budget scales with question count; each MCQ + explanation is a few hundred
             # tokens. Bounded so a huge num_questions can't run away.
             max_tokens=min(8192, 350 * num_questions + 512),
-            system=_build_system_prompt(num_questions),
+            system=_build_system_prompt(num_questions, language),
             tools=[_QUIZ_TOOL],
             tool_choice={"type": "tool", "name": QUIZ_TOOL_NAME},
             messages=[{"role": "user", "content": f"Study material:\n\n{material}"}],

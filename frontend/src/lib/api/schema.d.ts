@@ -422,6 +422,11 @@ export interface components {
         Body_create_document_subjects__subject_id__documents_post: {
             /** File */
             file: string;
+            /**
+             * Language
+             * @default en
+             */
+            language: string;
         };
         /**
          * CheckoutCreateRequest
@@ -549,6 +554,11 @@ export interface components {
              * @default 10
              */
             num_cards: number;
+            /**
+             * Language
+             * @default en
+             */
+            language: string;
         };
         /** FlashcardProgress */
         FlashcardProgress: {
@@ -659,6 +669,11 @@ export interface components {
             num_questions: number;
             /** Title */
             title?: string | null;
+            /**
+             * Language
+             * @default en
+             */
+            language: string;
         };
         /** QuizQuestionRead */
         QuizQuestionRead: {

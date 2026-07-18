@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
@@ -27,6 +27,7 @@ const MAX_QUESTIONS = 20;
 export default function QuizzesPage() {
   const { subjectId } = useParams<{ subjectId: string }>();
   const t = useTranslations();
+  const locale = useLocale();
   const api = useApiClient();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
@@ -74,7 +75,7 @@ export default function QuizzesPage() {
     mutationFn: async () => {
       const { data, error, response } = await api.POST("/subjects/{subject_id}/quizzes", {
         params: { path: { subject_id: subjectId } },
-        body: { num_questions: numQuestions, title: title.trim() || null },
+        body: { num_questions: numQuestions, title: title.trim() || null, language: locale },
       });
       // 404/422/502 aren't in the generated error shape (hand-raised HTTPExceptions),
       // so map the real response.status — same pattern as the upload flow. A 402 means

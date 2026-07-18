@@ -18,10 +18,15 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from app.shared.language import DEFAULT_LANGUAGE
+
 
 class QuizGenerateRequest(BaseModel):
     num_questions: int = Field(default=5, ge=1, le=20)
     title: str | None = Field(default=None, max_length=200)
+    # A code from app.shared.language.SUPPORTED_LANGUAGES; unknown codes fall back to
+    # English in language_name rather than rejecting the request.
+    language: str = Field(default=DEFAULT_LANGUAGE)
 
 
 class QuizQuestionRead(BaseModel):

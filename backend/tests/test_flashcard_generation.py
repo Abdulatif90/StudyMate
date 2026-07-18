@@ -58,7 +58,17 @@ def test_generate_flashcard_set_parses_the_tool_call(monkeypatch):
     assert call_kwargs["tools"] == [generation._FLASHCARD_TOOL]
     assert call_kwargs["tool_choice"] == {"type": "tool", "name": generation.FLASHCARD_TOOL_NAME}
     assert "1 flashcards" in call_kwargs["system"]
+    assert "English" in call_kwargs["system"]
     assert "Photosynthesis ...text..." in call_kwargs["messages"][0]["content"]
+
+
+def test_generate_flashcard_set_targets_the_requested_language(monkeypatch):
+    fake_client = _mock_client(monkeypatch, _tool_use_response([_VALID_CARD]))
+
+    generation.generate_flashcard_set(["material"], num_cards=1, language="ko")
+
+    call_kwargs = fake_client.messages.create.call_args.kwargs
+    assert "Korean" in call_kwargs["system"]
 
 
 def test_generate_flashcard_set_joins_multiple_excerpts(monkeypatch):

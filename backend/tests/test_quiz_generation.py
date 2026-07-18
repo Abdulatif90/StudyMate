@@ -68,7 +68,17 @@ def test_generate_quiz_questions_parses_the_tool_call(monkeypatch):
     assert call_kwargs["tools"] == [generation._QUIZ_TOOL]
     assert call_kwargs["tool_choice"] == {"type": "tool", "name": generation.QUIZ_TOOL_NAME}
     assert "1 multiple-choice" in call_kwargs["system"]
+    assert "English" in call_kwargs["system"]
     assert "Photosynthesis ...text..." in call_kwargs["messages"][0]["content"]
+
+
+def test_generate_quiz_questions_targets_the_requested_language(monkeypatch):
+    fake_client = _mock_client(monkeypatch, _tool_use_response([_VALID_QUESTION]))
+
+    generation.generate_quiz_questions(["material"], num_questions=1, language="ru")
+
+    call_kwargs = fake_client.messages.create.call_args.kwargs
+    assert "Russian" in call_kwargs["system"]
 
 
 def test_generate_quiz_questions_joins_multiple_excerpts(monkeypatch):

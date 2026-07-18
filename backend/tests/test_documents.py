@@ -72,7 +72,9 @@ def _mock_summarization(monkeypatch):
     """Stand-in for Claude summarization, no network — autouse so every existing
     process_document test gets a deterministic summary without needing to know this
     step exists. Tests that care about summarization specifically override this."""
-    monkeypatch.setattr(documents_service, "summarize_document", lambda text: "A short summary.")
+    monkeypatch.setattr(
+        documents_service, "summarize_document", lambda text, language=None: "A short summary."
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -431,7 +433,7 @@ def test_process_writes_a_summary_when_ready():
 
 
 def test_process_leaves_summary_null_when_summarization_fails(monkeypatch):
-    def _raise_summarization_error(text: str) -> str:
+    def _raise_summarization_error(text: str, language: str | None = None) -> str:
         raise SummarizationError("Claude is unavailable")
 
     monkeypatch.setattr(documents_service, "summarize_document", _raise_summarization_error)
@@ -446,6 +448,38 @@ def test_process_leaves_summary_null_when_summarization_fails(monkeypatch):
     assert document.status.value == "ready"
     assert document.summary is None
     assert _chunk_texts(_TEST_USER, created["id"]) == ["hello world"]
+
+
+def test_process_summarizes_in_the_uploaded_language(monkeypatch):
+    captured = {}
+
+    def _capture(text: str, language: str | None = None) -> str:
+        captured["language"] = language
+        return "Qisqacha xulosa."
+
+    monkeypatch.setattr(documents_service, "summarize_document", _capture)
+
+    subject_id = _create_subject()
+    created = client.post(
+        f"/subjects/{subject_id}/documents", files=_txt_file(), data={"language": "uz"}
+    ).json()
+
+    document = _process(_TEST_USER, created["id"])
+
+    assert document.status.value == "ready"
+    assert document.summary == "Qisqacha xulosa."
+    assert captured["language"] == "uz"
+
+
+def test_upload_defaults_language_to_english_when_omitted():
+    subject_id = _create_subject()
+    created = client.post(f"/subjects/{subject_id}/documents", files=_txt_file()).json()
+
+    with Session(_engine) as session:
+        document = documents_service.get_document_by_id(
+            session, _TEST_USER, uuid.UUID(created["id"])
+        )
+        assert document.language == "en"
 
 
 def test_process_leaves_summary_null_when_parse_fails():
