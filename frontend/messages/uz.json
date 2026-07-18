@@ -2,7 +2,11 @@
   "Common": {
     "loading": "Yuklanmoqda…",
     "retry": "Qayta urinish",
-    "tryAgain": "Qayta urinib ko‘ring."
+    "tryAgain": "Qayta urinib ko‘ring.",
+    "subjectFallback": "Fan",
+    "subjectNotFound": "Fan topilmadi.",
+    "cantUndo": "Buni ortga qaytarib bo‘lmaydi.",
+    "upgrade": "Yangilash"
   },
   "Language": {
     "label": "Til"
@@ -12,7 +16,8 @@
     "subjects": "Fanlar",
     "goToSubjects": "Fanlarga o‘tish",
     "billing": "Tarif va to‘lov",
-    "menu": "Menyu"
+    "menu": "Menyu",
+    "accountFallback": "Hisob"
   },
   "Landing": {
     "ctaGetStartedFree": "Bepul boshlash",
@@ -116,5 +121,167 @@
     "statFlashcardsDue": "{count} ta muddati kelgan",
     "statQuizzes": "{count} ta test",
     "viewAllCount": "Barcha {count} ta fanni ko‘rish"
+  },
+  "Usage": {
+    "subjects": "Fanlar",
+    "generations": "Bugungi test/kartochka generatsiyalari",
+    "generationsHint": "{cap} tadan {used} generatsiya bugun ishlatilgan",
+    "usedOfCap": "{cap} tadan {used} ishlatilgan",
+    "usedUnlimited": "{used} · Cheksiz",
+    "meterAriaLabel": "{label}: {cap} tadan {used} ishlatilgan"
+  },
+  "SubjectDetail": {
+    "progressLink": "Progress",
+    "flashcardsLink": "Kartochkalar",
+    "quizzesLink": "Testlar",
+    "askLink": "Savol",
+    "uploadTitle": "Hujjat yuklash",
+    "uploading": "Yuklanmoqda…",
+    "processingHint": "Qayta ishlash (tahlil, bo‘laklash, embedding) fonda amalga oshadi — yangi hujjat tayyor bo‘lguncha \"kutilmoqda\" holatida ko‘rinadi.",
+    "loadError": "Hujjatlarni yuklab bo‘lmadi.",
+    "empty": "Hali hujjat yo‘q — yuqoridan yuklang.",
+    "deleteAriaLabel": "{filename}ni o‘chirish",
+    "deleteConfirmTitle": "\"{filename}\" o‘chirilsinmi?",
+    "uploadErrorTitle": "Hujjatni yuklab bo‘lmadi",
+    "uploadSuccessTitle": "Hujjat yuklandi",
+    "uploadSuccessBody": "{filename} qayta ishlanmoqda…",
+    "deleteSuccessTitle": "Hujjat o‘chirildi",
+    "deleteErrorTitle": "Hujjatni o‘chirib bo‘lmadi"
+  },
+  "Quizzes": {
+    "heading": "Testlar",
+    "generateTitle": "Test yaratish",
+    "titleLabel": "Nomi (ixtiyoriy)",
+    "titlePlaceholder": "masalan, 3-bob takrorlash",
+    "numQuestionsLabel": "Savollar soni",
+    "generate": "Test yaratish",
+    "generating": "Yaratilmoqda…",
+    "generatingHint": "Materialingizdan savollar yaratilmoqda — bu bir necha soniya vaqt olishi mumkin.",
+    "generateErrorTitle": "Testni yaratib bo‘lmadi",
+    "generateSuccess": "Test yaratildi",
+    "deleteGenericError": "Bu testni o‘chirib bo‘lmadi. Qayta urinib ko‘ring.",
+    "deleteSuccess": "Test o‘chirildi",
+    "deleteErrorTitle": "Testni o‘chirib bo‘lmadi",
+    "loadError": "Testlarni yuklab bo‘lmadi.",
+    "empty": "Hali testlar yo‘q — yuqoridan yarating.",
+    "untitled": "Nomsiz test",
+    "deleteAriaLabel": "{title}ni o‘chirish",
+    "deleteConfirmTitle": "\"{title}\" o‘chirilsinmi?"
+  },
+  "QuizDetail": {
+    "notFound": "Test topilmadi.",
+    "untitled": "Test",
+    "score": "Siz {correct} / {total} to‘pladingiz",
+    "checkAnswers": "Javoblarni tekshirish",
+    "tryAgain": "Qayta urinish",
+    "answerAllHint": "Natijani ko‘rish uchun barcha savollarga javob bering."
+  },
+  "Flashcards": {
+    "heading": "Kartochkalar",
+    "review": "Takrorlash",
+    "reviewWithCount": "Takrorlash ({count})",
+    "generateTitle": "Kartochkalar yaratish",
+    "numCardsLabel": "Kartochkalar soni",
+    "generate": "Kartochkalar yaratish",
+    "generating": "Yaratilmoqda…",
+    "generatingHint": "Materialingizdan kartochkalar yaratilmoqda — bu bir necha soniya vaqt olishi mumkin.",
+    "generateErrorTitle": "Kartochkalarni yaratib bo‘lmadi",
+    "generateSuccess": "{count, plural, one {# ta kartochka yaratildi} other {# ta kartochka yaratildi}}",
+    "deleteGenericError": "Bu kartochkani o‘chirib bo‘lmadi. Qayta urinib ko‘ring.",
+    "deleteSuccess": "Kartochka o‘chirildi",
+    "deleteErrorTitle": "Kartochkani o‘chirib bo‘lmadi",
+    "loadError": "Kartochkalarni yuklab bo‘lmadi.",
+    "empty": "Hali kartochkalar yo‘q — yuqoridan yarating.",
+    "deleteAriaLabel": "\"{front}\" kartochkasini o‘chirish",
+    "deleteConfirmTitle": "Bu kartochka o‘chirilsinmi?"
+  },
+  "FlashcardReview": {
+    "loadError": "Muddati kelgan kartochkalarni yuklab bo‘lmadi.",
+    "reviewError": "Bu baholashni saqlab bo‘lmadi. Qayta urinib ko‘ring.",
+    "noneDue": "Hozircha muddati kelgan kartochka yo‘q",
+    "doneForNow": "Hozircha tayyor!",
+    "comeBackLater": "Keyinroq qayting, yoki yana kartochkalar yarating.",
+    "reviewedCount": "{count, plural, one {Siz # ta kartochkani takrorladingiz.} other {Siz # ta kartochkani takrorladingiz.}}",
+    "backToFlashcards": "Kartochkalarga qaytish",
+    "cardProgress": "{total} tadan {current}-kartochka",
+    "showAnswer": "Javobni ko‘rsatish",
+    "grade": {
+      "again": "Yana",
+      "hard": "Qiyin",
+      "good": "Yaxshi",
+      "easy": "Oson"
+    }
+  },
+  "Ask": {
+    "newConversation": "Yangi suhbat",
+    "conversationsHeading": "Suhbatlar",
+    "noConversations": "Hali suhbatlar yo‘q.",
+    "deleteConversationAriaLabel": "Suhbatni o‘chirish",
+    "deleteConversationConfirmTitle": "Bu suhbat o‘chirilsinmi?",
+    "deleteConversationSuccess": "Suhbat o‘chirildi",
+    "deleteConversationErrorTitle": "Suhbatni o‘chirib bo‘lmadi",
+    "heading": "Savol",
+    "placeholder": "Bu fanning materiallari haqida savol bering…",
+    "send": "Yuborish",
+    "thinkingHint": "O‘ylanmoqda… bu bir necha soniya vaqt olishi mumkin.",
+    "streamError": "Javob olib bo‘lmadi. Qayta urinib ko‘ring."
+  },
+  "Progress": {
+    "heading": "Progress",
+    "loadError": "Progressni yuklab bo‘lmadi.",
+    "loadingAriaLabel": "Progress yuklanmoqda",
+    "emptyTitle": "Hozircha ko‘rsatish uchun hech narsa yo‘q",
+    "emptyDescription": "Hujjat yuklang, so‘ng undan kartochka yoki test yarating — progressingiz shu yerda ko‘rinadi.",
+    "goToSubject": "{name}ga o‘tish",
+    "documents": "Hujjatlar",
+    "flashcards": "Kartochkalar",
+    "flashcardsDue": "{count} tasi takrorlash uchun tayyor",
+    "quizzesGenerated": "Yaratilgan testlar",
+    "documentsByStatus": "Holat bo‘yicha hujjatlar",
+    "noDocuments": "Hali hujjatlar yo‘q.",
+    "flashcardMastery": "Kartochkalarni o‘zlashtirish",
+    "noFlashcards": "Hali kartochkalar yo‘q.",
+    "matureAriaLabel": "Kartochkalarning {percent}% i o‘zlashtirilgan — {breakdown}",
+    "status": {
+      "ready": "Tayyor",
+      "pending": "Kutilmoqda",
+      "failed": "Xato"
+    },
+    "mastery": {
+      "new": { "label": "Yangi", "status": "boshlanmagan" },
+      "learning": { "label": "O‘rganilmoqda", "status": "jarayonda" },
+      "mature": { "label": "O‘zlashtirilgan", "status": "yaxshi o‘rganilgan" }
+    }
+  },
+  "Billing": {
+    "heading": "Tarif va to‘lov",
+    "loadingAriaLabel": "Tarif yuklanmoqda",
+    "upgradedNotice": "Rahmat! To‘lovingiz amalga oshdi. Yangi tarifingiz faollashtirilmoqda va tez orada shu yerda ko‘rinadi.",
+    "loadError": "Tarifingizni yuklab bo‘lmadi.",
+    "currentPlan": "Joriy tarif",
+    "documentsCapNote": "Hujjatlar har bir fan uchun cheklangan",
+    "documentsCapNoteWithLimit": " ({plan} tarifida har biri uchun {cap} ta)",
+    "documentsCapNoteUnlimited": " (tarifingizda cheksiz)",
+    "comparePlans": "Tariflarni solishtirish",
+    "currentPlanCta": "Joriy tarif",
+    "redirecting": "Yo‘naltirilmoqda…",
+    "upgradeTo": "{plan}ga o‘tish",
+    "notAvailable": "Mavjud emas",
+    "checkoutError": "To‘lovni boshlab bo‘lmadi. Qayta urinib ko‘ring."
+  },
+  "QuestionMessage": {
+    "cancel": "Bekor qilish",
+    "saveAndResend": "Saqlash va qayta yuborish",
+    "sending": "Yuborilmoqda…",
+    "copyAriaLabel": "Savolni nusxalash",
+    "editAriaLabel": "Savolni tahrirlash",
+    "deleteAriaLabel": "Savolni o‘chirish"
+  },
+  "AnswerMessage": {
+    "copyAriaLabel": "Javobni nusxalash",
+    "pinAriaLabel": "Javobni mahkamlash",
+    "unpinAriaLabel": "Mahkamlashni bekor qilish",
+    "readAloudAriaLabel": "Javobni ovoz chiqarib o‘qish",
+    "stopReadingAriaLabel": "O‘qishni to‘xtatish"
   }
 }

@@ -7,7 +7,6 @@ type BadgeVariant = VariantProps<typeof badgeVariants>["variant"];
 
 export interface DocumentStatusRow {
   key: "ready" | "pending" | "failed";
-  label: string;
   count: number;
   variant: BadgeVariant; // same ready/pending/failed -> badge-variant mapping as
   // documentStatus.ts's documentStatusVariant (ready=default, failed=destructive,
@@ -17,8 +16,8 @@ export interface DocumentStatusRow {
 
 export function documentStatusRows(documents: DocumentStatusCounts): DocumentStatusRow[] {
   return [
-    { key: "ready", label: "Ready", count: documents.ready, variant: "default" },
-    { key: "pending", label: "Pending", count: documents.pending, variant: "secondary" },
-    { key: "failed", label: "Failed", count: documents.failed, variant: "destructive" },
+    { key: "ready", count: documents.ready, variant: "default" },
+    { key: "pending", count: documents.pending, variant: "secondary" },
+    { key: "failed", count: documents.failed, variant: "destructive" },
   ];
 }

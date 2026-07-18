@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
@@ -24,6 +25,7 @@ const MAX_QUESTIONS = 20;
 
 export default function QuizzesPage() {
   const { subjectId } = useParams<{ subjectId: string }>();
+  const t = useTranslations();
   const api = useApiClient();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
@@ -83,7 +85,7 @@ export default function QuizzesPage() {
         const limit = parsePlanLimitError(response.status, error);
         setLimitError(limit);
         const message = friendlyQuizError(response.status);
-        if (!limit) toast.error("Couldn't generate quiz", message);
+        if (!limit) toast.error(t("Quizzes.generateErrorTitle"), message);
         throw new Error(message);
       }
       return data;
@@ -93,7 +95,7 @@ export default function QuizzesPage() {
       setTitle("");
       queryClient.invalidateQueries({ queryKey: ["subjects", subjectId, "quizzes"] });
       queryClient.invalidateQueries({ queryKey: ["billing", "plan"] });
-      toast.success("Quiz generated", data.title || undefined);
+      toast.success(t("Quizzes.generateSuccess"), data.title || undefined);
     },
   });
 
@@ -104,14 +106,14 @@ export default function QuizzesPage() {
       });
       // 204 No Content on success → `data` is undefined, so `error` is what signals
       // failure here (same as the delete-document flow).
-      if (error) throw new Error("Couldn't delete this quiz. Please try again.");
+      if (error) throw new Error(t("Quizzes.deleteGenericError"));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["subjects", subjectId, "quizzes"] });
-      toast.success("Quiz deleted");
+      toast.success(t("Quizzes.deleteSuccess"));
     },
     onError: (error: Error) => {
-      toast.error("Couldn't delete quiz", error.message);
+      toast.error(t("Quizzes.deleteErrorTitle"), error.message);
     },
   });
 
@@ -121,7 +123,7 @@ export default function QuizzesPage() {
       className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
     >
       <ArrowLeft className="size-4" />
-      {subjectQuery.data?.name ?? "Subject"}
+      {subjectQuery.data?.name ?? t("Common.subjectFallback")}
     </Link>
   );
 
@@ -129,7 +131,7 @@ export default function QuizzesPage() {
     return (
       <div>
         {backLink}
-        <p className="text-destructive">Subject not found.</p>
+        <p className="text-destructive">{t("Common.subjectNotFound")}</p>
       </div>
     );
   }
@@ -138,11 +140,11 @@ export default function QuizzesPage() {
     <div>
       {backLink}
 
-      <h1 className="mb-8 text-2xl font-semibold">Quizzes</h1>
+      <h1 className="mb-8 text-2xl font-semibold">{t("Quizzes.heading")}</h1>
 
       <Card className="mb-8">
         <CardHeader>
-          <CardTitle>Generate a quiz</CardTitle>
+          <CardTitle>{t("Quizzes.generateTitle")}</CardTitle>
         </CardHeader>
         <CardContent>
           <form
@@ -153,19 +155,19 @@ export default function QuizzesPage() {
             }}
           >
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="quiz-title">Title (optional)</Label>
+              <Label htmlFor="quiz-title">{t("Quizzes.titleLabel")}</Label>
               <Input
                 id="quiz-title"
                 value={title}
                 maxLength={200}
-                placeholder="e.g. Chapter 3 review"
+                placeholder={t("Quizzes.titlePlaceholder")}
                 disabled={generateQuiz.isPending}
                 onChange={(event) => setTitle(event.target.value)}
               />
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="quiz-num-questions">Number of questions</Label>
+              <Label htmlFor="quiz-num-questions">{t("Quizzes.numQuestionsLabel")}</Label>
               <Input
                 id="quiz-num-questions"
                 type="number"
@@ -183,14 +185,12 @@ export default function QuizzesPage() {
             </div>
 
             <Button type="submit" className="w-fit" disabled={generateQuiz.isPending}>
-              {generateQuiz.isPending ? "Generating…" : "Generate quiz"}
+              {generateQuiz.isPending ? t("Quizzes.generating") : t("Quizzes.generate")}
             </Button>
           </form>
 
           {generateQuiz.isPending && (
-            <p className="mt-2 text-sm text-muted-foreground">
-              Generating questions from your material — this can take a few seconds.
-            </p>
+            <p className="mt-2 text-sm text-muted-foreground">{t("Quizzes.generatingHint")}</p>
           )}
           {limitError ? (
             <UpgradePrompt message={limitError.detail} />
@@ -198,17 +198,20 @@ export default function QuizzesPage() {
             generationsMeter && (
               <UsageHint
                 meter={generationsMeter}
-                text={`${generationsMeter.used} of ${generationsMeter.cap} generations used today`}
+                text={t("Usage.generationsHint", {
+                  used: generationsMeter.used,
+                  cap: generationsMeter.cap ?? 0,
+                })}
               />
             )
           )}
         </CardContent>
       </Card>
 
-      {quizzesQuery.isLoading && <p>Loading…</p>}
-      {quizzesQuery.isError && <p className="text-destructive">Couldn&apos;t load quizzes.</p>}
+      {quizzesQuery.isLoading && <p>{t("Common.loading")}</p>}
+      {quizzesQuery.isError && <p className="text-destructive">{t("Quizzes.loadError")}</p>}
       {quizzesQuery.data?.length === 0 && (
-        <p className="text-muted-foreground">No quizzes yet — generate one above.</p>
+        <p className="text-muted-foreground">{t("Quizzes.empty")}</p>
       )}
 
       <ul className="flex flex-col gap-2">
@@ -222,7 +225,7 @@ export default function QuizzesPage() {
                 >
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium group-hover:underline">
-                      {quiz.title || "Untitled quiz"}
+                      {quiz.title || t("Quizzes.untitled")}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {formatRelativeTime(quiz.created_at)}
@@ -234,12 +237,16 @@ export default function QuizzesPage() {
                   variant="destructive"
                   size="icon-sm"
                   className="shrink-0"
-                  aria-label={`Delete ${quiz.title || "quiz"}`}
+                  aria-label={t("Quizzes.deleteAriaLabel", {
+                    title: quiz.title || t("Quizzes.untitled"),
+                  })}
                   disabled={deleteQuiz.isPending && deleteQuiz.variables === quiz.id}
                   onClick={async () => {
                     const ok = await confirm({
-                      title: `Delete "${quiz.title || "this quiz"}"?`,
-                      description: "This can't be undone.",
+                      title: t("Quizzes.deleteConfirmTitle", {
+                        title: quiz.title || t("Quizzes.untitled"),
+                      }),
+                      description: t("Common.cantUndo"),
                       destructive: true,
                     });
                     if (!ok) return;

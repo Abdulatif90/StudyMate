@@ -2069,13 +2069,22 @@ frontends already shipped.
   - **Native review of `uz`/`ko`/`ru` catalogs** — the drafts are machine/LLM-generated
     starting points, not production-quality (esp. Russian plural forms). Highest-priority
     i18n item before any locale is user-facing "for real".
-  - **Convert the remaining pages** to `useTranslations`: subject detail
-    (`/subjects/[subjectId]`), quizzes (+ quiz detail), flashcards (+ review), ask,
-    progress, and billing — plus the shared components with their own copy (UpgradePrompt,
-    UsageMeters, ProgressStats, question/answer-message). Each converted component that has
-    an existing test must switch to `renderWithIntl`.
+  - ~~Convert the remaining pages to `useTranslations`~~ **✓ DONE (see WORKLOG
+    "next-intl: remaining pages" entry).** Subject detail, quizzes (+ quiz detail),
+    flashcards (+ review), ask, progress, and billing are all converted, along with
+    UpgradePrompt/UsageMeters/UsageStatCard/ProgressStats/question-answer-message and the
+    plain-`.ts` label sources feeding them (`planLimits`, `gradeButtons`,
+    `documentProgress`, `flashcardMastery`). Every converted component with an existing
+    test now renders through `renderWithIntl`. Two small pre-existing gaps intentionally
+    left alone (not part of this pass): the shared `useConfirm` dialog's default
+    "Delete"/"Confirm"/"Cancel" button labels (`lib/confirmState.ts`, unit-tested as
+    literal English), and the dashboard's `aria-label="Loading dashboard"` skeleton
+    region.
   - **Clerk UI localization** — sign-in/sign-up render Clerk's own widgets; localize them
     via `@clerk/localizations` (map the 4 locales) if their English UI matters.
+  - **No-browser gap**: language-switch behavior on every newly-converted page (quizzes,
+    flashcards, ask, progress, billing) is unverified in an actual browser — only
+    `tsc`/`eslint`/`vitest`/`next build` ran in this environment.
   - Consider typed messages (augment next-intl's `Messages` from `en.json`) so missing
     keys become a tsc error, and a lint/CI check for catalog parity.
 - Remaining per `docs/plan.md`: Business/Teams B2B (Phase 5).

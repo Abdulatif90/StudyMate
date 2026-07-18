@@ -1,3 +1,4 @@
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
@@ -7,13 +8,14 @@ import { Button } from "@/components/ui/button";
  * route to the billing page. Paired icon-free but colour + an explicit "Upgrade" label,
  * never colour alone (FRONTEND.md §2.5). */
 export function UpgradePrompt({ message }: { message: string }) {
+  const t = useTranslations("Common");
   return (
     <div className="mt-2 flex flex-col gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-4 sm:flex-row sm:items-center sm:justify-between">
       <p className="text-sm text-foreground">{message}</p>
       <Button
         size="sm"
         nativeButton={false}
-        render={<Link href="/billing">Upgrade</Link>}
+        render={<Link href="/billing">{t("upgrade")}</Link>}
         className="shrink-0"
       />
     </div>

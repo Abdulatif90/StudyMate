@@ -11,7 +11,6 @@ export const PLAN_LABELS: Record<Plan, string> = {
 
 export interface UsageMeter {
   key: "subjects" | "generations";
-  label: string;
   used: number;
   /** `null` means unlimited (Business) — there's no bar to draw. */
   cap: number | null;
@@ -38,14 +37,8 @@ export function meterPercent(used: number, cap: number | null): number {
  * *per-subject* cap with no one account-wide count, so it's stated as a rule elsewhere
  * (and enforced per-subject on upload), not metered here. */
 export function usageMeters(plan: PlanRead): UsageMeter[] {
-  const build = (
-    key: UsageMeter["key"],
-    label: string,
-    used: number,
-    cap: number | null,
-  ): UsageMeter => ({
+  const build = (key: UsageMeter["key"], used: number, cap: number | null): UsageMeter => ({
     key,
-    label,
     used,
     cap,
     unlimited: cap === null,
@@ -54,12 +47,7 @@ export function usageMeters(plan: PlanRead): UsageMeter[] {
   });
 
   return [
-    build("subjects", "Subjects", plan.usage.subjects, plan.limits.max_subjects),
-    build(
-      "generations",
-      "Quiz/flashcard generations today",
-      plan.usage.generations_today,
-      plan.limits.max_generations_per_day,
-    ),
+    build("subjects", plan.usage.subjects, plan.limits.max_subjects),
+    build("generations", plan.usage.generations_today, plan.limits.max_generations_per_day),
   ];
 }

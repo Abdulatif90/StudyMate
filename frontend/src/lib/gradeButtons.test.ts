@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { GRADE_BUTTONS, isLapseGrade } from "./gradeButtons";
 
 describe("GRADE_BUTTONS", () => {
-  it("has exactly four labeled buttons", () => {
-    expect(GRADE_BUTTONS.map((b) => b.label)).toEqual(["Again", "Hard", "Good", "Easy"]);
+  it("has exactly four keyed buttons", () => {
+    expect(GRADE_BUTTONS.map((b) => b.key)).toEqual(["again", "hard", "good", "easy"]);
   });
 
   it("maps every button to an integer within SM-2's 0-5 range", () => {
@@ -15,8 +15,8 @@ describe("GRADE_BUTTONS", () => {
   });
 
   it("pins the exact Anki-style grade for each button", () => {
-    const byLabel = Object.fromEntries(GRADE_BUTTONS.map((b) => [b.label, b.grade]));
-    expect(byLabel).toEqual({ Again: 1, Hard: 3, Good: 4, Easy: 5 });
+    const byKey = Object.fromEntries(GRADE_BUTTONS.map((b) => [b.key, b.grade]));
+    expect(byKey).toEqual({ again: 1, hard: 3, good: 4, easy: 5 });
   });
 });
 
@@ -34,12 +34,12 @@ describe("isLapseGrade", () => {
   });
 
   it("only the Again button is a lapse; Hard/Good/Easy all pass", () => {
-    const results = GRADE_BUTTONS.map((b) => [b.label, isLapseGrade(b.grade)]);
+    const results = GRADE_BUTTONS.map((b) => [b.key, isLapseGrade(b.grade)]);
     expect(results).toEqual([
-      ["Again", true],
-      ["Hard", false],
-      ["Good", false],
-      ["Easy", false],
+      ["again", true],
+      ["hard", false],
+      ["good", false],
+      ["easy", false],
     ]);
   });
 });

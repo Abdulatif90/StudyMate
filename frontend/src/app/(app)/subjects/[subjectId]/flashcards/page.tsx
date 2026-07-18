@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
@@ -23,6 +24,7 @@ const MAX_CARDS = 50;
 
 export default function FlashcardsPage() {
   const { subjectId } = useParams<{ subjectId: string }>();
+  const t = useTranslations();
   const api = useApiClient();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
@@ -90,7 +92,7 @@ export default function FlashcardsPage() {
         const limit = parsePlanLimitError(response.status, error);
         setLimitError(limit);
         const message = friendlyFlashcardError(response.status);
-        if (!limit) toast.error("Couldn't generate flashcards", message);
+        if (!limit) toast.error(t("Flashcards.generateErrorTitle"), message);
         throw new Error(message);
       }
       return data;
@@ -99,7 +101,7 @@ export default function FlashcardsPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["subjects", subjectId, "flashcards"] });
       queryClient.invalidateQueries({ queryKey: ["billing", "plan"] });
-      toast.success(`${data.length} flashcard${data.length === 1 ? "" : "s"} generated`);
+      toast.success(t("Flashcards.generateSuccess", { count: data.length }));
     },
   });
 
@@ -110,14 +112,14 @@ export default function FlashcardsPage() {
       });
       // 204 No Content on success → `data` is undefined, so `error` is what signals
       // failure here (same as the delete-document/delete-quiz flows).
-      if (error) throw new Error("Couldn't delete this flashcard. Please try again.");
+      if (error) throw new Error(t("Flashcards.deleteGenericError"));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["subjects", subjectId, "flashcards"] });
-      toast.success("Flashcard deleted");
+      toast.success(t("Flashcards.deleteSuccess"));
     },
     onError: (error: Error) => {
-      toast.error("Couldn't delete flashcard", error.message);
+      toast.error(t("Flashcards.deleteErrorTitle"), error.message);
     },
   });
 
@@ -127,7 +129,7 @@ export default function FlashcardsPage() {
       className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
     >
       <ArrowLeft className="size-4" />
-      {subjectQuery.data?.name ?? "Subject"}
+      {subjectQuery.data?.name ?? t("Common.subjectFallback")}
     </Link>
   );
 
@@ -135,7 +137,7 @@ export default function FlashcardsPage() {
     return (
       <div>
         {backLink}
-        <p className="text-destructive">Subject not found.</p>
+        <p className="text-destructive">{t("Common.subjectNotFound")}</p>
       </div>
     );
   }
@@ -147,18 +149,22 @@ export default function FlashcardsPage() {
       {backLink}
 
       <div className="mb-8 flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">Flashcards</h1>
+        <h1 className="text-2xl font-semibold">{t("Flashcards.heading")}</h1>
         <Button
           className="shrink-0"
           disabled={dueCount === 0}
           nativeButton={false}
-          render={<Link href={`/subjects/${subjectId}/flashcards/review`}>Review{dueCount > 0 ? ` (${dueCount})` : ""}</Link>}
+          render={
+            <Link href={`/subjects/${subjectId}/flashcards/review`}>
+              {dueCount > 0 ? t("Flashcards.reviewWithCount", { count: dueCount }) : t("Flashcards.review")}
+            </Link>
+          }
         />
       </div>
 
       <Card className="mb-8">
         <CardHeader>
-          <CardTitle>Generate flashcards</CardTitle>
+          <CardTitle>{t("Flashcards.generateTitle")}</CardTitle>
         </CardHeader>
         <CardContent>
           <form
@@ -169,7 +175,7 @@ export default function FlashcardsPage() {
             }}
           >
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="flashcard-num-cards">Number of cards</Label>
+              <Label htmlFor="flashcard-num-cards">{t("Flashcards.numCardsLabel")}</Label>
               <Input
                 id="flashcard-num-cards"
                 type="number"
@@ -187,14 +193,12 @@ export default function FlashcardsPage() {
             </div>
 
             <Button type="submit" className="w-fit" disabled={generateFlashcards.isPending}>
-              {generateFlashcards.isPending ? "Generating…" : "Generate flashcards"}
+              {generateFlashcards.isPending ? t("Flashcards.generating") : t("Flashcards.generate")}
             </Button>
           </form>
 
           {generateFlashcards.isPending && (
-            <p className="mt-2 text-sm text-muted-foreground">
-              Generating cards from your material — this can take a few seconds.
-            </p>
+            <p className="mt-2 text-sm text-muted-foreground">{t("Flashcards.generatingHint")}</p>
           )}
           {limitError ? (
             <UpgradePrompt message={limitError.detail} />
@@ -202,19 +206,22 @@ export default function FlashcardsPage() {
             generationsMeter && (
               <UsageHint
                 meter={generationsMeter}
-                text={`${generationsMeter.used} of ${generationsMeter.cap} generations used today`}
+                text={t("Usage.generationsHint", {
+                  used: generationsMeter.used,
+                  cap: generationsMeter.cap ?? 0,
+                })}
               />
             )
           )}
         </CardContent>
       </Card>
 
-      {flashcardsQuery.isLoading && <p>Loading…</p>}
+      {flashcardsQuery.isLoading && <p>{t("Common.loading")}</p>}
       {flashcardsQuery.isError && (
-        <p className="text-destructive">Couldn&apos;t load flashcards.</p>
+        <p className="text-destructive">{t("Flashcards.loadError")}</p>
       )}
       {flashcardsQuery.data?.length === 0 && (
-        <p className="text-muted-foreground">No flashcards yet — generate some above.</p>
+        <p className="text-muted-foreground">{t("Flashcards.empty")}</p>
       )}
 
       <ul className="flex flex-col gap-2">
@@ -230,12 +237,12 @@ export default function FlashcardsPage() {
                   variant="destructive"
                   size="icon-sm"
                   className="shrink-0"
-                  aria-label={`Delete flashcard "${card.front}"`}
+                  aria-label={t("Flashcards.deleteAriaLabel", { front: card.front })}
                   disabled={deleteFlashcard.isPending && deleteFlashcard.variables === card.id}
                   onClick={async () => {
                     const ok = await confirm({
-                      title: "Delete this flashcard?",
-                      description: "This can't be undone.",
+                      title: t("Flashcards.deleteConfirmTitle"),
+                      description: t("Common.cantUndo"),
                       destructive: true,
                     });
                     if (!ok) return;

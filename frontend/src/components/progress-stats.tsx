@@ -1,3 +1,4 @@
+import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -45,32 +46,33 @@ function StatTile({
 }
 
 export function ProgressStats({ documents, flashcards, quizCount }: ProgressStatsProps) {
+  const t = useTranslations("Progress");
   const rows = masteryRows(flashcards);
   const mature = percentMature(flashcards);
 
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatTile label="Documents" value={documents.total} />
+        <StatTile label={t("documents")} value={documents.total} />
         <StatTile
-          label="Flashcards"
+          label={t("flashcards")}
           value={flashcards.total}
-          sublabel={flashcards.due > 0 ? `${flashcards.due} due for review` : undefined}
+          sublabel={flashcards.due > 0 ? t("flashcardsDue", { count: flashcards.due }) : undefined}
         />
-        <StatTile label="Quizzes generated" value={quizCount} />
+        <StatTile label={t("quizzesGenerated")} value={quizCount} />
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Documents by status</CardTitle>
+          <CardTitle className="text-base">{t("documentsByStatus")}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           {documents.total === 0 ? (
-            <p className="text-sm text-muted-foreground">No documents yet.</p>
+            <p className="text-sm text-muted-foreground">{t("noDocuments")}</p>
           ) : (
             documentStatusRows(documents).map((row) => (
               <Badge key={row.key} variant={row.variant}>
-                {row.label}: {row.count}
+                {t(`status.${row.key}`)}: {row.count}
               </Badge>
             ))
           )}
@@ -79,19 +81,22 @@ export function ProgressStats({ documents, flashcards, quizCount }: ProgressStat
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Flashcard mastery</CardTitle>
+          <CardTitle className="text-base">{t("flashcardMastery")}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {flashcards.total === 0 ? (
-            <p className="text-sm text-muted-foreground">No flashcards yet.</p>
+            <p className="text-sm text-muted-foreground">{t("noFlashcards")}</p>
           ) : (
             <>
               <div
                 className="flex h-3 w-full gap-0.5 overflow-hidden rounded-full bg-muted"
                 role="img"
-                aria-label={`${mature}% of flashcards are mature — ${rows
-                  .map((row) => `${row.label} ${row.count}`)
-                  .join(", ")}`}
+                aria-label={t("matureAriaLabel", {
+                  percent: mature,
+                  breakdown: rows
+                    .map((row) => `${t(`mastery.${row.key}.label`)} ${row.count}`)
+                    .join(", "),
+                })}
               >
                 {rows
                   .filter((row) => row.count > 0)
@@ -111,7 +116,7 @@ export function ProgressStats({ documents, flashcards, quizCount }: ProgressStat
                       className={cn("size-2 shrink-0 rounded-full", MASTERY_TOKEN[row.key])}
                     />
                     <span className="text-muted-foreground">
-                      {row.label} ({row.status}):{" "}
+                      {t(`mastery.${row.key}.label`)} ({t(`mastery.${row.key}.status`)}):{" "}
                       <span className="font-medium text-foreground">{row.count}</span>
                     </span>
                   </li>

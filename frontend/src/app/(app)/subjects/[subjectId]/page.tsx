@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useRef, useState } from "react";
@@ -21,6 +22,7 @@ import { friendlyUploadError } from "@/lib/uploadError";
 
 export default function SubjectDetailPage() {
   const { subjectId } = useParams<{ subjectId: string }>();
+  const t = useTranslations();
   const api = useApiClient();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
@@ -73,7 +75,7 @@ export default function SubjectDetailPage() {
         const limit = parsePlanLimitError(response.status, error);
         setLimitError(limit);
         const message = friendlyUploadError(response.status);
-        if (!limit) toast.error("Couldn't upload document", message);
+        if (!limit) toast.error(t("SubjectDetail.uploadErrorTitle"), message);
         throw new Error(message);
       }
       return data;
@@ -82,7 +84,10 @@ export default function SubjectDetailPage() {
     onSuccess: (data) => {
       if (fileInputRef.current) fileInputRef.current.value = "";
       queryClient.invalidateQueries({ queryKey: ["subjects", subjectId, "documents"] });
-      toast.success("Document uploaded", `${data.filename} is processing…`);
+      toast.success(
+        t("SubjectDetail.uploadSuccessTitle"),
+        t("SubjectDetail.uploadSuccessBody", { filename: data.filename }),
+      );
     },
     onError: () => {
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -101,10 +106,10 @@ export default function SubjectDetailPage() {
     onSuccess: (_data, documentId) => {
       queryClient.invalidateQueries({ queryKey: ["subjects", subjectId, "documents"] });
       const filename = documentsQuery.data?.find((doc) => doc.id === documentId)?.filename;
-      toast.success("Document deleted", filename);
+      toast.success(t("SubjectDetail.deleteSuccessTitle"), filename);
     },
     onError: (error: Error) => {
-      toast.error("Couldn't delete document", error.message);
+      toast.error(t("SubjectDetail.deleteErrorTitle"), error.message);
     },
   });
 
@@ -114,7 +119,7 @@ export default function SubjectDetailPage() {
       className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
     >
       <ArrowLeft className="size-4" />
-      Subjects
+      {t("Nav.subjects")}
     </Link>
   );
 
@@ -122,7 +127,7 @@ export default function SubjectDetailPage() {
     return (
       <div>
         {backLink}
-        <p className="text-destructive">Subject not found.</p>
+        <p className="text-destructive">{t("Common.subjectNotFound")}</p>
       </div>
     );
   }
@@ -133,34 +138,42 @@ export default function SubjectDetailPage() {
 
       <div className="mb-8 flex flex-wrap items-center justify-between gap-2">
         <h1 className="min-w-0 text-2xl font-semibold break-words">
-          {subjectQuery.isLoading ? "Loading…" : subjectQuery.data?.name}
+          {subjectQuery.isLoading ? t("Common.loading") : subjectQuery.data?.name}
         </h1>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <Button
             variant="outline"
             nativeButton={false}
-            render={<Link href={`/subjects/${subjectId}/progress`}>Progress</Link>}
+            render={
+              <Link href={`/subjects/${subjectId}/progress`}>{t("SubjectDetail.progressLink")}</Link>
+            }
           />
           <Button
             variant="outline"
             nativeButton={false}
-            render={<Link href={`/subjects/${subjectId}/flashcards`}>Flashcards</Link>}
+            render={
+              <Link href={`/subjects/${subjectId}/flashcards`}>
+                {t("SubjectDetail.flashcardsLink")}
+              </Link>
+            }
           />
           <Button
             variant="outline"
             nativeButton={false}
-            render={<Link href={`/subjects/${subjectId}/quizzes`}>Quizzes</Link>}
+            render={
+              <Link href={`/subjects/${subjectId}/quizzes`}>{t("SubjectDetail.quizzesLink")}</Link>
+            }
           />
           <Button
             nativeButton={false}
-            render={<Link href={`/subjects/${subjectId}/ask`}>Ask</Link>}
+            render={<Link href={`/subjects/${subjectId}/ask`}>{t("SubjectDetail.askLink")}</Link>}
           />
         </div>
       </div>
 
       <Card className="mb-8">
         <CardHeader>
-          <CardTitle>Upload a document</CardTitle>
+          <CardTitle>{t("SubjectDetail.uploadTitle")}</CardTitle>
         </CardHeader>
         <CardContent>
           <Input
@@ -174,22 +187,19 @@ export default function SubjectDetailPage() {
             }}
           />
           {uploadDocument.isPending && (
-            <p className="mt-2 text-sm text-muted-foreground">Uploading…</p>
+            <p className="mt-2 text-sm text-muted-foreground">{t("SubjectDetail.uploading")}</p>
           )}
-          <p className="mt-2 text-xs text-muted-foreground">
-            Processing (parsing, chunking, embedding) runs in the background — a new
-            document shows as “pending” until it’s ready.
-          </p>
+          <p className="mt-2 text-xs text-muted-foreground">{t("SubjectDetail.processingHint")}</p>
           {limitError && <UpgradePrompt message={limitError.detail} />}
         </CardContent>
       </Card>
 
-      {documentsQuery.isLoading && <p>Loading…</p>}
+      {documentsQuery.isLoading && <p>{t("Common.loading")}</p>}
       {documentsQuery.isError && (
-        <p className="text-destructive">Couldn&apos;t load documents.</p>
+        <p className="text-destructive">{t("SubjectDetail.loadError")}</p>
       )}
       {documentsQuery.data?.length === 0 && (
-        <p className="text-muted-foreground">No documents yet — upload one above.</p>
+        <p className="text-muted-foreground">{t("SubjectDetail.empty")}</p>
       )}
       <ul className="flex flex-col gap-2">
         {documentsQuery.data?.map((doc) => (
@@ -199,18 +209,18 @@ export default function SubjectDetailPage() {
                 <div className="flex items-center justify-between gap-4">
                   <p className="min-w-0 flex-1 truncate font-medium">{doc.filename}</p>
                   <Badge className="shrink-0" variant={documentStatusVariant(doc.status)}>
-                    {doc.status}
+                    {t(`Progress.status.${doc.status}`)}
                   </Badge>
                   <Button
                     variant="destructive"
                     size="icon-sm"
                     className="shrink-0"
-                    aria-label={`Delete ${doc.filename}`}
+                    aria-label={t("SubjectDetail.deleteAriaLabel", { filename: doc.filename })}
                     disabled={deleteDocument.isPending && deleteDocument.variables === doc.id}
                     onClick={async () => {
                       const ok = await confirm({
-                        title: `Delete "${doc.filename}"?`,
-                        description: "This can't be undone.",
+                        title: t("SubjectDetail.deleteConfirmTitle", { filename: doc.filename }),
+                        description: t("Common.cantUndo"),
                         destructive: true,
                       });
                       if (!ok) return;

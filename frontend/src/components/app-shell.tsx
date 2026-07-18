@@ -65,6 +65,7 @@ function SidebarNav({ pathname, t }: { pathname: string; t: ReturnType<typeof us
 function SidebarUsageWidget() {
   const api = useApiClient();
   const t = useTranslations("Dashboard");
+  const tUsage = useTranslations("Usage");
   const planQuery = useQuery({
     queryKey: ["billing", "plan"],
     queryFn: async () => {
@@ -82,7 +83,7 @@ function SidebarUsageWidget() {
       {meters.map((meter) => (
         <div key={meter.key} className="flex flex-col gap-1">
           <div className="flex items-baseline justify-between gap-2 text-xs">
-            <span className="text-white/70">{meter.label}</span>
+            <span className="text-white/70">{tUsage(meter.key)}</span>
             <span className="font-medium text-white">
               {meter.unlimited ? "∞" : `${meter.used}/${meter.cap}`}
             </span>
@@ -105,6 +106,7 @@ function SidebarUsageWidget() {
 
 function SidebarProfile() {
   const { user } = useUser();
+  const t = useTranslations("Nav");
   const api = useApiClient();
   const planQuery = useQuery({
     queryKey: ["billing", "plan"],
@@ -120,7 +122,7 @@ function SidebarProfile() {
       <UserButton />
       <div className="flex min-w-0 flex-col">
         <span className="truncate text-sm font-medium text-white">
-          {user?.fullName ?? user?.primaryEmailAddress?.emailAddress ?? "Account"}
+          {user?.fullName ?? user?.primaryEmailAddress?.emailAddress ?? t("accountFallback")}
         </span>
         {planQuery.data && (
           <span className="text-xs text-white/60">{PLAN_LABELS[planQuery.data.plan]}</span>

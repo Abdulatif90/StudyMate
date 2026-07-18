@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { renderWithIntl } from "@/lib/test/renderWithIntl";
 import { AnswerMessage } from "./answer-message";
 
 describe("AnswerMessage", () => {
   it("renders markdown (bold)", () => {
-    render(
+    renderWithIntl(
       <AnswerMessage
         text="**Revenue** grew significantly."
         timestamp={new Date().toISOString()}
@@ -19,7 +20,7 @@ describe("AnswerMessage", () => {
   });
 
   it("keeps the filename in inline citations but drops the chunk number", () => {
-    render(
+    renderWithIntl(
       <AnswerMessage
         text="Revenue grew (portfolio eng.pdf, chunk 3) significantly."
         timestamp={new Date().toISOString()}
@@ -33,7 +34,7 @@ describe("AnswerMessage", () => {
   });
 
   it("renders partial text and hides actions while streaming", () => {
-    render(
+    renderWithIntl(
       <AnswerMessage
         text="Photosynthesis conv"
         timestamp={new Date().toISOString()}
@@ -50,7 +51,7 @@ describe("AnswerMessage", () => {
   });
 
   it("shows actions again once streaming finishes", () => {
-    render(
+    renderWithIntl(
       <AnswerMessage
         text="Photosynthesis converts sunlight."
         timestamp={new Date().toISOString()}

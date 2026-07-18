@@ -2,7 +2,11 @@
   "Common": {
     "loading": "Loading…",
     "retry": "Retry",
-    "tryAgain": "Please try again."
+    "tryAgain": "Please try again.",
+    "subjectFallback": "Subject",
+    "subjectNotFound": "Subject not found.",
+    "cantUndo": "This can't be undone.",
+    "upgrade": "Upgrade"
   },
   "Language": {
     "label": "Language"
@@ -12,7 +16,8 @@
     "subjects": "Subjects",
     "goToSubjects": "Go to Subjects",
     "billing": "Plan & billing",
-    "menu": "Menu"
+    "menu": "Menu",
+    "accountFallback": "Account"
   },
   "Landing": {
     "ctaGetStartedFree": "Get started free",
@@ -116,5 +121,167 @@
     "statFlashcardsDue": "{count} due",
     "statQuizzes": "{count, plural, one {# quiz} other {# quizzes}}",
     "viewAllCount": "{count, plural, one {View # subject} other {View all # subjects}}"
+  },
+  "Usage": {
+    "subjects": "Subjects",
+    "generations": "Quiz/flashcard generations today",
+    "generationsHint": "{used} of {cap} generations used today",
+    "usedOfCap": "{used} of {cap} used",
+    "usedUnlimited": "{used} · Unlimited",
+    "meterAriaLabel": "{label}: {used} of {cap} used"
+  },
+  "SubjectDetail": {
+    "progressLink": "Progress",
+    "flashcardsLink": "Flashcards",
+    "quizzesLink": "Quizzes",
+    "askLink": "Ask",
+    "uploadTitle": "Upload a document",
+    "uploading": "Uploading…",
+    "processingHint": "Processing (parsing, chunking, embedding) runs in the background — a new document shows as \"pending\" until it's ready.",
+    "loadError": "Couldn't load documents.",
+    "empty": "No documents yet — upload one above.",
+    "deleteAriaLabel": "Delete {filename}",
+    "deleteConfirmTitle": "Delete \"{filename}\"?",
+    "uploadErrorTitle": "Couldn't upload document",
+    "uploadSuccessTitle": "Document uploaded",
+    "uploadSuccessBody": "{filename} is processing…",
+    "deleteSuccessTitle": "Document deleted",
+    "deleteErrorTitle": "Couldn't delete document"
+  },
+  "Quizzes": {
+    "heading": "Quizzes",
+    "generateTitle": "Generate a quiz",
+    "titleLabel": "Title (optional)",
+    "titlePlaceholder": "e.g. Chapter 3 review",
+    "numQuestionsLabel": "Number of questions",
+    "generate": "Generate quiz",
+    "generating": "Generating…",
+    "generatingHint": "Generating questions from your material — this can take a few seconds.",
+    "generateErrorTitle": "Couldn't generate quiz",
+    "generateSuccess": "Quiz generated",
+    "deleteGenericError": "Couldn't delete this quiz. Please try again.",
+    "deleteSuccess": "Quiz deleted",
+    "deleteErrorTitle": "Couldn't delete quiz",
+    "loadError": "Couldn't load quizzes.",
+    "empty": "No quizzes yet — generate one above.",
+    "untitled": "Untitled quiz",
+    "deleteAriaLabel": "Delete {title}",
+    "deleteConfirmTitle": "Delete \"{title}\"?"
+  },
+  "QuizDetail": {
+    "notFound": "Quiz not found.",
+    "untitled": "Quiz",
+    "score": "You scored {correct} / {total}",
+    "checkAnswers": "Check answers",
+    "tryAgain": "Try again",
+    "answerAllHint": "Answer every question to check your score."
+  },
+  "Flashcards": {
+    "heading": "Flashcards",
+    "review": "Review",
+    "reviewWithCount": "Review ({count})",
+    "generateTitle": "Generate flashcards",
+    "numCardsLabel": "Number of cards",
+    "generate": "Generate flashcards",
+    "generating": "Generating…",
+    "generatingHint": "Generating cards from your material — this can take a few seconds.",
+    "generateErrorTitle": "Couldn't generate flashcards",
+    "generateSuccess": "{count, plural, one {# flashcard generated} other {# flashcards generated}}",
+    "deleteGenericError": "Couldn't delete this flashcard. Please try again.",
+    "deleteSuccess": "Flashcard deleted",
+    "deleteErrorTitle": "Couldn't delete flashcard",
+    "loadError": "Couldn't load flashcards.",
+    "empty": "No flashcards yet — generate some above.",
+    "deleteAriaLabel": "Delete flashcard \"{front}\"",
+    "deleteConfirmTitle": "Delete this flashcard?"
+  },
+  "FlashcardReview": {
+    "loadError": "Couldn't load due flashcards.",
+    "reviewError": "Couldn't save that review. Please try again.",
+    "noneDue": "No cards due right now",
+    "doneForNow": "Done for now!",
+    "comeBackLater": "Come back later, or generate more flashcards.",
+    "reviewedCount": "{count, plural, one {You reviewed # card.} other {You reviewed # cards.}}",
+    "backToFlashcards": "Back to flashcards",
+    "cardProgress": "Card {current} of {total}",
+    "showAnswer": "Show answer",
+    "grade": {
+      "again": "Again",
+      "hard": "Hard",
+      "good": "Good",
+      "easy": "Easy"
+    }
+  },
+  "Ask": {
+    "newConversation": "New conversation",
+    "conversationsHeading": "Conversations",
+    "noConversations": "No conversations yet.",
+    "deleteConversationAriaLabel": "Delete conversation",
+    "deleteConversationConfirmTitle": "Delete this conversation?",
+    "deleteConversationSuccess": "Conversation deleted",
+    "deleteConversationErrorTitle": "Couldn't delete conversation",
+    "heading": "Ask",
+    "placeholder": "Ask a question about this subject's materials…",
+    "send": "Send",
+    "thinkingHint": "Thinking… this can take a few seconds.",
+    "streamError": "Couldn't get an answer. Please try again."
+  },
+  "Progress": {
+    "heading": "Progress",
+    "loadError": "Couldn't load progress.",
+    "loadingAriaLabel": "Loading progress",
+    "emptyTitle": "Nothing to show yet",
+    "emptyDescription": "Upload a document, then generate flashcards or a quiz from it — your progress will show up here.",
+    "goToSubject": "Go to {name}",
+    "documents": "Documents",
+    "flashcards": "Flashcards",
+    "flashcardsDue": "{count} due for review",
+    "quizzesGenerated": "Quizzes generated",
+    "documentsByStatus": "Documents by status",
+    "noDocuments": "No documents yet.",
+    "flashcardMastery": "Flashcard mastery",
+    "noFlashcards": "No flashcards yet.",
+    "matureAriaLabel": "{percent}% of flashcards are mature — {breakdown}",
+    "status": {
+      "ready": "Ready",
+      "pending": "Pending",
+      "failed": "Failed"
+    },
+    "mastery": {
+      "new": { "label": "New", "status": "not started" },
+      "learning": { "label": "Learning", "status": "in progress" },
+      "mature": { "label": "Mature", "status": "well-learned" }
+    }
+  },
+  "Billing": {
+    "heading": "Plan & billing",
+    "loadingAriaLabel": "Loading plan",
+    "upgradedNotice": "Thanks! Your payment went through. Your new plan is being activated and should appear here in a moment.",
+    "loadError": "Couldn't load your plan.",
+    "currentPlan": "Current plan",
+    "documentsCapNote": "Documents are capped per subject",
+    "documentsCapNoteWithLimit": " ({cap} each on {plan})",
+    "documentsCapNoteUnlimited": " (unlimited on your plan)",
+    "comparePlans": "Compare plans",
+    "currentPlanCta": "Current plan",
+    "redirecting": "Redirecting…",
+    "upgradeTo": "Upgrade to {plan}",
+    "notAvailable": "Not available",
+    "checkoutError": "Couldn't start checkout. Please try again."
+  },
+  "QuestionMessage": {
+    "cancel": "Cancel",
+    "saveAndResend": "Save & resend",
+    "sending": "Sending…",
+    "copyAriaLabel": "Copy question",
+    "editAriaLabel": "Edit question",
+    "deleteAriaLabel": "Delete question"
+  },
+  "AnswerMessage": {
+    "copyAriaLabel": "Copy answer",
+    "pinAriaLabel": "Pin answer",
+    "unpinAriaLabel": "Unpin answer",
+    "readAloudAriaLabel": "Read answer aloud",
+    "stopReadingAriaLabel": "Stop reading aloud"
   }
 }

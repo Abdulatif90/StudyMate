@@ -13,15 +13,15 @@
 export const PASSING_GRADE = 3;
 
 export interface GradeButton {
-  label: string;
+  key: "again" | "hard" | "good" | "easy";
   grade: number;
 }
 
 export const GRADE_BUTTONS: readonly GradeButton[] = [
-  { label: "Again", grade: 1 },
-  { label: "Hard", grade: 3 },
-  { label: "Good", grade: 4 },
-  { label: "Easy", grade: 5 },
+  { key: "again", grade: 1 },
+  { key: "hard", grade: 3 },
+  { key: "good", grade: 4 },
+  { key: "easy", grade: 5 },
 ];
 
 export function isLapseGrade(grade: number): boolean {

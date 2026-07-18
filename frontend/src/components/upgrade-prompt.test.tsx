@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { renderWithIntl } from "@/lib/test/renderWithIntl";
 import { UpgradePrompt } from "./upgrade-prompt";
 
 describe("UpgradePrompt", () => {
   it("shows the backend message and a link to the billing page", () => {
-    render(<UpgradePrompt message="You've reached your free plan limit of 3 subjects." />);
+    renderWithIntl(<UpgradePrompt message="You've reached your free plan limit of 3 subjects." />);
     expect(
       screen.getByText("You've reached your free plan limit of 3 subjects."),
     ).toBeInTheDocument();

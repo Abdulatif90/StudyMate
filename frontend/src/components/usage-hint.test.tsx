@@ -6,7 +6,6 @@ import type { UsageMeter } from "@/lib/planLimits";
 function meter(overrides: Partial<UsageMeter> = {}): UsageMeter {
   return {
     key: "subjects",
-    label: "Subjects",
     used: 1,
     cap: 3,
     unlimited: false,

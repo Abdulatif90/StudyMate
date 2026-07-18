@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { renderWithIntl } from "@/lib/test/renderWithIntl";
 import { QuestionMessage } from "./question-message";
 
 function renderMessage(overrides: Partial<Parameters<typeof QuestionMessage>[0]> = {}) {
-  return render(
+  return renderWithIntl(
     <QuestionMessage
       text="What is photosynthesis?"
       timestamp={new Date().toISOString()}

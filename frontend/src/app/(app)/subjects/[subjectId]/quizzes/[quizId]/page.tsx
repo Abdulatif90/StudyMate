@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
@@ -13,6 +14,7 @@ import { allAnswered, scoreQuiz, type QuizAnswers } from "@/lib/quizScore";
 
 export default function TakeQuizPage() {
   const { subjectId, quizId } = useParams<{ subjectId: string; quizId: string }>();
+  const t = useTranslations();
   const api = useApiClient();
   const [answers, setAnswers] = useState<QuizAnswers>({});
   const [revealed, setRevealed] = useState(false);
@@ -34,7 +36,7 @@ export default function TakeQuizPage() {
       className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
     >
       <ArrowLeft className="size-4" />
-      Quizzes
+      {t("Quizzes.heading")}
     </Link>
   );
 
@@ -42,7 +44,7 @@ export default function TakeQuizPage() {
     return (
       <div>
         {backLink}
-        <p className="text-destructive">Quiz not found.</p>
+        <p className="text-destructive">{t("QuizDetail.notFound")}</p>
       </div>
     );
   }
@@ -51,7 +53,7 @@ export default function TakeQuizPage() {
     return (
       <div>
         {backLink}
-        <p>Loading…</p>
+        <p>{t("Common.loading")}</p>
       </div>
     );
   }
@@ -75,11 +77,13 @@ export default function TakeQuizPage() {
     <div>
       {backLink}
 
-      <h1 className="mb-2 text-2xl font-semibold break-words">{quiz.title || "Quiz"}</h1>
+      <h1 className="mb-2 text-2xl font-semibold break-words">
+        {quiz.title || t("QuizDetail.untitled")}
+      </h1>
 
       {score && (
         <p className="mb-6 text-lg font-medium" aria-live="polite">
-          You scored {score.correct} / {score.total}
+          {t("QuizDetail.score", { correct: score.correct, total: score.total })}
         </p>
       )}
 
@@ -141,15 +145,15 @@ export default function TakeQuizPage() {
       <div className="mt-6 flex items-center gap-3">
         {!revealed ? (
           <Button disabled={!canSubmit} onClick={() => setRevealed(true)}>
-            Check answers
+            {t("QuizDetail.checkAnswers")}
           </Button>
         ) : (
           <Button variant="outline" onClick={reset}>
-            Try again
+            {t("QuizDetail.tryAgain")}
           </Button>
         )}
         {!revealed && !canSubmit && (
-          <p className="text-sm text-muted-foreground">Answer every question to check your score.</p>
+          <p className="text-sm text-muted-foreground">{t("QuizDetail.answerAllHint")}</p>
         )}
       </div>
     </div>

@@ -13,11 +13,9 @@ function flashcards(overrides: Partial<Record<string, number>> = {}) {
 }
 
 describe("masteryRows", () => {
-  it("returns new/learning/mature in that order with labels and status words", () => {
+  it("returns new/learning/mature in that order", () => {
     const rows = masteryRows(flashcards());
     expect(rows.map((r) => r.key)).toEqual(["new", "learning", "mature"]);
-    expect(rows.map((r) => r.label)).toEqual(["New", "Learning", "Mature"]);
-    expect(rows.every((r) => r.status.length > 0)).toBe(true); // never color-alone
   });
 
   it("computes counts straight from the backend's buckets, no re-bucketing", () => {

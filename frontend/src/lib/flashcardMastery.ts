@@ -10,24 +10,18 @@ type FlashcardProgress = components["schemas"]["FlashcardProgress"];
 // source of truth for which bucket a card is in.
 export interface MasteryRow {
   key: "new" | "learning" | "mature";
-  label: string;
-  status: string; // paired with the color so a segment is never color-alone
   count: number;
   percent: number; // 0-100, rounded; rows sum to ~100 (rounding may drift by ±1-2)
 }
 
-const ROW_DEFS: { key: MasteryRow["key"]; label: string; status: string }[] = [
-  { key: "new", label: "New", status: "not started" },
-  { key: "learning", label: "Learning", status: "in progress" },
-  { key: "mature", label: "Mature", status: "well-learned" },
-];
+const ROW_KEYS: readonly MasteryRow["key"][] = ["new", "learning", "mature"];
 
 export function masteryRows(flashcards: FlashcardProgress): MasteryRow[] {
   const total = flashcards.total;
-  return ROW_DEFS.map(({ key, label, status }) => {
+  return ROW_KEYS.map((key) => {
     const count = flashcards[key];
     const percent = total > 0 ? Math.round((count / total) * 100) : 0;
-    return { key, label, status, count, percent };
+    return { key, count, percent };
   });
 }
 

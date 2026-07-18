@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -16,6 +17,7 @@ type FlashcardRead = components["schemas"]["FlashcardRead"];
 
 export default function ReviewFlashcardsPage() {
   const { subjectId } = useParams<{ subjectId: string }>();
+  const t = useTranslations();
   const api = useApiClient();
   const queryClient = useQueryClient();
 
@@ -50,7 +52,7 @@ export default function ReviewFlashcardsPage() {
         params: { path: { flashcard_id: flashcardId } },
         body: { grade },
       });
-      if (error) throw new Error("Couldn't save that review. Please try again.");
+      if (error) throw new Error(t("FlashcardReview.reviewError"));
     },
     onSuccess: () => {
       setReviewError(null);
@@ -71,7 +73,7 @@ export default function ReviewFlashcardsPage() {
       className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
     >
       <ArrowLeft className="size-4" />
-      Flashcards
+      {t("Flashcards.heading")}
     </Link>
   );
 
@@ -79,7 +81,7 @@ export default function ReviewFlashcardsPage() {
     return (
       <div>
         {backLink}
-        <p className="text-destructive">Couldn&apos;t load due flashcards.</p>
+        <p className="text-destructive">{t("FlashcardReview.loadError")}</p>
       </div>
     );
   }
@@ -88,7 +90,7 @@ export default function ReviewFlashcardsPage() {
     return (
       <div>
         {backLink}
-        <p>Loading…</p>
+        <p>{t("Common.loading")}</p>
       </div>
     );
   }
@@ -102,17 +104,21 @@ export default function ReviewFlashcardsPage() {
         <Card>
           <CardContent className="flex flex-col items-center gap-2 py-10 text-center">
             <p className="text-lg font-medium">
-              {sessionCards.length === 0 ? "No cards due right now" : "Done for now!"}
+              {sessionCards.length === 0 ? t("FlashcardReview.noneDue") : t("FlashcardReview.doneForNow")}
             </p>
             <p className="text-sm text-muted-foreground">
               {sessionCards.length === 0
-                ? "Come back later, or generate more flashcards."
-                : `You reviewed ${sessionCards.length} card${sessionCards.length === 1 ? "" : "s"}.`}
+                ? t("FlashcardReview.comeBackLater")
+                : t("FlashcardReview.reviewedCount", { count: sessionCards.length })}
             </p>
             <Button
               className="mt-4"
               nativeButton={false}
-              render={<Link href={`/subjects/${subjectId}/flashcards`}>Back to flashcards</Link>}
+              render={
+                <Link href={`/subjects/${subjectId}/flashcards`}>
+                  {t("FlashcardReview.backToFlashcards")}
+                </Link>
+              }
             />
           </CardContent>
         </Card>
@@ -127,7 +133,7 @@ export default function ReviewFlashcardsPage() {
       {backLink}
 
       <p className="mb-4 text-sm text-muted-foreground" aria-live="polite">
-        Card {progress.current} of {progress.total}
+        {t("FlashcardReview.cardProgress", { current: progress.current, total: progress.total })}
       </p>
 
       <Card className="mb-6">
@@ -145,17 +151,17 @@ export default function ReviewFlashcardsPage() {
 
       {!revealed ? (
         <Button className="w-full sm:w-auto" onClick={() => setRevealed(true)}>
-          Show answer
+          {t("FlashcardReview.showAnswer")}
         </Button>
       ) : (
         <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           {GRADE_BUTTONS.map((button) => (
             <Button
-              key={button.label}
+              key={button.key}
               variant={isLapseGrade(button.grade) ? "destructive" : "outline"}
               disabled={reviewCard.isPending}
               className={
-                button.label === "Easy" ? "border-success text-success hover:bg-success/10" : ""
+                button.key === "easy" ? "border-success text-success hover:bg-success/10" : ""
               }
               onClick={() => {
                 if (!reviewCard.isPending) {
@@ -163,7 +169,7 @@ export default function ReviewFlashcardsPage() {
                 }
               }}
             >
-              {button.label}
+              {t(`FlashcardReview.grade.${button.key}`)}
             </Button>
           ))}
         </div>

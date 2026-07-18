@@ -2,6 +2,66 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-18 — next-intl: remaining pages
+Paid down the i18n debt left by the redesign roadmap: converted every page/component
+the "next-intl foundation" entry had left in English. Frontend-only, no i18n
+infrastructure touched (no changes to `i18n/request.ts`, `locales.ts`, `setLocale.ts`,
+`next.config.ts`, middleware, or layout — pure copy extraction).
+Commit: `refactor(i18n): convert remaining pages to next-intl`.
+- Converted 8 pages: subject detail, quizzes (list + detail), flashcards (list +
+  review), ask, progress, billing. Converted 7 components with their own copy:
+  `UpgradePrompt`, `UsageMeters`, `UsageStatCard`, `ProgressStats`, `QuestionMessage`,
+  `AnswerMessage`, plus `AppShell`'s sidebar usage widget/profile row.
+- New namespaces in `en.json`: `Usage`, `SubjectDetail`, `Quizzes`, `QuizDetail`,
+  `Flashcards`, `FlashcardReview`, `Ask`, `Progress`, `Billing`, `QuestionMessage`,
+  `AnswerMessage`, plus new `Common`/`Nav` keys (`subjectFallback`,
+  `subjectNotFound`, `cantUndo`, `upgrade`, `accountFallback`). Mirrored to
+  `uz`/`ko`/`ru` (machine-drafted, parity-checked by `messages.test.ts`) — native
+  review stays a separate, tracked follow-up.
+- Reused existing keys instead of duplicating where the copy was already identical:
+  billing's plan-feature bullets and "Most popular" badge now read
+  `Landing.pricing.*Features`/`popularBadge` via `t.raw()` instead of a second copy
+  of the same three feature lists; the subject-detail document-status badge and
+  progress page's status badges share one `Progress.status.*` key set.
+  `Flashcards`/`Quizzes` reuse a shared `Usage.generationsHint` for the "X of Y
+  generations used today" line (same daily cap, same phrasing on both pages) —
+  mirrors the plain-interpolation style of the existing `Subjects.usageHint`, not an
+  ICU plural, since the noun ("generations") doesn't actually inflect on the *used*
+  count in any of the four locales; only `Dashboard.acrossSubjects`-style "N things"
+  constructions use `{count, plural, ...}` here.
+- **Closed a real pre-existing gap while in the neighborhood**: `UsageMeter.label`
+  (`lib/planLimits.ts`) was a hardcoded English string ("Subjects", "Quiz/flashcard
+  generations today") returned by a plain `.ts` function — meaning the sidebar usage
+  widget and the dashboard's `UsageStatCard` grid were showing raw English on every
+  page regardless of locale, even though both were claimed "done" in the earlier
+  foundation entry. Fixed at the source: `UsageMeter` now carries only `key`, and
+  every render site (`UsageMeters`, `UsageStatCard`, `AppShell`) looks up
+  `t(meter.key)` against the new `Usage` namespace instead. Same treatment applied to
+  three other plain-`.ts` label sources feeding in-scope pages/components —
+  `gradeButtons.ts` (flashcard review's Again/Hard/Good/Easy), `documentProgress.ts`
+  (progress page's Ready/Pending/Failed badges), `flashcardMastery.ts` (progress
+  page's New/Learning/Mature legend) — all now expose a discriminant `key` instead of
+  a literal `label`/`status`, translated at the render site. Their dedicated unit
+  tests were updated to assert on `.key` instead of the (now-removed) English
+  literal.
+- Deliberately left alone (infra-adjacent, not page copy): `lib/confirmState.ts`'s
+  default confirm/cancel button labels ("Delete"/"Confirm"/"Cancel") — a shared
+  fallback already accepted as-is by the already-shipped `Subjects` delete flow, and
+  unit-tested with literal-English assertions as its own explicit contract. The
+  dashboard's `aria-label="Loading dashboard"` skeleton region was also left as a
+  pre-existing, out-of-scope gap (dashboard was already marked "done").
+- Any component with an existing test that now calls `useTranslations` switched to
+  `renderWithIntl`: `question-message`, `answer-message`, `upgrade-prompt`,
+  `usage-meters`, `usage-stat-card`.
+- Tests: `gradeButtons.test.ts`/`flashcardMastery.test.ts` updated for the
+  key-not-label contract; `usage-hint.test.tsx`/`usageSeverity.test.ts` fixtures
+  dropped the now-removed `label` field. Frontend **180 passed** (45 files),
+  `tsc --noEmit` clean, `eslint` clean, `npm run build` succeeds (all 8 converted
+  routes compile). `messages.test.ts` (catalog parity) passes.
+- **Not browser-verified** (standing gap, no browser here): an actual language
+  switch on any of the 8 newly-converted pages. Confirmed at the build/type/test
+  level only.
+
 ## 2026-07-18 — Marketing landing page
 The design spec was extended mid-session with a full "Landing page (marketing,
 logged-out)" section — replaces the old `/` (logo + one line + one button) with a

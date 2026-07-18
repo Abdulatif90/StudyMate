@@ -3,6 +3,7 @@
 import { useAuth } from "@clerk/nextjs";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Trash2 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -26,6 +27,7 @@ type ConversationWithTurns = components["schemas"]["ConversationWithTurns"];
 
 export default function AskPage() {
   const { subjectId } = useParams<{ subjectId: string }>();
+  const t = useTranslations();
   const api = useApiClient();
   const { getToken } = useAuth();
   const queryClient = useQueryClient();
@@ -97,7 +99,7 @@ export default function AskPage() {
 
   function conversationPreview(conversation: ConversationRead): string {
     const details = conversationDetailsById.get(conversation.id);
-    const label = conversation.title ?? details?.turns[0]?.question ?? "New conversation";
+    const label = conversation.title ?? details?.turns[0]?.question ?? t("Ask.newConversation");
     return truncateText(label, 40);
   }
 
@@ -115,10 +117,10 @@ export default function AskPage() {
         setActiveConversationId(null);
         setTurns([]);
       }
-      toast.success("Conversation deleted");
+      toast.success(t("Ask.deleteConversationSuccess"));
     },
     onError: () => {
-      toast.error("Couldn't delete conversation", "Please try again.");
+      toast.error(t("Ask.deleteConversationErrorTitle"), t("Common.tryAgain"));
     },
   });
 
@@ -262,7 +264,7 @@ export default function AskPage() {
           className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
-          Subject
+          {t("Common.subjectFallback")}
         </Link>
 
         <Button
@@ -271,13 +273,17 @@ export default function AskPage() {
           onClick={startNewConversation}
           disabled={activeConversationId === null && turns.length === 0}
         >
-          New conversation
+          {t("Ask.newConversation")}
         </Button>
 
-        <p className="mb-2 text-xs font-medium text-muted-foreground">Conversations</p>
-        {conversationsQuery.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+        <p className="mb-2 text-xs font-medium text-muted-foreground">
+          {t("Ask.conversationsHeading")}
+        </p>
+        {conversationsQuery.isLoading && (
+          <p className="text-sm text-muted-foreground">{t("Common.loading")}</p>
+        )}
         {subjectConversations.length === 0 && !conversationsQuery.isLoading && (
-          <p className="text-sm text-muted-foreground">No conversations yet.</p>
+          <p className="text-sm text-muted-foreground">{t("Ask.noConversations")}</p>
         )}
         <div className="max-h-40 overflow-y-auto md:max-h-none md:overflow-visible">
           {conversationGroups.map((group) => (
@@ -299,10 +305,10 @@ export default function AskPage() {
                       variant="ghost"
                       size="icon-sm"
                       className="shrink-0"
-                      aria-label="Delete conversation"
+                      aria-label={t("Ask.deleteConversationAriaLabel")}
                       onClick={async () => {
                         const ok = await confirm({
-                          title: "Delete this conversation?",
+                          title: t("Ask.deleteConversationConfirmTitle"),
                           destructive: true,
                         });
                         if (!ok) return;
@@ -320,7 +326,7 @@ export default function AskPage() {
       </aside>
 
       <main className="min-w-0 flex-1">
-        <h1 className="mb-4 text-2xl font-semibold">Ask</h1>
+        <h1 className="mb-4 text-2xl font-semibold">{t("Ask.heading")}</h1>
 
         <ul className="mb-4 flex flex-col gap-3">
           {turns.map((turn) => (
@@ -382,22 +388,18 @@ export default function AskPage() {
             <Textarea
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
-              placeholder="Ask a question about this subject's materials…"
+              placeholder={t("Ask.placeholder")}
             />
             <Button type="submit" className="self-end" disabled={!question.trim()}>
-              Send
+              {t("Ask.send")}
             </Button>
           </form>
         )}
         {streaming && !streaming.answer && (
-          <p className="mt-2 text-sm text-muted-foreground">
-            Thinking… this can take a few seconds.
-          </p>
+          <p className="mt-2 text-sm text-muted-foreground">{t("Ask.thinkingHint")}</p>
         )}
         {streamError && (
-          <p className="mt-2 text-sm text-destructive">
-            Couldn&apos;t get an answer. Please try again.
-          </p>
+          <p className="mt-2 text-sm text-destructive">{t("Ask.streamError")}</p>
         )}
       </main>
     </div>

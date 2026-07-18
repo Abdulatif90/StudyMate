@@ -2,7 +2,11 @@
   "Common": {
     "loading": "Загрузка…",
     "retry": "Повторить",
-    "tryAgain": "Попробуйте ещё раз."
+    "tryAgain": "Попробуйте ещё раз.",
+    "subjectFallback": "Предмет",
+    "subjectNotFound": "Предмет не найден.",
+    "cantUndo": "Это действие нельзя отменить.",
+    "upgrade": "Улучшить"
   },
   "Language": {
     "label": "Язык"
@@ -12,7 +16,8 @@
     "subjects": "Предметы",
     "goToSubjects": "Перейти к предметам",
     "billing": "Тариф и оплата",
-    "menu": "Меню"
+    "menu": "Меню",
+    "accountFallback": "Аккаунт"
   },
   "Landing": {
     "ctaGetStartedFree": "Начать бесплатно",
@@ -116,5 +121,167 @@
     "statFlashcardsDue": "{count} к повторению",
     "statQuizzes": "{count, plural, one {# тест} few {# теста} many {# тестов} other {# тестов}}",
     "viewAllCount": "{count, plural, one {Смотреть # предмет} few {Смотреть все # предмета} many {Смотреть все # предметов} other {Смотреть все # предметов}}"
+  },
+  "Usage": {
+    "subjects": "Предметы",
+    "generations": "Генерации тестов/карточек сегодня",
+    "generationsHint": "Использовано {used} из {cap} генераций сегодня",
+    "usedOfCap": "Использовано {used} из {cap}",
+    "usedUnlimited": "{used} · Без ограничений",
+    "meterAriaLabel": "{label}: использовано {used} из {cap}"
+  },
+  "SubjectDetail": {
+    "progressLink": "Прогресс",
+    "flashcardsLink": "Карточки",
+    "quizzesLink": "Тесты",
+    "askLink": "Вопросы",
+    "uploadTitle": "Загрузить документ",
+    "uploading": "Загрузка…",
+    "processingHint": "Обработка (разбор, разбиение на части, индексация) выполняется в фоне — новый документ отображается как «в очереди», пока не будет готов.",
+    "loadError": "Не удалось загрузить документы.",
+    "empty": "Пока нет документов — загрузите выше.",
+    "deleteAriaLabel": "Удалить {filename}",
+    "deleteConfirmTitle": "Удалить «{filename}»?",
+    "uploadErrorTitle": "Не удалось загрузить документ",
+    "uploadSuccessTitle": "Документ загружен",
+    "uploadSuccessBody": "{filename} обрабатывается…",
+    "deleteSuccessTitle": "Документ удалён",
+    "deleteErrorTitle": "Не удалось удалить документ"
+  },
+  "Quizzes": {
+    "heading": "Тесты",
+    "generateTitle": "Создать тест",
+    "titleLabel": "Название (опционально)",
+    "titlePlaceholder": "напр., Повторение главы 3",
+    "numQuestionsLabel": "Количество вопросов",
+    "generate": "Создать тест",
+    "generating": "Создание…",
+    "generatingHint": "Создаём вопросы на основе вашего материала — это может занять несколько секунд.",
+    "generateErrorTitle": "Не удалось создать тест",
+    "generateSuccess": "Тест создан",
+    "deleteGenericError": "Не удалось удалить этот тест. Попробуйте ещё раз.",
+    "deleteSuccess": "Тест удалён",
+    "deleteErrorTitle": "Не удалось удалить тест",
+    "loadError": "Не удалось загрузить тесты.",
+    "empty": "Пока нет тестов — создайте один выше.",
+    "untitled": "Тест без названия",
+    "deleteAriaLabel": "Удалить {title}",
+    "deleteConfirmTitle": "Удалить «{title}»?"
+  },
+  "QuizDetail": {
+    "notFound": "Тест не найден.",
+    "untitled": "Тест",
+    "score": "Ваш результат: {correct} / {total}",
+    "checkAnswers": "Проверить ответы",
+    "tryAgain": "Попробовать снова",
+    "answerAllHint": "Ответьте на все вопросы, чтобы проверить результат."
+  },
+  "Flashcards": {
+    "heading": "Карточки",
+    "review": "Повторить",
+    "reviewWithCount": "Повторить ({count})",
+    "generateTitle": "Создать карточки",
+    "numCardsLabel": "Количество карточек",
+    "generate": "Создать карточки",
+    "generating": "Создание…",
+    "generatingHint": "Создаём карточки на основе вашего материала — это может занять несколько секунд.",
+    "generateErrorTitle": "Не удалось создать карточки",
+    "generateSuccess": "{count, plural, one {Создана # карточка} few {Создано # карточки} many {Создано # карточек} other {Создано # карточек}}",
+    "deleteGenericError": "Не удалось удалить эту карточку. Попробуйте ещё раз.",
+    "deleteSuccess": "Карточка удалена",
+    "deleteErrorTitle": "Не удалось удалить карточку",
+    "loadError": "Не удалось загрузить карточки.",
+    "empty": "Пока нет карточек — создайте несколько выше.",
+    "deleteAriaLabel": "Удалить карточку «{front}»",
+    "deleteConfirmTitle": "Удалить эту карточку?"
+  },
+  "FlashcardReview": {
+    "loadError": "Не удалось загрузить карточки к повторению.",
+    "reviewError": "Не удалось сохранить результат повторения. Попробуйте ещё раз.",
+    "noneDue": "Сейчас нет карточек к повторению",
+    "doneForNow": "На сегодня всё!",
+    "comeBackLater": "Возвращайтесь позже или создайте больше карточек.",
+    "reviewedCount": "{count, plural, one {Вы повторили # карточку.} few {Вы повторили # карточки.} many {Вы повторили # карточек.} other {Вы повторили # карточек.}}",
+    "backToFlashcards": "Назад к карточкам",
+    "cardProgress": "Карточка {current} из {total}",
+    "showAnswer": "Показать ответ",
+    "grade": {
+      "again": "Ещё раз",
+      "hard": "Сложно",
+      "good": "Хорошо",
+      "easy": "Легко"
+    }
+  },
+  "Ask": {
+    "newConversation": "Новый разговор",
+    "conversationsHeading": "Разговоры",
+    "noConversations": "Пока нет разговоров.",
+    "deleteConversationAriaLabel": "Удалить разговор",
+    "deleteConversationConfirmTitle": "Удалить этот разговор?",
+    "deleteConversationSuccess": "Разговор удалён",
+    "deleteConversationErrorTitle": "Не удалось удалить разговор",
+    "heading": "Вопросы",
+    "placeholder": "Задайте вопрос о материалах этого предмета…",
+    "send": "Отправить",
+    "thinkingHint": "Думаю… это может занять несколько секунд.",
+    "streamError": "Не удалось получить ответ. Попробуйте ещё раз."
+  },
+  "Progress": {
+    "heading": "Прогресс",
+    "loadError": "Не удалось загрузить прогресс.",
+    "loadingAriaLabel": "Загрузка прогресса",
+    "emptyTitle": "Пока нет данных",
+    "emptyDescription": "Загрузите документ, затем создайте карточки или тест из него — здесь появится ваш прогресс.",
+    "goToSubject": "Перейти к {name}",
+    "documents": "Документы",
+    "flashcards": "Карточки",
+    "flashcardsDue": "{count} к повторению",
+    "quizzesGenerated": "Создано тестов",
+    "documentsByStatus": "Документы по статусу",
+    "noDocuments": "Пока нет документов.",
+    "flashcardMastery": "Освоение карточек",
+    "noFlashcards": "Пока нет карточек.",
+    "matureAriaLabel": "{percent}% карточек освоено — {breakdown}",
+    "status": {
+      "ready": "Готово",
+      "pending": "В очереди",
+      "failed": "Ошибка"
+    },
+    "mastery": {
+      "new": { "label": "Новые", "status": "не начаты" },
+      "learning": { "label": "Изучаются", "status": "в процессе" },
+      "mature": { "label": "Освоены", "status": "хорошо изучены" }
+    }
+  },
+  "Billing": {
+    "heading": "Тариф и оплата",
+    "loadingAriaLabel": "Загрузка тарифа",
+    "upgradedNotice": "Спасибо! Ваш платёж прошёл успешно. Новый тариф активируется и появится здесь через некоторое время.",
+    "loadError": "Не удалось загрузить ваш тариф.",
+    "currentPlan": "Текущий тариф",
+    "documentsCapNote": "Документы ограничены на каждый предмет",
+    "documentsCapNoteWithLimit": " (по {cap} на тарифе {plan})",
+    "documentsCapNoteUnlimited": " (без ограничений на вашем тарифе)",
+    "comparePlans": "Сравнить тарифы",
+    "currentPlanCta": "Текущий тариф",
+    "redirecting": "Переход…",
+    "upgradeTo": "Перейти на {plan}",
+    "notAvailable": "Недоступно",
+    "checkoutError": "Не удалось начать оплату. Попробуйте ещё раз."
+  },
+  "QuestionMessage": {
+    "cancel": "Отмена",
+    "saveAndResend": "Сохранить и отправить снова",
+    "sending": "Отправка…",
+    "copyAriaLabel": "Скопировать вопрос",
+    "editAriaLabel": "Изменить вопрос",
+    "deleteAriaLabel": "Удалить вопрос"
+  },
+  "AnswerMessage": {
+    "copyAriaLabel": "Скопировать ответ",
+    "pinAriaLabel": "Закрепить ответ",
+    "unpinAriaLabel": "Открепить ответ",
+    "readAloudAriaLabel": "Прочитать ответ вслух",
+    "stopReadingAriaLabel": "Остановить чтение"
   }
 }

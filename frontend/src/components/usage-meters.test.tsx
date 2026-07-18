@@ -1,5 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { renderWithIntl } from "@/lib/test/renderWithIntl";
 import { UsageMeters } from "./usage-meters";
 import type { components } from "@/lib/api/schema";
 
@@ -20,7 +21,7 @@ function planRead(overrides: Partial<PlanRead> = {}): PlanRead {
 
 describe("UsageMeters", () => {
   it("shows 'used of cap' text and a bar for a finite cap", () => {
-    render(<UsageMeters plan={planRead()} />);
+    renderWithIntl(<UsageMeters plan={planRead()} />);
     expect(screen.getByText("2 of 3 used")).toBeInTheDocument();
     // Bar exposed as an image with the same used/cap in its label (never colour alone).
     expect(
@@ -30,7 +31,7 @@ describe("UsageMeters", () => {
 
   it("tracks the same hue as the fill, at-limit or not (never a neutral gray track)", () => {
     // Below cap: primary fill, primary-tinted track.
-    const { rerender } = render(
+    const { rerender } = renderWithIntl(
       <UsageMeters
         plan={planRead({ usage: { subjects: 2, generations_today: 0 } })}
       />,
@@ -51,7 +52,7 @@ describe("UsageMeters", () => {
   });
 
   it("shows an unlimited count with no bar for a null cap", () => {
-    render(
+    renderWithIntl(
       <UsageMeters
         plan={planRead({
           plan: "business",

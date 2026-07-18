@@ -2,7 +2,11 @@
   "Common": {
     "loading": "불러오는 중…",
     "retry": "재시도",
-    "tryAgain": "다시 시도해 주세요."
+    "tryAgain": "다시 시도해 주세요.",
+    "subjectFallback": "과목",
+    "subjectNotFound": "과목을 찾을 수 없습니다.",
+    "cantUndo": "이 작업은 되돌릴 수 없습니다.",
+    "upgrade": "업그레이드"
   },
   "Language": {
     "label": "언어"
@@ -12,7 +16,8 @@
     "subjects": "과목",
     "goToSubjects": "과목으로 이동",
     "billing": "요금제 및 결제",
-    "menu": "메뉴"
+    "menu": "메뉴",
+    "accountFallback": "계정"
   },
   "Landing": {
     "ctaGetStartedFree": "무료로 시작하기",
@@ -116,5 +121,167 @@
     "statFlashcardsDue": "{count}개 학습 예정",
     "statQuizzes": "퀴즈 {count}개",
     "viewAllCount": "{count}개 과목 모두 보기"
+  },
+  "Usage": {
+    "subjects": "과목",
+    "generations": "오늘의 퀴즈/플래시카드 생성",
+    "generationsHint": "오늘 생성 {cap}회 중 {used}회 사용",
+    "usedOfCap": "{cap}개 중 {used}개 사용",
+    "usedUnlimited": "{used}개 · 무제한",
+    "meterAriaLabel": "{label}: {cap}개 중 {used}개 사용"
+  },
+  "SubjectDetail": {
+    "progressLink": "진행 상황",
+    "flashcardsLink": "플래시카드",
+    "quizzesLink": "퀴즈",
+    "askLink": "질문",
+    "uploadTitle": "문서 업로드",
+    "uploading": "업로드하는 중…",
+    "processingHint": "처리(파싱, 분할, 임베딩)는 백그라운드에서 진행됩니다 — 새 문서는 준비될 때까지 \"대기 중\"으로 표시됩니다.",
+    "loadError": "문서를 불러오지 못했습니다.",
+    "empty": "아직 문서가 없습니다 — 위에서 업로드하세요.",
+    "deleteAriaLabel": "{filename} 삭제",
+    "deleteConfirmTitle": "\"{filename}\"을 삭제하시겠습니까?",
+    "uploadErrorTitle": "문서를 업로드하지 못했습니다",
+    "uploadSuccessTitle": "문서가 업로드되었습니다",
+    "uploadSuccessBody": "{filename} 처리 중…",
+    "deleteSuccessTitle": "문서가 삭제되었습니다",
+    "deleteErrorTitle": "문서를 삭제하지 못했습니다"
+  },
+  "Quizzes": {
+    "heading": "퀴즈",
+    "generateTitle": "퀴즈 생성",
+    "titleLabel": "제목 (선택)",
+    "titlePlaceholder": "예: 3장 복습",
+    "numQuestionsLabel": "문제 수",
+    "generate": "퀴즈 생성",
+    "generating": "생성하는 중…",
+    "generatingHint": "자료로부터 문제를 생성하는 중입니다 — 몇 초 정도 걸릴 수 있습니다.",
+    "generateErrorTitle": "퀴즈를 생성하지 못했습니다",
+    "generateSuccess": "퀴즈가 생성되었습니다",
+    "deleteGenericError": "이 퀴즈를 삭제하지 못했습니다. 다시 시도해 주세요.",
+    "deleteSuccess": "퀴즈가 삭제되었습니다",
+    "deleteErrorTitle": "퀴즈를 삭제하지 못했습니다",
+    "loadError": "퀴즈를 불러오지 못했습니다.",
+    "empty": "아직 퀴즈가 없습니다 — 위에서 생성하세요.",
+    "untitled": "제목 없는 퀴즈",
+    "deleteAriaLabel": "{title} 삭제",
+    "deleteConfirmTitle": "\"{title}\"을 삭제하시겠습니까?"
+  },
+  "QuizDetail": {
+    "notFound": "퀴즈를 찾을 수 없습니다.",
+    "untitled": "퀴즈",
+    "score": "{correct} / {total}점을 획득했습니다",
+    "checkAnswers": "답 확인",
+    "tryAgain": "다시 시도",
+    "answerAllHint": "점수를 확인하려면 모든 문제에 답하세요."
+  },
+  "Flashcards": {
+    "heading": "플래시카드",
+    "review": "복습",
+    "reviewWithCount": "복습 ({count})",
+    "generateTitle": "플래시카드 생성",
+    "numCardsLabel": "카드 수",
+    "generate": "플래시카드 생성",
+    "generating": "생성하는 중…",
+    "generatingHint": "자료로부터 카드를 생성하는 중입니다 — 몇 초 정도 걸릴 수 있습니다.",
+    "generateErrorTitle": "플래시카드를 생성하지 못했습니다",
+    "generateSuccess": "{count, plural, other {플래시카드 #개 생성됨}}",
+    "deleteGenericError": "이 플래시카드를 삭제하지 못했습니다. 다시 시도해 주세요.",
+    "deleteSuccess": "플래시카드가 삭제되었습니다",
+    "deleteErrorTitle": "플래시카드를 삭제하지 못했습니다",
+    "loadError": "플래시카드를 불러오지 못했습니다.",
+    "empty": "아직 플래시카드가 없습니다 — 위에서 생성하세요.",
+    "deleteAriaLabel": "플래시카드 \"{front}\" 삭제",
+    "deleteConfirmTitle": "이 플래시카드를 삭제하시겠습니까?"
+  },
+  "FlashcardReview": {
+    "loadError": "학습 예정 플래시카드를 불러오지 못했습니다.",
+    "reviewError": "복습 결과를 저장하지 못했습니다. 다시 시도해 주세요.",
+    "noneDue": "지금 학습할 카드가 없습니다",
+    "doneForNow": "오늘은 여기까지!",
+    "comeBackLater": "나중에 다시 오거나 플래시카드를 더 생성하세요.",
+    "reviewedCount": "{count, plural, other {카드 #개를 복습했습니다.}}",
+    "backToFlashcards": "플래시카드로 돌아가기",
+    "cardProgress": "{total}개 중 {current}번째 카드",
+    "showAnswer": "답 보기",
+    "grade": {
+      "again": "다시",
+      "hard": "어려움",
+      "good": "좋음",
+      "easy": "쉬움"
+    }
+  },
+  "Ask": {
+    "newConversation": "새 대화",
+    "conversationsHeading": "대화 목록",
+    "noConversations": "아직 대화가 없습니다.",
+    "deleteConversationAriaLabel": "대화 삭제",
+    "deleteConversationConfirmTitle": "이 대화를 삭제하시겠습니까?",
+    "deleteConversationSuccess": "대화가 삭제되었습니다",
+    "deleteConversationErrorTitle": "대화를 삭제하지 못했습니다",
+    "heading": "질문",
+    "placeholder": "이 과목의 자료에 대해 질문해 보세요…",
+    "send": "보내기",
+    "thinkingHint": "생각하는 중… 몇 초 정도 걸릴 수 있습니다.",
+    "streamError": "답변을 받지 못했습니다. 다시 시도해 주세요."
+  },
+  "Progress": {
+    "heading": "진행 상황",
+    "loadError": "진행 상황을 불러오지 못했습니다.",
+    "loadingAriaLabel": "진행 상황 불러오는 중",
+    "emptyTitle": "아직 표시할 내용이 없습니다",
+    "emptyDescription": "문서를 업로드한 뒤 플래시카드나 퀴즈를 생성하세요 — 진행 상황이 여기에 표시됩니다.",
+    "goToSubject": "{name}로 이동",
+    "documents": "문서",
+    "flashcards": "플래시카드",
+    "flashcardsDue": "{count}개 복습 예정",
+    "quizzesGenerated": "생성된 퀴즈",
+    "documentsByStatus": "상태별 문서",
+    "noDocuments": "아직 문서가 없습니다.",
+    "flashcardMastery": "플래시카드 숙련도",
+    "noFlashcards": "아직 플래시카드가 없습니다.",
+    "matureAriaLabel": "플래시카드의 {percent}%가 숙련됨 — {breakdown}",
+    "status": {
+      "ready": "완료",
+      "pending": "대기 중",
+      "failed": "실패"
+    },
+    "mastery": {
+      "new": { "label": "새 카드", "status": "시작 안 함" },
+      "learning": { "label": "학습 중", "status": "진행 중" },
+      "mature": { "label": "숙련됨", "status": "충분히 학습됨" }
+    }
+  },
+  "Billing": {
+    "heading": "요금제 및 결제",
+    "loadingAriaLabel": "요금제 불러오는 중",
+    "upgradedNotice": "감사합니다! 결제가 완료되었습니다. 새 요금제가 활성화되는 중이며 잠시 후 여기에 표시됩니다.",
+    "loadError": "요금제를 불러오지 못했습니다.",
+    "currentPlan": "현재 요금제",
+    "documentsCapNote": "문서는 과목별로 제한됩니다",
+    "documentsCapNoteWithLimit": " ({plan} 요금제에서 각 {cap}개)",
+    "documentsCapNoteUnlimited": " (현재 요금제에서 무제한)",
+    "comparePlans": "요금제 비교",
+    "currentPlanCta": "현재 요금제",
+    "redirecting": "이동하는 중…",
+    "upgradeTo": "{plan}로 업그레이드",
+    "notAvailable": "이용 불가",
+    "checkoutError": "결제를 시작하지 못했습니다. 다시 시도해 주세요."
+  },
+  "QuestionMessage": {
+    "cancel": "취소",
+    "saveAndResend": "저장 후 다시 보내기",
+    "sending": "보내는 중…",
+    "copyAriaLabel": "질문 복사",
+    "editAriaLabel": "질문 수정",
+    "deleteAriaLabel": "질문 삭제"
+  },
+  "AnswerMessage": {
+    "copyAriaLabel": "답변 복사",
+    "pinAriaLabel": "답변 고정",
+    "unpinAriaLabel": "답변 고정 해제",
+    "readAloudAriaLabel": "답변 읽어주기",
+    "stopReadingAriaLabel": "읽기 중지"
   }
 }

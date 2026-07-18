@@ -1,6 +1,7 @@
 "use client";
 
 import { Copy, Pencil, Trash2 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -28,6 +29,7 @@ export function QuestionMessage({
   onSaveEdit: (newText: string) => void;
   onDelete: () => void;
 }) {
+  const t = useTranslations("QuestionMessage");
   const [draft, setDraft] = useState(text);
 
   // Reset the draft to the current question text each time editing (re)starts,
@@ -47,7 +49,7 @@ export function QuestionMessage({
           />
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" size="sm" onClick={onCancelEdit}>
-              Cancel
+              {t("cancel")}
             </Button>
             <Button
               type="button"
@@ -55,7 +57,7 @@ export function QuestionMessage({
               disabled={!draft.trim()}
               onClick={() => onSaveEdit(draft.trim())}
             >
-              Save & resend
+              {t("saveAndResend")}
             </Button>
           </div>
         </CardContent>
@@ -68,7 +70,7 @@ export function QuestionMessage({
       <Card className="bg-muted/50">
         <CardContent className="flex flex-col gap-2 py-4">
           <p className="min-w-0 font-medium break-words">{text}</p>
-          <span className="text-xs text-muted-foreground">Sending…</span>
+          <span className="text-xs text-muted-foreground">{t("sending")}</span>
         </CardContent>
       </Card>
     );
@@ -84,15 +86,15 @@ export function QuestionMessage({
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label="Copy question"
+              aria-label={t("copyAriaLabel")}
               onClick={() => navigator.clipboard.writeText(text)}
             >
               <Copy className="size-3.5" />
             </Button>
-            <Button variant="ghost" size="icon-sm" aria-label="Edit question" onClick={onStartEdit}>
+            <Button variant="ghost" size="icon-sm" aria-label={t("editAriaLabel")} onClick={onStartEdit}>
               <Pencil className="size-3.5" />
             </Button>
-            <Button variant="ghost" size="icon-sm" aria-label="Delete question" onClick={onDelete}>
+            <Button variant="ghost" size="icon-sm" aria-label={t("deleteAriaLabel")} onClick={onDelete}>
               <Trash2 className="size-3.5" />
             </Button>
           </div>

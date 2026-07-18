@@ -1,3 +1,4 @@
+import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import { usageMeters } from "@/lib/planLimits";
 import type { components } from "@/lib/api/schema";
@@ -9,6 +10,7 @@ type PlanRead = components["schemas"]["PlanRead"];
  * is `role="img"` with an aria-label carrying the same "used of cap" text, so the meter
  * is never conveyed by the fill width alone. */
 export function UsageMeters({ plan }: { plan: PlanRead }) {
+  const t = useTranslations("Usage");
   const meters = usageMeters(plan);
 
   return (
@@ -16,7 +18,7 @@ export function UsageMeters({ plan }: { plan: PlanRead }) {
       {meters.map((meter) => (
         <div key={meter.key} className="flex flex-col gap-1.5">
           <div className="flex items-baseline justify-between gap-2 text-sm">
-            <span className="text-foreground">{meter.label}</span>
+            <span className="text-foreground">{t(meter.key)}</span>
             <span
               className={cn(
                 "text-muted-foreground",
@@ -24,8 +26,8 @@ export function UsageMeters({ plan }: { plan: PlanRead }) {
               )}
             >
               {meter.unlimited
-                ? `${meter.used} · Unlimited`
-                : `${meter.used} of ${meter.cap} used`}
+                ? t("usedUnlimited", { used: meter.used })
+                : t("usedOfCap", { used: meter.used, cap: meter.cap ?? 0 })}
             </span>
           </div>
           {!meter.unlimited && (
@@ -38,7 +40,11 @@ export function UsageMeters({ plan }: { plan: PlanRead }) {
                 meter.atLimit ? "bg-destructive/15" : "bg-primary/15",
               )}
               role="img"
-              aria-label={`${meter.label}: ${meter.used} of ${meter.cap} used`}
+              aria-label={t("meterAriaLabel", {
+                label: t(meter.key),
+                used: meter.used,
+                cap: meter.cap ?? 0,
+              })}
             >
               <div
                 className={cn(

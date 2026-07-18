@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowLeft, ChartNoAxesCombined } from "lucide-react";
@@ -12,6 +13,7 @@ import { useApiClient } from "@/lib/api/useApiClient";
 
 export default function SubjectProgressPage() {
   const { subjectId } = useParams<{ subjectId: string }>();
+  const t = useTranslations();
   const api = useApiClient();
 
   const subjectQuery = useQuery({
@@ -42,7 +44,7 @@ export default function SubjectProgressPage() {
       className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
     >
       <ArrowLeft className="size-4" />
-      {subjectQuery.data?.name ?? "Subject"}
+      {subjectQuery.data?.name ?? t("Common.subjectFallback")}
     </Link>
   );
 
@@ -50,7 +52,7 @@ export default function SubjectProgressPage() {
     return (
       <div>
         {backLink}
-        <p className="text-destructive">Subject not found.</p>
+        <p className="text-destructive">{t("Common.subjectNotFound")}</p>
       </div>
     );
   }
@@ -60,8 +62,8 @@ export default function SubjectProgressPage() {
       <div>
         {backLink}
         <ErrorState
-          message="Couldn't load progress."
-          retryLabel="Retry"
+          message={t("Progress.loadError")}
+          retryLabel={t("Common.retry")}
           onRetry={() => progressQuery.refetch()}
         />
       </div>
@@ -70,7 +72,7 @@ export default function SubjectProgressPage() {
 
   if (progressQuery.isLoading || !progressQuery.data) {
     return (
-      <div role="status" aria-label="Loading progress">
+      <div role="status" aria-label={t("Progress.loadingAriaLabel")}>
         {backLink}
         <Skeleton className="mb-6 h-8 w-32" />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -90,19 +92,21 @@ export default function SubjectProgressPage() {
     <div>
       {backLink}
 
-      <h1 className="mb-6 text-2xl font-semibold">Progress</h1>
+      <h1 className="mb-6 text-2xl font-semibold">{t("Progress.heading")}</h1>
 
       {!hasAnyData ? (
         <EmptyState
           icon={ChartNoAxesCombined}
-          title="Nothing to show yet"
-          description="Upload a document, then generate flashcards or a quiz from it — your progress will show up here."
+          title={t("Progress.emptyTitle")}
+          description={t("Progress.emptyDescription")}
           action={
             <Link
               href={`/subjects/${subjectId}`}
               className="text-sm text-primary hover:underline"
             >
-              Go to {subjectQuery.data?.name ?? "subject"}
+              {t("Progress.goToSubject", {
+                name: subjectQuery.data?.name ?? t("Common.subjectFallback"),
+              })}
             </Link>
           }
         />

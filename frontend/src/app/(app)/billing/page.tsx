@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { ErrorState } from "@/components/error-state";
 import { PlanCard } from "@/components/plan-card";
@@ -20,19 +21,19 @@ type Plan = components["schemas"]["Plan"];
 // side (the dashboard's condensed UsageStatCard grid never repeats this).
 const PLAN_ORDER: Plan[] = ["free", "pro", "business"];
 
-const PLAN_PRICE: Record<Plan, { price: string; suffix: string }> = {
-  free: { price: "$0", suffix: "" },
-  pro: { price: "$20", suffix: "/month" },
-  business: { price: "$100", suffix: "/month" },
+const PLAN_PRICE: Record<Plan, string> = {
+  free: "$0",
+  pro: "$20",
+  business: "$100",
 };
 
-// Mirrors billing.service.LIMITS (backend) — stated here as plain feature bullets
-// rather than re-deriving them from `plan.limits`, since a card must describe EVERY
-// plan's caps, not just the caller's own current one.
-const PLAN_FEATURES: Record<Plan, string[]> = {
-  free: ["3 subjects", "10 documents per subject", "20 generations per day"],
-  pro: ["50 subjects", "200 documents per subject", "200 generations per day"],
-  business: ["Unlimited subjects", "Unlimited documents", "Unlimited generations"],
+// Mirrors the marketing landing page's plan cards — same three plans, same caps — so
+// the feature bullets are read from the shared Landing.pricing.*Features catalog keys
+// instead of duplicating the copy here.
+const PLAN_FEATURES_KEY: Record<Plan, string> = {
+  free: "Landing.pricing.freeFeatures",
+  pro: "Landing.pricing.proFeatures",
+  business: "Landing.pricing.businessFeatures",
 };
 
 const POPULAR_PLAN: Plan = "pro";
@@ -46,6 +47,7 @@ const CHECKOUT_TARGETS: Record<Plan, Exclude<Plan, "free">[]> = {
 };
 
 export default function BillingPage() {
+  const t = useTranslations();
   const api = useApiClient();
   const queryClient = useQueryClient();
   const [justUpgraded, setJustUpgraded] = useState(false);
@@ -92,17 +94,16 @@ export default function BillingPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-[22px] font-semibold">Plan &amp; billing</h1>
+      <h1 className="mb-6 text-[22px] font-semibold">{t("Billing.heading")}</h1>
 
       {justUpgraded && (
         <div className="mb-6 rounded-lg border border-success/40 bg-success/5 p-4 text-sm">
-          Thanks! Your payment went through. Your new plan is being activated and should
-          appear here in a moment.
+          {t("Billing.upgradedNotice")}
         </div>
       )}
 
       {planQuery.isLoading && (
-        <div role="status" aria-label="Loading plan">
+        <div role="status" aria-label={t("Billing.loadingAriaLabel")}>
           <Skeleton className="mb-6 h-28 w-full rounded-xl" />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Skeleton className="h-64 w-full rounded-xl" />
@@ -112,8 +113,8 @@ export default function BillingPage() {
       )}
       {planQuery.isError && (
         <ErrorState
-          message="Couldn't load your plan."
-          retryLabel="Retry"
+          message={t("Billing.loadError")}
+          retryLabel={t("Common.retry")}
           onRetry={() => planQuery.refetch()}
         />
       )}
@@ -123,17 +124,20 @@ export default function BillingPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center justify-between gap-2 text-base">
-                <span>Current plan</span>
+                <span>{t("Billing.currentPlan")}</span>
                 <span className="text-primary">{PLAN_LABELS[plan.plan]}</span>
               </CardTitle>
             </CardHeader>
             <CardContent>
               <UsageMeters plan={plan} />
               <p className="mt-4 text-xs text-muted-foreground">
-                Documents are capped per subject
+                {t("Billing.documentsCapNote")}
                 {plan.limits.max_documents_per_subject !== null
-                  ? ` (${plan.limits.max_documents_per_subject} each on ${PLAN_LABELS[plan.plan]})`
-                  : " (unlimited on your plan)"}
+                  ? t("Billing.documentsCapNoteWithLimit", {
+                      cap: plan.limits.max_documents_per_subject,
+                      plan: PLAN_LABELS[plan.plan],
+                    })
+                  : t("Billing.documentsCapNoteUnlimited")}
                 .
               </p>
             </CardContent>
@@ -141,31 +145,30 @@ export default function BillingPage() {
 
           <div>
             <h2 className="mb-3 text-[13px] font-semibold tracking-wide text-muted-foreground uppercase">
-              Compare plans
+              {t("Billing.comparePlans")}
             </h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {PLAN_ORDER.map((candidate) => {
                 const isCurrent = candidate === plan.plan;
-                const { price, suffix } = PLAN_PRICE[candidate];
                 const canCheckout = checkoutTargets.includes(candidate as Exclude<Plan, "free">);
                 return (
                   <PlanCard
                     key={candidate}
                     name={PLAN_LABELS[candidate]}
-                    price={price}
-                    priceSuffix={suffix}
-                    features={PLAN_FEATURES[candidate]}
+                    price={PLAN_PRICE[candidate]}
+                    priceSuffix={candidate === "free" ? "" : t("Landing.pricing.perMonth")}
+                    features={t.raw(PLAN_FEATURES_KEY[candidate]) as string[]}
                     popular={candidate === POPULAR_PLAN}
-                    popularLabel="Most popular"
+                    popularLabel={t("Landing.pricing.popularBadge")}
                     isCurrent={isCurrent}
                     ctaLabel={
                       isCurrent
-                        ? "Current plan"
+                        ? t("Billing.currentPlanCta")
                         : checkout.isPending && checkout.variables === candidate
-                          ? "Redirecting…"
+                          ? t("Billing.redirecting")
                           : canCheckout
-                            ? `Upgrade to ${PLAN_LABELS[candidate]}`
-                            : "Not available"
+                            ? t("Billing.upgradeTo", { plan: PLAN_LABELS[candidate] })
+                            : t("Billing.notAvailable")
                     }
                     ctaDisabled={!canCheckout || checkout.isPending}
                     onCta={
@@ -180,7 +183,7 @@ export default function BillingPage() {
           </div>
 
           {checkout.isError && (
-            <p className="text-sm text-destructive">Couldn&apos;t start checkout. Please try again.</p>
+            <p className="text-sm text-destructive">{t("Billing.checkoutError")}</p>
           )}
         </div>
       )}

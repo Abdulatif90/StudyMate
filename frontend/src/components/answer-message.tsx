@@ -1,6 +1,7 @@
 "use client";
 
 import { Copy, Pin, Volume2 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ export function AnswerMessage({
    * "read aloud" start reading a sentence that's still being written. */
   streaming?: boolean;
 }) {
+  const t = useTranslations("AnswerMessage");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const displayText = simplifyCitations(text);
 
@@ -78,7 +80,7 @@ export function AnswerMessage({
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label="Copy answer"
+              aria-label={t("copyAriaLabel")}
               onClick={() => navigator.clipboard.writeText(displayText)}
             >
               <Copy className="size-3.5" />
@@ -86,7 +88,7 @@ export function AnswerMessage({
             <Button
               variant={pinned ? "secondary" : "ghost"}
               size="icon-sm"
-              aria-label={pinned ? "Unpin answer" : "Pin answer"}
+              aria-label={pinned ? t("unpinAriaLabel") : t("pinAriaLabel")}
               onClick={onTogglePin}
             >
               <Pin className="size-3.5" />
@@ -94,7 +96,7 @@ export function AnswerMessage({
             <Button
               variant={isSpeaking ? "secondary" : "ghost"}
               size="icon-sm"
-              aria-label={isSpeaking ? "Stop reading aloud" : "Read answer aloud"}
+              aria-label={isSpeaking ? t("stopReadingAriaLabel") : t("readAloudAriaLabel")}
               onClick={isSpeaking ? stopReading : readAloud}
             >
               <Volume2 className="size-3.5" />

@@ -1,3 +1,4 @@
+import { useTranslations } from "next-intl";
 import { AnimatedProgressBar } from "@/components/ui/animated-progress-bar";
 import { Card, CardContent } from "@/components/ui/card";
 import { usageSeverity } from "@/lib/usageSeverity";
@@ -26,6 +27,7 @@ const FILL_CLASS = {
  * close to.
  */
 export function UsageStatCard({ meter }: { meter: UsageMeter }) {
+  const t = useTranslations("Usage");
   const severity = usageSeverity(meter) ?? "normal";
 
   return (
@@ -33,7 +35,7 @@ export function UsageStatCard({ meter }: { meter: UsageMeter }) {
       <CardContent className="flex flex-col gap-2 py-4">
         <div className="flex items-baseline justify-between gap-2">
           <span className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-            {meter.label}
+            {t(meter.key)}
           </span>
           <span className={cn("text-base font-bold", VALUE_CLASS[severity])}>
             {meter.unlimited ? "∞" : `${meter.used}/${meter.cap}`}
