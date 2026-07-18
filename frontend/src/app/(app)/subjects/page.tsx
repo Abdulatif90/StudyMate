@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { UsageHint } from "@/components/usage-hint";
+import { captureEvent } from "@/lib/analytics";
 import { useApiClient } from "@/lib/api/useApiClient";
 import { parsePlanLimitError, type PlanLimitError } from "@/lib/planLimitError";
 import { usageMeters } from "@/lib/planLimits";
@@ -70,6 +71,7 @@ export default function SubjectsPage() {
       queryClient.invalidateQueries({ queryKey: ["subjects"] });
       queryClient.invalidateQueries({ queryKey: ["billing", "plan"] });
       toast.success(t("Subjects.createSuccess"), data.name);
+      captureEvent("subjectCreated");
     },
   });
 

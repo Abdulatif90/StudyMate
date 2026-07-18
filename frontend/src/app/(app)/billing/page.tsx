@@ -8,6 +8,7 @@ import { PlanCard } from "@/components/plan-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UsageMeters } from "@/components/usage-meters";
+import { captureEvent } from "@/lib/analytics";
 import { useApiClient } from "@/lib/api/useApiClient";
 import { PLAN_LABELS } from "@/lib/planLimits";
 import type { components } from "@/lib/api/schema";
@@ -83,7 +84,8 @@ export default function BillingPage() {
       if (error) throw error;
       return data;
     },
-    onSuccess: (data) => {
+    onSuccess: (data, targetPlan) => {
+      captureEvent("checkoutStarted", { plan: targetPlan });
       // Hand off to Polar's hosted checkout page.
       window.location.href = data.checkout_url;
     },

@@ -13,6 +13,7 @@ import { QuestionMessage } from "@/components/question-message";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
+import { captureEvent } from "@/lib/analytics";
 import { useApiClient } from "@/lib/api/useApiClient";
 import { streamAsk } from "@/lib/api/streamAsk";
 import { filterConversationsBySubject } from "@/lib/conversationFilter";
@@ -162,6 +163,7 @@ export default function AskPage() {
           setStreaming(null);
           queryClient.invalidateQueries({ queryKey: ["conversations"] });
           queryClient.invalidateQueries({ queryKey: ["conversations", data.conversation_id] });
+          captureEvent("questionAsked");
         },
       },
       controller.signal

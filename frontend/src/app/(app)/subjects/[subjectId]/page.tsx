@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { useConfirm } from "@/components/confirm-provider";
+import { captureEvent } from "@/lib/analytics";
 import { useApiClient } from "@/lib/api/useApiClient";
 import { friendlyDeleteError } from "@/lib/deleteError";
 import { documentStatusVariant } from "@/lib/documentStatus";
@@ -88,6 +89,7 @@ export default function SubjectDetailPage() {
         t("SubjectDetail.uploadSuccessTitle"),
         t("SubjectDetail.uploadSuccessBody", { filename: data.filename }),
       );
+      captureEvent("documentUploaded");
     },
     onError: () => {
       if (fileInputRef.current) fileInputRef.current.value = "";

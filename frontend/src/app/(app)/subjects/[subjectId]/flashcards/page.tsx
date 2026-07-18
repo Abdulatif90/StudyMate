@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/toast";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { UsageHint } from "@/components/usage-hint";
+import { captureEvent } from "@/lib/analytics";
 import { useApiClient } from "@/lib/api/useApiClient";
 import { friendlyFlashcardError } from "@/lib/flashcardError";
 import { parsePlanLimitError, type PlanLimitError } from "@/lib/planLimitError";
@@ -102,6 +103,7 @@ export default function FlashcardsPage() {
       queryClient.invalidateQueries({ queryKey: ["subjects", subjectId, "flashcards"] });
       queryClient.invalidateQueries({ queryKey: ["billing", "plan"] });
       toast.success(t("Flashcards.generateSuccess", { count: data.length }));
+      captureEvent("flashcardsGenerated");
     },
   });
 
