@@ -2,8 +2,13 @@ import { describe, expect, it } from "vitest";
 import { isNavItemActive, NAV_ITEMS } from "./navItems";
 
 describe("NAV_ITEMS", () => {
-  it("covers dashboard, subjects, and billing", () => {
-    expect(NAV_ITEMS.map((item) => item.href)).toEqual(["/dashboard", "/subjects", "/billing"]);
+  it("covers dashboard, subjects, billing, and support", () => {
+    expect(NAV_ITEMS.map((item) => item.href)).toEqual([
+      "/dashboard",
+      "/subjects",
+      "/billing",
+      "/support",
+    ]);
   });
 });
 

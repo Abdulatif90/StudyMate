@@ -2,6 +2,53 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-19 — Support/FAQ page
+Phase-4 item, frontend-only, no backend/CMS (KISS/YAGNI) — static content by design.
+Commit: `feat(frontend): Support/FAQ page`.
+
+- New route `app/(app)/support/page.tsx`: an FAQ list grouped into four sections
+  (Getting started, Study tools, Progress, Billing & plans), each rendered as a `Card`
+  containing native `<details>/<summary>` disclosures (no new dependency — accessible,
+  keyboard-operable, no client JS needed beyond the browser's own toggle). A small
+  `FAQ_SECTIONS` array of `{ titleKey, items: [{ questionKey, answerKey }] }` is the
+  entire "content model"; every string is looked up dynamically via `t(...)`, same
+  pattern `app-shell.tsx` already uses for `NAV_ITEMS`' `translationKey`.
+- **Content sourced only from real, shipped features** — `docs/plan.md`'s core-features
+  line (subjects, upload + auto-summary, cited Ask/RAG Q&A, quiz, flashcards + SM-2,
+  progress) plus the real Free/Pro/Business limits read directly from
+  `backend/app/modules/billing/service.py`'s `LIMITS` dict (Free: 3 subjects / 10 docs
+  per subject / 20 generations per day; Pro: 50/200/200; Business: unlimited) and the
+  real file-upload constraints from `documents/parsing.py` (PDF/DOCX/TXT,
+  `SUPPORTED_CONTENT_TYPES`) and `documents/service.py` (20 MB cap). Nothing invented —
+  no mobile app, Telegram, or OCR (unbuilt Phase 7 ideas).
+- **Nav**: `lib/navItems.ts`'s `NavItem.translationKey` union extended with `"support"`,
+  a new `NAV_ITEMS` entry (`LifeBuoy` icon, matching the sidebar's existing icon style)
+  added after billing — `AppShell` already renders every `NAV_ITEMS` entry on both the
+  desktop sidebar and the mobile dropdown, so no shell changes were needed.
+  `navItems.test.ts` updated to assert the new 4-item href list.
+- **i18n**: new `Support` namespace added to `messages/en.json` (heading/subheading, 4
+  section titles, 11 question/answer pairs) plus a `Nav.support` label, mirrored key-
+  for-key into `uz.json`/`ko.json`/`ru.json` with machine-drafted translations (this
+  repo's existing convention — native review is a separate tracked follow-up, not
+  re-flagged here). Edited each catalog with targeted insertions (not a full
+  parse/stringify round-trip) specifically to avoid reformatting unrelated existing
+  keys/arrays — caught this the hard way on a first pass (a `JSON.parse`/`stringify`
+  script technically worked but silently reflowed pre-existing multi-line-vs-single-
+  line array formatting elsewhere in `en.json`), reverted, and redid it with targeted
+  edits instead.
+- No page-level test added — this repo's convention is pages are verified via
+  `tsc`/`eslint`/reading, not unit-tested, and the FAQ page has no pure logic worth
+  extracting to `lib/` (a static content array, not an algorithm). `navItems.test.ts`
+  was updated since `navItems.ts` (a pure module) changed.
+- Frontend: **184 passed** (46 files, unchanged count — no new test file), `tsc --noEmit`
+  clean, `eslint` clean. `next build` skipped per the coordinator's standing instruction
+  while a shared `next dev` server is running on port 3000 (a known `.next` conflict in
+  this repo) — not run this increment.
+- Not yet browser-verified (no browser in this environment): the `<details>` disclosure
+  open/close interaction, mobile-dropdown nav entry, and light/dark rendering of the new
+  page all want a manual pass, consistent with every other frontend page in this
+  project's backlog.
+
 ## 2026-07-18 — Sentry + PostHog observability
 Phase-4 remainder item. Both env-gated, off-by-default, backend + frontend. Two
 commits (Sentry landed first per the task's stated priority).

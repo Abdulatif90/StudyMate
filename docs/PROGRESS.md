@@ -2108,8 +2108,15 @@ frontends already shipped.
     `tsc`/`eslint`/`vitest`/`next build` ran in this environment.
   - Consider typed messages (augment next-intl's `Messages` from `en.json`) so missing
     keys become a tsc error, and a lint/CI check for catalog parity.
-- Remaining per `docs/plan.md` Phase 4: Referral, Support/FAQ. Then Phase 5
-  (Business/Teams B2B).
+- **Support/FAQ page — DONE** (see WORKLOG "Support/FAQ page" entry). Frontend-only,
+  static content, no backend/CMS: a new `/support` page (`app/(app)/support/page.tsx`)
+  reachable from the app-shell nav, with FAQ entries grouped into Getting started /
+  Study tools / Progress / Billing & plans sections, using native `<details>/<summary>`
+  disclosures (no new dependency). Content covers only real shipped features (subjects,
+  upload + auto-summary, cited Ask/RAG Q&A, quiz, flashcards + SM-2, progress) and the
+  real Free/Pro/Business limits from `billing/service.LIMITS` — nothing invented (no
+  mobile app, Telegram, OCR).
+- Remaining per `docs/plan.md` Phase 4: Referral. Then Phase 5 (Business/Teams B2B).
 - Still owed from earlier: a real-browser click-through of the async upload/poll/delete,
   quiz, hybrid-Ask, flashcards, progress-dashboard, app-shell nav (mobile sheet,
   active-item highlighting, theme toggle), and the confirm-dialog/toast/subject-delete

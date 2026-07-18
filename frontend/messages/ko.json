@@ -16,6 +16,7 @@
     "subjects": "과목",
     "goToSubjects": "과목으로 이동",
     "billing": "요금제 및 결제",
+    "support": "지원",
     "menu": "메뉴",
     "accountFallback": "계정"
   },
@@ -283,5 +284,41 @@
     "unpinAriaLabel": "답변 고정 해제",
     "readAloudAriaLabel": "답변 읽어주기",
     "stopReadingAriaLabel": "읽기 중지"
+  },
+  "Support": {
+    "heading": "도움말 및 자주 묻는 질문",
+    "subheading": "StudyMate 사용에 관한 자주 묻는 질문에 대한 답변입니다.",
+    "sections": {
+      "gettingStarted": "시작하기",
+      "studyTools": "학습 도구",
+      "progress": "진행 상황",
+      "billing": "요금제 및 결제"
+    },
+    "questions": {
+      "whatIsStudyMate": "StudyMate는 무엇인가요?",
+      "howToStart": "내 자료로 학습을 시작하려면 어떻게 하나요?",
+      "fileTypes": "어떤 파일 형식을 업로드할 수 있고, 크기 제한은 얼마인가요?",
+      "howAskWorks": "Ask(질문) 기능은 어떻게 작동하나요?",
+      "unansweredQuestions": "내 자료에 없는 내용을 질문하면 어떻게 되나요?",
+      "howQuizWorks": "퀴즈는 어떻게 생성되나요?",
+      "howFlashcardsWork": "플래시카드와 간격 반복 학습은 어떻게 작동하나요?",
+      "whatIsProgress": "진행 상황 페이지에는 무엇이 표시되나요?",
+      "whatPlansExist": "StudyMate는 어떤 요금제를 제공하나요?",
+      "howToUpgrade": "요금제는 어떻게 업그레이드하나요?",
+      "whatHappensAtLimit": "요금제 한도에 도달하면 어떻게 되나요?"
+    },
+    "answers": {
+      "whatIsStudyMate": "StudyMate는 업로드한 자료를 체계적인 학습 공간으로 바꿔줍니다: 문서 기반 출처 표시 질의응답, 자동 생성 퀴즈와 플래시카드, 과목별 진행 상황 추적을 제공합니다.",
+      "howToStart": "먼저 과목을 만든 다음 문서를 업로드하세요. StudyMate가 파일을 분석하고 자동 요약을 생성하며, Ask·퀴즈·플래시카드에서 검색 가능하도록 준비합니다. 파일 크기에 따라 몇 초에서 몇 분 정도 걸릴 수 있습니다.",
+      "fileTypes": "PDF, DOCX(Word), TXT 파일을 각각 최대 20MB까지 업로드할 수 있습니다.",
+      "howAskWorks": "과목에 업로드된 자료에 대해 질문하면 StudyMate가 가장 관련성 높은 부분을 찾아 해당 자료만을 바탕으로 답변하며, 출처 파일과 위치를 인용으로 표시해 답변을 직접 확인할 수 있습니다.",
+      "unansweredQuestions": "StudyMate는 업로드한 자료를 바탕으로만 답변합니다. 관련 내용이 없으면 추측하지 않고 그 사실을 분명히 알려줍니다.",
+      "howQuizWorks": "퀴즈는 과목에 업로드된 자료를 바탕으로 생성되며, 구조화된 문제를 풀고 스스로 채점해 볼 수 있습니다.",
+      "howFlashcardsWork": "플래시카드는 자료를 바탕으로 생성되며 SM-2 간격 반복 알고리즘으로 복습합니다. 어렵게 느낀 카드는 더 빨리 다시 나타나고, 잘 아는 카드는 덜 자주 나타납니다.",
+      "whatIsProgress": "과목별 및 전체 학습 활동을 읽기 전용으로 보여주는 화면입니다: 처리된 문서, 퀴즈·플래시카드 활동 등을 통해 시간에 따른 학습 누적을 확인할 수 있습니다.",
+      "whatPlansExist": "Free, Pro(월 $20), Business(월 $100) 요금제가 있습니다. Free는 과목 최대 3개, 과목당 문서 최대 10개, 하루 퀴즈/플래시카드 생성 최대 20회까지 포함합니다. Pro는 과목 50개, 과목당 문서 200개, 하루 생성 200회로 늘어납니다. Business는 세 가지 모두 무제한입니다.",
+      "howToUpgrade": "사이드바에서 '요금제 및 결제'를 열고 요금제를 선택하세요. 안전한 결제 페이지로 이동해 업그레이드를 완료할 수 있습니다.",
+      "whatHappensAtLimit": "StudyMate는 어떤 한도에 도달했는지 알려주고 업그레이드를 제안합니다. 기존 데이터는 손실되지 않으며, 업그레이드하거나 일일 한도가 초기화될 때까지 해당 항목을 더 만들거나(또는 더 생성하지) 못할 뿐입니다."
+    }
   }
 }

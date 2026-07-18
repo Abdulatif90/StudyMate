@@ -16,6 +16,7 @@
     "subjects": "Fanlar",
     "goToSubjects": "Fanlarga o‘tish",
     "billing": "Tarif va to‘lov",
+    "support": "Yordam",
     "menu": "Menyu",
     "accountFallback": "Hisob"
   },
@@ -283,5 +284,41 @@
     "unpinAriaLabel": "Mahkamlashni bekor qilish",
     "readAloudAriaLabel": "Javobni ovoz chiqarib o‘qish",
     "stopReadingAriaLabel": "O‘qishni to‘xtatish"
+  },
+  "Support": {
+    "heading": "Yordam va ko‘p so‘raladigan savollar",
+    "subheading": "StudyMate’dan foydalanish bo‘yicha eng ko‘p so‘raladigan savollarga javoblar.",
+    "sections": {
+      "gettingStarted": "Boshlash",
+      "studyTools": "O‘quv vositalari",
+      "progress": "Progress",
+      "billing": "Tarif va to‘lov"
+    },
+    "questions": {
+      "whatIsStudyMate": "StudyMate nima?",
+      "howToStart": "O‘z materiallarim bilan qanday o‘qishni boshlayman?",
+      "fileTypes": "Qanday fayl turlarini yuklashim mumkin va ular qanday hajmda bo‘lishi kerak?",
+      "howAskWorks": "Ask (savol-javob) qanday ishlaydi?",
+      "unansweredQuestions": "Materiallarimda yo‘q narsani so‘rasam nima bo‘ladi?",
+      "howQuizWorks": "Testlar qanday yaratiladi?",
+      "howFlashcardsWork": "Flashkartalar va takrorlash tizimi qanday ishlaydi?",
+      "whatIsProgress": "Progress sahifasida nima ko‘rsatiladi?",
+      "whatPlansExist": "StudyMate qanday tariflarni taklif qiladi?",
+      "howToUpgrade": "Tarifimni qanday yangilayman?",
+      "whatHappensAtLimit": "Tarif chegarasiga yetsam nima bo‘ladi?"
+    },
+    "answers": {
+      "whatIsStudyMate": "StudyMate siz yuklagan materiallarni tartibli o‘quv makoniga aylantiradi: o‘z hujjatlaringiz asosida manba ko‘rsatilgan savol-javob, avtomatik yaratilgan testlar va flashkartalar hamda fan bo‘yicha tashkil etilgan progress kuzatuvi.",
+      "howToStart": "Avval fan yarating, so‘ng unga hujjat yuklang. StudyMate faylni tahlil qiladi, avtomatik xulosa tuzadi va uni Ask, testlar hamda flashkartalar uchun izlanadigan qiladi — fayl hajmiga qarab bir necha soniyadan bir necha daqiqagacha vaqt ketishi mumkin.",
+      "fileTypes": "PDF, DOCX (Word) va TXT fayllari, har biri 20 MB gacha.",
+      "howAskWorks": "Fan bo‘yicha yuklangan materiallar asosida savol bering — StudyMate eng mos qismlarni topib, faqat o‘sha material asosida javob beradi va manba fayl hamda qismga havola (sitata) qo‘shadi, shunda har bir javobni tekshirishingiz mumkin.",
+      "unansweredQuestions": "StudyMate faqat siz yuklagan materiallar asosida javob beradi. Agar tegishli ma’lumot topilmasa, tashqi bilimlardan taxmin qilish o‘rniga buni ochiq aytadi.",
+      "howQuizWorks": "Testlar fan bo‘yicha yuklangan materiallar asosida yaratiladi — tuzilgan savollarga javob berib, o‘zingizni tekshirishingiz mumkin.",
+      "howFlashcardsWork": "Flashkartalar materiallaringiz asosida yaratiladi va SM-2 oraliqli takrorlash algoritmi bo‘yicha ko‘rib chiqiladi: qiyinroq kartalar tezroq qaytadan chiqadi, yaxshi bilganlaringiz kamroq ko‘rsatiladi.",
+      "whatIsProgress": "Fan bo‘yicha va umumiy o‘quv faoliyatingizning faqat ko‘rish uchun mo‘ljallangan ko‘rinishi: qayta ishlangan hujjatlar, test va flashkarta faolligi — vaqt o‘tishi bilan o‘qishingiz qanday to‘planayotganini ko‘rasiz.",
+      "whatPlansExist": "Free, Pro (oyiga $20) va Business (oyiga $100). Free tarifida 3 tagacha fan, fan boshiga 10 tagacha hujjat va kuniga 20 tagacha test/flashkarta yaratish mumkin. Pro tarifida bu 50 fan, fan boshiga 200 hujjat va kuniga 200 yaratishgacha oshadi. Business barcha uchta ko‘rsatkich bo‘yicha cheksiz.",
+      "howToUpgrade": "Yon paneldagi «Tarif va to‘lov» bo‘limini oching va tarifni tanlang — xavfsiz to‘lov sahifasiga yo‘naltirilib, yangilashni yakunlaysiz.",
+      "whatHappensAtLimit": "StudyMate qaysi chegaraga yetganingizni aytadi va tarifni yangilashni taklif qiladi. Mavjud ma’lumotlaringiz yo‘qolmaydi — faqat tarifni yangilamaguningizcha yoki kunlik chegara yangilanmaguncha o‘sha turdagi elementni ko‘proq yarata olmaysiz (yoki ko‘proq yaratish ishlarini bajara olmaysiz)."
+    }
   }
 }

@@ -1,9 +1,15 @@
-import { BookOpen, CreditCard, LayoutDashboard, type LucideIcon } from "lucide-react";
+import {
+  BookOpen,
+  CreditCard,
+  LayoutDashboard,
+  LifeBuoy,
+  type LucideIcon,
+} from "lucide-react";
 
 export interface NavItem {
   href: string;
   /** Key into the `Nav` next-intl namespace. */
-  translationKey: "dashboard" | "subjects" | "billing";
+  translationKey: "dashboard" | "subjects" | "billing" | "support";
   icon: LucideIcon;
 }
 
@@ -12,6 +18,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/dashboard", translationKey: "dashboard", icon: LayoutDashboard },
   { href: "/subjects", translationKey: "subjects", icon: BookOpen },
   { href: "/billing", translationKey: "billing", icon: CreditCard },
+  { href: "/support", translationKey: "support", icon: LifeBuoy },
 ];
 
 /**

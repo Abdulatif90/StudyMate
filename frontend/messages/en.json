@@ -16,6 +16,7 @@
     "subjects": "Subjects",
     "goToSubjects": "Go to Subjects",
     "billing": "Plan & billing",
+    "support": "Support",
     "menu": "Menu",
     "accountFallback": "Account"
   },
@@ -283,5 +284,41 @@
     "unpinAriaLabel": "Unpin answer",
     "readAloudAriaLabel": "Read answer aloud",
     "stopReadingAriaLabel": "Stop reading aloud"
+  },
+  "Support": {
+    "heading": "Help & FAQ",
+    "subheading": "Answers to common questions about using StudyMate.",
+    "sections": {
+      "gettingStarted": "Getting started",
+      "studyTools": "Study tools",
+      "progress": "Progress",
+      "billing": "Billing & plans"
+    },
+    "questions": {
+      "whatIsStudyMate": "What is StudyMate?",
+      "howToStart": "How do I start studying with my own materials?",
+      "fileTypes": "What file types can I upload, and how large can they be?",
+      "howAskWorks": "How does Ask work?",
+      "unansweredQuestions": "What happens if I ask something my materials don't cover?",
+      "howQuizWorks": "How are quizzes generated?",
+      "howFlashcardsWork": "How do flashcards and spaced repetition work?",
+      "whatIsProgress": "What does the Progress page show?",
+      "whatPlansExist": "What plans does StudyMate offer?",
+      "howToUpgrade": "How do I upgrade my plan?",
+      "whatHappensAtLimit": "What happens if I hit a plan limit?"
+    },
+    "answers": {
+      "whatIsStudyMate": "StudyMate turns the materials you upload into an organized study workspace: cited Q&A over your own documents, auto-generated quizzes and flashcards, and progress tracking, all organized by subject.",
+      "howToStart": "Create a subject, then upload a document to it. StudyMate parses the file, generates an auto-summary, and makes it searchable for Ask, quizzes, and flashcards within a few seconds to a couple of minutes depending on file size.",
+      "fileTypes": "PDF, DOCX (Word), and TXT files, up to 20 MB each.",
+      "howAskWorks": "Ask a question about a subject's uploaded materials and StudyMate retrieves the most relevant passages, then answers using only that material, with citations pointing back to the source file and passage so you can verify every answer.",
+      "unansweredQuestions": "StudyMate answers only from what you've uploaded. If nothing relevant is found, it says so plainly instead of guessing or answering from outside knowledge.",
+      "howQuizWorks": "Quizzes are generated from a subject's uploaded materials, with structured questions you can answer and check yourself against.",
+      "howFlashcardsWork": "Flashcards are generated from your materials and reviewed using the SM-2 spaced-repetition algorithm: cards you find harder resurface sooner, cards you know well are shown less often.",
+      "whatIsProgress": "A read-only view of your study activity per subject and overall, documents processed, quiz and flashcard activity, so you can see how your studying adds up over time.",
+      "whatPlansExist": "Free, Pro ($20/month), and Business ($100/month). Free includes up to 3 subjects, 10 documents per subject, and 20 quiz/flashcard generations per day. Pro raises that to 50 subjects, 200 documents per subject, and 200 generations per day. Business is unlimited on all three.",
+      "howToUpgrade": "Open Plan & billing from the sidebar and choose a plan. You'll be redirected to a secure checkout page to complete the upgrade.",
+      "whatHappensAtLimit": "StudyMate tells you which limit you've reached and offers to upgrade. You won't lose any existing data; you just can't create more of that item (or run more generations) until you upgrade or the daily limit resets."
+    }
   }
 }
