@@ -4,26 +4,26 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useState } from "react";
-import { Trash2 } from "lucide-react";
+import { BookOpen, Trash2 } from "lucide-react";
 import { useConfirm } from "@/components/confirm-provider";
+import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/components/ui/toast";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
+import { UsageHint } from "@/components/usage-hint";
 import { useApiClient } from "@/lib/api/useApiClient";
 import { parsePlanLimitError, type PlanLimitError } from "@/lib/planLimitError";
+import { usageMeters } from "@/lib/planLimits";
 
 export default function SubjectsPage() {
   const api = useApiClient();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
-  // The confirm/toast strings on this page are deliberately plain English, not run
-  // through next-intl's `t()` — this increment (FRONTEND.md §3) is scoped to closing
-  // interaction gaps, not extending i18n coverage. The rest of this page's existing
-  // copy stays translated; converting these new strings is tracked separately in
-  // docs/PROGRESS.md's i18n follow-ups.
   const t = useTranslations();
   const [name, setName] = useState("");
   const [limitError, setLimitError] = useState<PlanLimitError | null>(null);
@@ -37,6 +37,18 @@ export default function SubjectsPage() {
     },
   });
 
+  const planQuery = useQuery({
+    queryKey: ["billing", "plan"],
+    queryFn: async () => {
+      const { data, error } = await api.GET("/billing/plan");
+      if (error) throw error;
+      return data;
+    },
+  });
+  const subjectsMeter = planQuery.data
+    ? usageMeters(planQuery.data).find((meter) => meter.key === "subjects")
+    : undefined;
+
   const createSubject = useMutation({
     mutationFn: async (newName: string) => {
       const { data, error, response } = await api.POST("/subjects", {
@@ -47,7 +59,7 @@ export default function SubjectsPage() {
         // not a toast (FRONTEND.md §3.3); any other error toasts a generic failure.
         const limit = parsePlanLimitError(response.status, error);
         setLimitError(limit);
-        if (!limit) toast.error("Couldn't create subject", "Please try again.");
+        if (!limit) toast.error(t("Subjects.createErrorTitle"), t("Common.tryAgain"));
         throw error;
       }
       return data;
@@ -56,7 +68,8 @@ export default function SubjectsPage() {
     onSuccess: (data) => {
       setName("");
       queryClient.invalidateQueries({ queryKey: ["subjects"] });
-      toast.success("Subject created", data.name);
+      queryClient.invalidateQueries({ queryKey: ["billing", "plan"] });
+      toast.success(t("Subjects.createSuccess"), data.name);
     },
   });
 
@@ -69,23 +82,22 @@ export default function SubjectsPage() {
       // signals failure here (same as the document/quiz/flashcard delete flows).
       if (error) {
         throw new Error(
-          response.status === 404
-            ? "This subject was already deleted or couldn't be found."
-            : "Couldn't delete this subject. Please try again.",
+          response.status === 404 ? t("Subjects.deleteNotFound") : t("Subjects.deleteGenericError"),
         );
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["subjects"] });
-      toast.success("Subject deleted");
+      queryClient.invalidateQueries({ queryKey: ["billing", "plan"] });
+      toast.success(t("Subjects.deleteSuccess"));
     },
     onError: (error: Error) => {
-      toast.error("Couldn't delete subject", error.message);
+      toast.error(t("Subjects.deleteErrorTitle"), error.message);
     },
   });
 
   return (
-    <div className="mx-auto max-w-2xl p-4 sm:p-8">
+    <div className="mx-auto max-w-5xl p-4 sm:p-8">
       <h1 className="mb-8 text-2xl font-semibold">{t("Subjects.heading")}</h1>
 
       <Card className="mb-8">
@@ -116,21 +128,47 @@ export default function SubjectsPage() {
               {createSubject.isPending ? t("Subjects.adding") : t("Subjects.add")}
             </Button>
           </form>
-          {limitError && <UpgradePrompt message={limitError.detail} />}
+          {limitError ? (
+            <UpgradePrompt message={limitError.detail} />
+          ) : (
+            subjectsMeter && (
+              <UsageHint
+                meter={subjectsMeter}
+                text={t("Subjects.usageHint", {
+                  used: subjectsMeter.used,
+                  cap: subjectsMeter.cap ?? 0,
+                })}
+              />
+            )
+          )}
         </CardContent>
       </Card>
 
-      {subjectsQuery.isLoading && <p>{t("Common.loading")}</p>}
+      {subjectsQuery.isLoading && (
+        <div
+          className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
+          role="status"
+          aria-label={t("Common.loading")}
+        >
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-20 w-full rounded-xl" />
+          ))}
+        </div>
+      )}
       {subjectsQuery.isError && (
-        <p className="text-destructive">{t("Subjects.loadError")}</p>
+        <ErrorState
+          message={t("Subjects.loadError")}
+          retryLabel={t("Common.retry")}
+          onRetry={() => subjectsQuery.refetch()}
+        />
       )}
       {subjectsQuery.data?.length === 0 && (
-        <p className="text-muted-foreground">{t("Subjects.empty")}</p>
+        <EmptyState icon={BookOpen} title={t("Subjects.empty")} />
       )}
-      <ul className="flex flex-col gap-2">
+      <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {subjectsQuery.data?.map((subject) => (
           <li key={subject.id}>
-            <Card>
+            <Card interactive>
               <CardContent className="flex items-center justify-between gap-3 py-4">
                 {/* The delete button below must be a SIBLING of this Link, not nested
                     inside it — nesting would make a delete click also navigate. */}
@@ -146,18 +184,18 @@ export default function SubjectsPage() {
                   variant="destructive"
                   size="icon-sm"
                   className="shrink-0"
-                  aria-label={`Delete ${subject.name}`}
+                  aria-label={t("Subjects.deleteAriaLabel", { name: subject.name })}
                   disabled={deleteSubject.isPending && deleteSubject.variables === subject.id}
                   onClick={async () => {
-                    // Copy deliberately does NOT claim this cascades to the subject's
-                    // documents/quizzes/flashcards — the backend has no ON DELETE
-                    // CASCADE on any of those FKs (checked the migrations), so deleting
-                    // a subject that still has content will error rather than clean up
-                    // after itself. That's a backend gap, flagged in docs/PROGRESS.md;
-                    // out of scope to fix in this frontend-only increment.
+                    // Deleting a subject cascades to its documents (+ R2 objects),
+                    // quizzes, flashcards, and conversations on the backend
+                    // (subjects.service.delete_subject) — so the copy below is
+                    // deliberately plain ("can't be undone"), not a claim about what
+                    // gets removed, since the exact scope isn't this dialog's job to
+                    // enumerate.
                     const ok = await confirm({
-                      title: `Delete "${subject.name}"?`,
-                      description: "This can't be undone.",
+                      title: t("Subjects.deleteConfirmTitle", { name: subject.name }),
+                      description: t("Subjects.deleteConfirmDescription"),
                       destructive: true,
                     });
                     if (!ok) return;

@@ -1743,6 +1743,97 @@ frontends already shipped.
     near-guaranteed 500 on any non-empty subject. No frontend edit needed this increment
     (noted for a later polish pass, not scope-creeped in here).
 
+- [x] **Frontend redesign Increment 4 (final) — Dashboard-as-hub, interactive subject
+  cards, app-wide polish** — plus the deferred Increment-1 add-ons later pages needed
+  (skeleton loaders, `EmptyState`, `ErrorState`). Closes the redesign roadmap.
+  - **New primitives**: `ui/skeleton.tsx` (shimmer block, `aria-hidden` — the caller's
+    loading container announces "loading" itself, same as any other pending region);
+    `EmptyState`/`ErrorState` (`components/`, icon+title+description+action /
+    icon+message+Retry) — both take already-translated strings as props rather than
+    calling `useTranslations` themselves, so they stay reusable across pages with
+    different copy, same reasoning as the existing `UpgradePrompt`.
+  - **`Card` primitive gained `interactive`/`selected` props** (hover elevation +
+    accent ring + `cursor-pointer` / a persistent accent ring) — purely visual, no
+    keyboard/click handling of its own; the actual interactivity comes from whatever
+    wraps or renders inside it (a `<Link>`, in every usage here). Backward-compatible:
+    every existing static `<Card>` usage is unaffected (`interactive`/`selected` default
+    `false`).
+  - **New pure helpers** (all tested): `lib/subjectCardStats.ts` (a `SubjectProgress` →
+    the 3 numbers a dashboard card shows: total documents, flashcards *due* — not the
+    full deck — and quiz count), `lib/onboardingChecklist.ts` (an `OverallProgress` →
+    the 3-step "getting started" checklist, derived from existing data, no new
+    tracking), `lib/usageSeverity.ts` (a `UsageMeter` → `normal`/`warning`/`atLimit`,
+    escalating to warning at 80% — *before* the cap actually hits, unlike the existing
+    reactive 402 path). `components/usage-hint.tsx` renders that severity as a small
+    "X of Y used" indicator, shared across every page that needed one.
+  - **Dashboard is now a real hub** (`app/(app)/dashboard/page.tsx`, fully rewritten):
+    a personalized greeting (Clerk's `useUser().firstName`, confirmed exported +
+    typed against the installed `@clerk/nextjs@7.5.18` before relying on it — this
+    project has been burned by a Clerk API surprise before), a "Getting started"
+    checklist (hidden once all 3 steps are done), the plan/usage summary (reusing
+    `UsageMeters` + `GET /billing/plan`), a "New subject" quick action, and the subject
+    list as a responsive grid of **interactive** cards — name, a chevron affordance,
+    and per-subject mini-stats fetched in parallel via `useQueries` over `GET
+    /subjects/{id}/progress` (the same pattern the Ask page's conversation-preview
+    sidebar already established) — capped at 6 previewed subjects with a "view all N"
+    link if there are more, so the hub stays a *preview*, not a second full management
+    page. Empty-account case uses the new `EmptyState`; load failure uses `ErrorState`
+    with retry; initial load uses `Skeleton` blocks matching the eventual layout.
+  - **Subjects list restyled**: single-column `<ul>` → a responsive
+    `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3` grid of `interactive` cards (delete
+    button still a sibling of the card's `Link`, not nested — the Increment-3 fix
+    stays); a proactive `UsageHint` ("X of Y subjects used", turning warning-colored
+    near the cap) next to the create form; `Skeleton`/`EmptyState`/`ErrorState` replace
+    the old plain-text loading/empty/error lines. **Also fixed a now-stale code
+    comment**: the delete-confirm handler used to note the backend couldn't cascade
+    (true when written, in Increment 3) — it can now (see the cascade-delete fix
+    above), so the comment was corrected rather than left describing a bug that no
+    longer exists.
+  - **Quiz/flashcard generate pages** each gained the same proactive `UsageHint`
+    (shared "generations today" meter — quiz and flashcard generation count against
+    ONE combined daily cap on the backend, confirmed against `billing.service` before
+    assuming it). **Per-subject progress page** gained the same `Skeleton`/
+    `EmptyState`/`ErrorState` treatment for consistency, `ProgressStats` itself
+    untouched (it already carried the app's semantic tokens from an earlier increment).
+  - **Sign-in/sign-up now land on `/dashboard`**, not `/subjects` (`fallbackRedirectUrl`
+    on both) — the dashboard-as-hub redesign is pointless if nobody actually lands on
+    it. **Home page's signed-out CTA** changed from "Go to Subjects" (which just
+    bounced through Clerk's redirect anyway, since `/subjects` is protected) to a
+    single "Get started" → `/sign-in`.
+  - **i18n**: every new string on `dashboard`/`subjects` (both already
+    `useTranslations`-converted pages) goes through `t()` — including, on `subjects`,
+    the Increment-3-era confirm/toast copy that had been deliberately left in English
+    at the time; redesigning this exact page now was the natural point to finish that
+    conversion rather than leaving one page permanently half-translated. Two now-dead
+    keys (`Home.signIn`, `Dashboard.viewAll`) and one now-dead-but-still-defined key
+    (`Subjects.createError`, superseded by a title/description pair reusing a new
+    shared `Common.tryAgain`) were removed. **Quiz/flashcard/progress pages' new
+    strings stayed plain English**, matching the rest of each of those pages (still
+    fully untranslated) — converting an entire untouched page to `next-intl` as a side
+    effect of adding one usage hint would be real scope creep; that full conversion
+    stays the already-tracked, separate i18n follow-up. All en/uz/ko/ru catalogs
+    verified to parse and carry identical key sets (scripted diff, not eyeballed).
+  - Tests: `skeleton.test.tsx` (1), `empty-state.test.tsx` (3), `error-state.test.tsx`
+    (3), `card.test.tsx` (3, new — interactive/selected props), `usage-hint.test.tsx`
+    (4), `subjectCardStats.test.ts` (2), `onboardingChecklist.test.ts` (6),
+    `usageSeverity.test.ts` (5) — 27 new, all pure/component-render tests, matching
+    this codebase's established helpers-and-components-tested / pages-thin pattern
+    (no new page-level tests; dashboard/subjects pages verified via `tsc`/`eslint`/
+    build, same as every other page here). Frontend **161 passed** (39 files, up from
+    134/31), `tsc --noEmit` clean, `eslint` clean, `npm run build` succeeds — same 14
+    routes/URLs, `/dashboard` grew from 3.5 kB to 7.3 kB (the hub's added logic).
+  - **Caught mid-session, fixed immediately, not left for the user**: `rm -rf .next`
+    while `next dev` was still running on port 3000 wedged the dev server again (the
+    exact same failure mode from Increment 2/3's verification work) — this time caught
+    *before* running the build, by checking the port first, stopping the process,
+    running the build, then restarting `next dev` fresh and confirming it actually
+    served the homepage (`200`) afterward.
+  - **Not browser-verified** (standing gap, no browser in this environment): the
+    dashboard's checklist/plan-card/subject-grid rendering, hover/interactive card
+    feedback, the chevron micro-animation, greeting personalization, and the
+    sign-in/up→`/dashboard` redirect all still want a real click-through with live
+    Clerk auth.
+
 ## Next (Phase 4+)
 - **Frontend redesign roadmap (in progress)** — a phased UI/UX overhaul, one increment per
   commit batch, each gated on a `tekshir` review before the next starts. FRONTEND.md was
@@ -1764,7 +1855,9 @@ frontends already shipped.
      `tekshir` review before Increment 4.
   4. **Differentiate Dashboard vs Progress** — Dashboard becomes a hub (greeting, plan/usage
      summary, quick actions, subject list w/ mini-stats); per-subject progress keeps
-     `ProgressStats`, restyled with the new tokens/chart palette.
+     `ProgressStats`, restyled with the new tokens/chart palette. **✓ DONE (see entry
+     above) — closes the redesign roadmap.** No further increment queued; a `tekshir`
+     review of this one is still outstanding.
 - **Confirm the Polar webhook against real delivery** — the one gap in the payment path;
   see "Blockers". Everything else in the payment path is live-verified.
 - **Browser pass on the billing frontend** — the `/billing` page, the checkout→Polar

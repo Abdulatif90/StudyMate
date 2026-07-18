@@ -3,8 +3,11 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ChartNoAxesCombined } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
+import { ErrorState } from "@/components/error-state";
 import { ProgressStats } from "@/components/progress-stats";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useApiClient } from "@/lib/api/useApiClient";
 
 export default function SubjectProgressPage() {
@@ -56,16 +59,25 @@ export default function SubjectProgressPage() {
     return (
       <div className="mx-auto max-w-2xl p-4 sm:p-8">
         {backLink}
-        <p className="text-destructive">Couldn&apos;t load progress.</p>
+        <ErrorState
+          message="Couldn't load progress."
+          retryLabel="Retry"
+          onRetry={() => progressQuery.refetch()}
+        />
       </div>
     );
   }
 
   if (progressQuery.isLoading || !progressQuery.data) {
     return (
-      <div className="mx-auto max-w-2xl p-4 sm:p-8">
+      <div className="mx-auto max-w-2xl p-4 sm:p-8" role="status" aria-label="Loading progress">
         {backLink}
-        <p>Loading…</p>
+        <Skeleton className="mb-6 h-8 w-32" />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <Skeleton className="h-20 w-full rounded-xl" />
+          <Skeleton className="h-20 w-full rounded-xl" />
+          <Skeleton className="h-20 w-full rounded-xl" />
+        </div>
       </div>
     );
   }
@@ -81,19 +93,19 @@ export default function SubjectProgressPage() {
       <h1 className="mb-6 text-2xl font-semibold">Progress</h1>
 
       {!hasAnyData ? (
-        <div className="rounded-lg border border-border p-6 text-center">
-          <p className="font-medium">Nothing to show yet</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Upload a document, then generate flashcards or a quiz from it — your
-            progress will show up here.
-          </p>
-          <Link
-            href={`/subjects/${subjectId}`}
-            className="mt-4 inline-block text-sm text-primary hover:underline"
-          >
-            Go to {subjectQuery.data?.name ?? "subject"}
-          </Link>
-        </div>
+        <EmptyState
+          icon={ChartNoAxesCombined}
+          title="Nothing to show yet"
+          description="Upload a document, then generate flashcards or a quiz from it — your progress will show up here."
+          action={
+            <Link
+              href={`/subjects/${subjectId}`}
+              className="text-sm text-primary hover:underline"
+            >
+              Go to {subjectQuery.data?.name ?? "subject"}
+            </Link>
+          }
+        />
       ) : (
         <ProgressStats
           documents={progress.documents}

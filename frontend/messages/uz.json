@@ -1,6 +1,8 @@
 {
   "Common": {
-    "loading": "Yuklanmoqda…"
+    "loading": "Yuklanmoqda…",
+    "retry": "Qayta urinish",
+    "tryAgain": "Qayta urinib ko‘ring."
   },
   "Language": {
     "label": "Til"
@@ -14,7 +16,7 @@
   },
   "Home": {
     "tagline": "O‘quv materiallaringizni yuklang va savollaringizga manbali, iqtiboslangan javoblar oling.",
-    "signIn": "Kirish"
+    "getStarted": "Boshlash"
   },
   "Subjects": {
     "heading": "Fanlar",
@@ -23,18 +25,40 @@
     "namePlaceholder": "masalan, Biologiya 101",
     "add": "Qo‘shish",
     "adding": "Qo‘shilmoqda…",
-    "createError": "Fan yaratib bo‘lmadi. Qayta urinib ko‘ring.",
     "loadError": "Fanlarni yuklab bo‘lmadi.",
     "empty": "Hali fanlar yo‘q — yuqoridan qo‘shing.",
-    "createdOn": "Yaratilgan {date}"
+    "createdOn": "Yaratilgan {date}",
+    "usageHint": "{cap} tadan {used} tasi ishlatilgan",
+    "createSuccess": "Fan yaratildi",
+    "createErrorTitle": "Fan yaratib bo‘lmadi",
+    "deleteConfirmTitle": "\"{name}\" o‘chirilsinmi?",
+    "deleteConfirmDescription": "Buni ortga qaytarib bo‘lmaydi.",
+    "deleteAriaLabel": "{name}ni o‘chirish",
+    "deleteSuccess": "Fan o‘chirildi",
+    "deleteErrorTitle": "Fanni o‘chirib bo‘lmadi",
+    "deleteNotFound": "Bu fan allaqachon o‘chirilgan yoki topilmadi.",
+    "deleteGenericError": "Fanni o‘chirib bo‘lmadi. Qayta urinib ko‘ring."
   },
   "Dashboard": {
-    "heading": "Boshqaruv paneli",
     "loadError": "Ma’lumotlarni yuklab bo‘lmadi.",
     "welcomeTitle": "StudyMate’ga xush kelibsiz",
     "welcomeBody": "Boshlash uchun fan yarating va hujjat yuklang — o‘quv jarayoningiz shu yerda ko‘rinadi.",
     "getStarted": "Boshlash",
     "acrossSubjects": "{count, plural, one {# ta fan bo‘yicha} other {# ta fan bo‘yicha}}",
-    "viewAll": "Barcha fanlarni ko‘rish"
+    "greeting": "Xush kelibsiz",
+    "greetingNamed": "Xush kelibsiz, {name}",
+    "checklistTitle": "Boshlash uchun qadamlar",
+    "checklistStep": {
+      "createSubject": "Fan yarating",
+      "uploadDocument": "Hujjat yuklang",
+      "tryGeneration": "Test yoki kartochkalarni sinab ko‘ring"
+    },
+    "planCardTitle": "Tarifingiz",
+    "managePlan": "Boshqarish",
+    "newSubject": "Yangi fan",
+    "statDocuments": "{count} ta hujjat",
+    "statFlashcardsDue": "{count} ta muddati kelgan",
+    "statQuizzes": "{count} ta test",
+    "viewAllCount": "Barcha {count} ta fanni ko‘rish"
   }
 }

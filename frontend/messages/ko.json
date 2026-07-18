@@ -1,6 +1,8 @@
 {
   "Common": {
-    "loading": "불러오는 중…"
+    "loading": "불러오는 중…",
+    "retry": "재시도",
+    "tryAgain": "다시 시도해 주세요."
   },
   "Language": {
     "label": "언어"
@@ -14,7 +16,7 @@
   },
   "Home": {
     "tagline": "학습 자료를 업로드하고 질문에 대한 출처가 표시된 답변을 받아보세요.",
-    "signIn": "로그인"
+    "getStarted": "시작하기"
   },
   "Subjects": {
     "heading": "과목",
@@ -23,18 +25,40 @@
     "namePlaceholder": "예: 생물학 101",
     "add": "추가",
     "adding": "추가하는 중…",
-    "createError": "과목을 만들지 못했습니다. 다시 시도해 주세요.",
     "loadError": "과목을 불러오지 못했습니다.",
     "empty": "아직 과목이 없습니다 — 위에서 추가하세요.",
-    "createdOn": "{date}에 생성됨"
+    "createdOn": "{date}에 생성됨",
+    "usageHint": "과목 {cap}개 중 {used}개 사용",
+    "createSuccess": "과목이 생성되었습니다",
+    "createErrorTitle": "과목을 만들지 못했습니다",
+    "deleteConfirmTitle": "\"{name}\"을 삭제하시겠습니까?",
+    "deleteConfirmDescription": "이 작업은 되돌릴 수 없습니다.",
+    "deleteAriaLabel": "{name} 삭제",
+    "deleteSuccess": "과목이 삭제되었습니다",
+    "deleteErrorTitle": "과목을 삭제하지 못했습니다",
+    "deleteNotFound": "이 과목은 이미 삭제되었거나 찾을 수 없습니다.",
+    "deleteGenericError": "과목을 삭제하지 못했습니다. 다시 시도해 주세요."
   },
   "Dashboard": {
-    "heading": "대시보드",
     "loadError": "진행 상황을 불러오지 못했습니다.",
     "welcomeTitle": "StudyMate에 오신 것을 환영합니다",
     "welcomeBody": "시작하려면 과목을 만들고 문서를 업로드하세요 — 학습 진행 상황이 여기에 표시됩니다.",
     "getStarted": "시작하기",
     "acrossSubjects": "{count, plural, other {과목 #개}}",
-    "viewAll": "모든 과목 보기"
+    "greeting": "다시 오신 것을 환영합니다",
+    "greetingNamed": "환영합니다, {name}님",
+    "checklistTitle": "시작하기",
+    "checklistStep": {
+      "createSubject": "과목 만들기",
+      "uploadDocument": "문서 업로드",
+      "tryGeneration": "퀴즈나 플래시카드 사용해보기"
+    },
+    "planCardTitle": "내 요금제",
+    "managePlan": "관리",
+    "newSubject": "새 과목",
+    "statDocuments": "문서 {count}개",
+    "statFlashcardsDue": "{count}개 학습 예정",
+    "statQuizzes": "퀴즈 {count}개",
+    "viewAllCount": "{count}개 과목 모두 보기"
   }
 }

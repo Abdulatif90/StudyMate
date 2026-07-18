@@ -12,8 +12,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/toast";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
+import { UsageHint } from "@/components/usage-hint";
 import { useApiClient } from "@/lib/api/useApiClient";
 import { parsePlanLimitError, type PlanLimitError } from "@/lib/planLimitError";
+import { usageMeters } from "@/lib/planLimits";
 import { friendlyQuizError } from "@/lib/quizError";
 import { formatRelativeTime } from "@/lib/relativeTime";
 
@@ -51,6 +53,20 @@ export default function QuizzesPage() {
     },
   });
 
+  const planQuery = useQuery({
+    queryKey: ["billing", "plan"],
+    queryFn: async () => {
+      const { data, error } = await api.GET("/billing/plan");
+      if (error) throw error;
+      return data;
+    },
+  });
+  // Quiz + flashcard generation share ONE daily cap on the backend (billing.service
+  // counts them together) — same meter as the flashcards page shows.
+  const generationsMeter = planQuery.data
+    ? usageMeters(planQuery.data).find((meter) => meter.key === "generations")
+    : undefined;
+
   const generateQuiz = useMutation({
     mutationFn: async () => {
       const { data, error, response } = await api.POST("/subjects/{subject_id}/quizzes", {
@@ -76,6 +92,7 @@ export default function QuizzesPage() {
     onSuccess: (data) => {
       setTitle("");
       queryClient.invalidateQueries({ queryKey: ["subjects", subjectId, "quizzes"] });
+      queryClient.invalidateQueries({ queryKey: ["billing", "plan"] });
       toast.success("Quiz generated", data.title || undefined);
     },
   });
@@ -175,7 +192,16 @@ export default function QuizzesPage() {
               Generating questions from your material — this can take a few seconds.
             </p>
           )}
-          {limitError && <UpgradePrompt message={limitError.detail} />}
+          {limitError ? (
+            <UpgradePrompt message={limitError.detail} />
+          ) : (
+            generationsMeter && (
+              <UsageHint
+                meter={generationsMeter}
+                text={`${generationsMeter.used} of ${generationsMeter.cap} generations used today`}
+              />
+            )
+          )}
         </CardContent>
       </Card>
 
@@ -188,7 +214,7 @@ export default function QuizzesPage() {
       <ul className="flex flex-col gap-2">
         {quizzesQuery.data?.map((quiz) => (
           <li key={quiz.id}>
-            <Card>
+            <Card interactive>
               <CardContent className="flex items-center justify-between gap-3 py-4">
                 <Link
                   href={`/subjects/${subjectId}/quizzes/${quiz.id}`}

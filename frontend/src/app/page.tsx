@@ -13,17 +13,10 @@ export default function Home() {
         <Show
           when="signed-in"
           fallback={
-            <>
-              <Button
-                nativeButton={false}
-                render={<Link href="/subjects">{t("Nav.goToSubjects")}</Link>}
-              />
-              <Button
-                variant="outline"
-                nativeButton={false}
-                render={<Link href="/sign-in">{t("Home.signIn")}</Link>}
-              />
-            </>
+            <Button
+              nativeButton={false}
+              render={<Link href="/sign-in">{t("Home.getStarted")}</Link>}
+            />
           }
         >
           <Button

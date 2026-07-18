@@ -12,9 +12,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/toast";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
+import { UsageHint } from "@/components/usage-hint";
 import { useApiClient } from "@/lib/api/useApiClient";
 import { friendlyFlashcardError } from "@/lib/flashcardError";
 import { parsePlanLimitError, type PlanLimitError } from "@/lib/planLimitError";
+import { usageMeters } from "@/lib/planLimits";
 
 const MIN_CARDS = 1;
 const MAX_CARDS = 50;
@@ -60,6 +62,20 @@ export default function FlashcardsPage() {
     },
   });
 
+  const planQuery = useQuery({
+    queryKey: ["billing", "plan"],
+    queryFn: async () => {
+      const { data, error } = await api.GET("/billing/plan");
+      if (error) throw error;
+      return data;
+    },
+  });
+  // Quiz + flashcard generation share ONE daily cap on the backend (billing.service
+  // counts them together) — same meter as the quizzes page shows.
+  const generationsMeter = planQuery.data
+    ? usageMeters(planQuery.data).find((meter) => meter.key === "generations")
+    : undefined;
+
   const generateFlashcards = useMutation({
     mutationFn: async () => {
       const { data, error, response } = await api.POST("/subjects/{subject_id}/flashcards", {
@@ -82,6 +98,7 @@ export default function FlashcardsPage() {
     onMutate: () => setLimitError(null),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["subjects", subjectId, "flashcards"] });
+      queryClient.invalidateQueries({ queryKey: ["billing", "plan"] });
       toast.success(`${data.length} flashcard${data.length === 1 ? "" : "s"} generated`);
     },
   });
@@ -179,7 +196,16 @@ export default function FlashcardsPage() {
               Generating cards from your material — this can take a few seconds.
             </p>
           )}
-          {limitError && <UpgradePrompt message={limitError.detail} />}
+          {limitError ? (
+            <UpgradePrompt message={limitError.detail} />
+          ) : (
+            generationsMeter && (
+              <UsageHint
+                meter={generationsMeter}
+                text={`${generationsMeter.used} of ${generationsMeter.cap} generations used today`}
+              />
+            )
+          )}
         </CardContent>
       </Card>
 

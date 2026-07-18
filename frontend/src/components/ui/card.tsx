@@ -5,14 +5,30 @@ import { cn } from "@/lib/utils"
 function Card({
   className,
   size = "default",
+  interactive = false,
+  selected = false,
   ...props
-}: React.ComponentProps<"div"> & { size?: "default" | "sm" }) {
+}: React.ComponentProps<"div"> & {
+  size?: "default" | "sm"
+  /** Hover elevation + accent ring + cursor-pointer, for a card that IS (or is wrapped
+   * by, e.g. a `<Link>`) a clickable control — not for a purely static display card.
+   * Purely visual: this component stays a plain `<div>` with no keyboard/click
+   * handling of its own, so the actual interactivity (and its accessible semantics)
+   * comes from whatever wraps or renders inside it. */
+  interactive?: boolean
+  /** A persistent accent ring for a currently-active/chosen interactive card (e.g. the
+   * active item in a list), independent of hover. */
+  selected?: boolean
+}) {
   return (
     <div
       data-slot="card"
       data-size={size}
       className={cn(
         "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-xl bg-card py-(--card-spacing) text-sm text-card-foreground ring-1 ring-foreground/10 [--card-spacing:--spacing(4)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(3)] data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
+        interactive &&
+          "cursor-pointer shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md hover:ring-primary/40",
+        selected && "ring-2 ring-primary",
         className
       )}
       {...props}

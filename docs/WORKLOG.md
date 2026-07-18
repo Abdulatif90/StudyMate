@@ -2,6 +2,68 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-18 — Frontend redesign Increment 4 (final): Dashboard-as-hub + polish
+Closes the redesign roadmap. Frontend-only. Plus the deferred Increment-1 add-ons later
+pages needed: skeleton loaders, `EmptyState`, `ErrorState`.
+Commit: `feat(frontend): Dashboard-as-hub, interactive subject cards, app-wide polish`.
+- New primitives: `ui/skeleton.tsx` (shimmer, `aria-hidden`), `EmptyState`/`ErrorState`
+  (icon+title+description+action / icon+message+Retry, both take already-translated
+  props rather than calling `useTranslations` themselves, same reasoning as the
+  existing `UpgradePrompt`). `Card` gained `interactive`/`selected` props (hover
+  elevation + accent ring, purely visual — no keyboard/click handling of its own) —
+  backward-compatible, every existing static `<Card>` usage unaffected.
+- New pure helpers (all tested): `subjectCardStats` (dashboard card mini-stats from
+  `SubjectProgress`), `onboardingChecklist` (3-step "getting started" checklist
+  derived from existing `GET /progress` data, no new tracking), `usageSeverity`
+  (`normal`/`warning`/`atLimit`, escalating at 80% — before the cap hits, unlike the
+  existing reactive 402 path). `components/usage-hint.tsx` renders that severity.
+- Dashboard fully rewritten as a hub: personalized greeting (Clerk's
+  `useUser().firstName` — confirmed exported/typed against the installed
+  `@clerk/nextjs@7.5.18` before relying on it, this project's had a Clerk API surprise
+  before), a checklist card (hidden once done), the plan/usage summary, a "New
+  subject" quick action, and the subject list as a responsive grid of interactive
+  cards with per-subject mini-stats fetched in parallel via `useQueries` (same pattern
+  the Ask page's conversation previews already use) — capped at 6 with a "view all N"
+  link. Skeleton/EmptyState/ErrorState cover loading/empty/error.
+- Subjects list: single-column `<ul>` → responsive grid of interactive cards; a
+  proactive usage hint next to the create form; fixed a now-stale code comment
+  claiming the backend couldn't cascade-delete (it can, since the cascade-delete fix
+  above). Quiz/flashcard generate pages each gained the same proactive usage hint
+  (confirmed against `billing.service` that quiz+flashcard generation share ONE daily
+  cap before assuming it). Progress page got the same Skeleton/EmptyState/ErrorState
+  treatment; `ProgressStats` itself untouched.
+- Sign-in/sign-up now land on `/dashboard`, not `/subjects` — the hub redesign is
+  pointless if nobody lands on it. Home page's signed-out CTA simplified to a single
+  "Get started" → `/sign-in` (was "Go to Subjects", which just bounced through Clerk's
+  redirect anyway since `/subjects` is protected).
+- i18n: every new string on `dashboard`/`subjects` (already-converted pages) goes
+  through `t()` — including subjects' Increment-3-era confirm/toast copy that had been
+  left in English at the time; redesigning this exact page was the natural point to
+  finish that conversion. Quiz/flashcard/progress pages' new strings stayed plain
+  English, matching the rest of each untouched page — full conversion stays the
+  separate, already-tracked follow-up. Two dead keys removed (`Home.signIn`,
+  `Dashboard.viewAll`); all four locale catalogs verified to parse with identical key
+  sets (scripted diff).
+- Tests: 27 new (skeleton/empty-state/error-state/card/usage-hint components +
+  subjectCardStats/onboardingChecklist/usageSeverity helpers). Frontend **161 passed**
+  (39 files, up from 134/31), `tsc`/`eslint` clean, `npm run build` succeeds (same 14
+  routes). Caught and fixed mid-session (not left for the user): `rm -rf .next` while
+  `next dev` was still running wedged it again (same failure mode as Increments 2/3) —
+  this time caught before the build by checking the port first, stopping the process,
+  building, then restarting `next dev` and confirming it actually served the homepage.
+- **Not browser-verified** (standing gap, no browser here): dashboard rendering,
+  hover/interactive card feedback, greeting personalization, sign-in/up redirect.
+
+## 2026-07-18 — Test: lock in the document-upload enqueue-failure behavior
+Found live: uploading a document 500s with no CORS header (browser reports it as a
+CORS failure) when the local Inngest Dev Server isn't running — `enqueue_document_
+processing` raises `SendEventsError` after `create_document` already committed the row
+and uploaded to R2, and no app-wide handler catches it. Added a regression test
+locking in this "raises loudly" behavior (same reasoning as a missing
+`INNGEST_EVENT_KEY`) and confirming the row + R2 object are already real by the time
+it happens. No behavior change. Backend **284 passed** (up from 283), `ruff` clean.
+Commit: `test(documents): lock in the enqueue-failure behavior on upload` (`881d461`).
+
 ## 2026-07-18 — Backend fix: subject cascade delete
 Closes the backend gap Frontend Increment 3 found and flagged (not fixed there —
 frontend-only scope). `DELETE /subjects/{subject_id}` on a subject with real content

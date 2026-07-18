@@ -1,6 +1,8 @@
 {
   "Common": {
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "retry": "Retry",
+    "tryAgain": "Please try again."
   },
   "Language": {
     "label": "Language"
@@ -14,7 +16,7 @@
   },
   "Home": {
     "tagline": "Upload your study materials and get cited, sourced answers to your questions.",
-    "signIn": "Sign in"
+    "getStarted": "Get started"
   },
   "Subjects": {
     "heading": "Subjects",
@@ -23,18 +25,40 @@
     "namePlaceholder": "e.g. Biology 101",
     "add": "Add",
     "adding": "Adding…",
-    "createError": "Couldn't create subject. Please try again.",
     "loadError": "Couldn't load subjects.",
     "empty": "No subjects yet — add one above.",
-    "createdOn": "Created {date}"
+    "createdOn": "Created {date}",
+    "usageHint": "{used} of {cap} subjects used",
+    "createSuccess": "Subject created",
+    "createErrorTitle": "Couldn't create subject",
+    "deleteConfirmTitle": "Delete \"{name}\"?",
+    "deleteConfirmDescription": "This can't be undone.",
+    "deleteAriaLabel": "Delete {name}",
+    "deleteSuccess": "Subject deleted",
+    "deleteErrorTitle": "Couldn't delete subject",
+    "deleteNotFound": "This subject was already deleted or couldn't be found.",
+    "deleteGenericError": "Couldn't delete this subject. Please try again."
   },
   "Dashboard": {
-    "heading": "Dashboard",
     "loadError": "Couldn't load progress.",
     "welcomeTitle": "Welcome to StudyMate",
     "welcomeBody": "Create a subject and upload a document to get started — your study progress will show up here.",
     "getStarted": "Get started",
     "acrossSubjects": "{count, plural, one {Across # subject} other {Across # subjects}}",
-    "viewAll": "View all subjects"
+    "greeting": "Welcome back",
+    "greetingNamed": "Welcome back, {name}",
+    "checklistTitle": "Getting started",
+    "checklistStep": {
+      "createSubject": "Create a subject",
+      "uploadDocument": "Upload a document",
+      "tryGeneration": "Try a quiz or flashcards"
+    },
+    "planCardTitle": "Your plan",
+    "managePlan": "Manage",
+    "newSubject": "New subject",
+    "statDocuments": "{count, plural, one {# document} other {# documents}}",
+    "statFlashcardsDue": "{count} due",
+    "statQuizzes": "{count, plural, one {# quiz} other {# quizzes}}",
+    "viewAllCount": "{count, plural, one {View # subject} other {View all # subjects}}"
   }
 }
