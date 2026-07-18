@@ -242,6 +242,39 @@ def test_upload_rejects_oversize_file(_mock_inngest):
     _mock_inngest.assert_not_called()
 
 
+def test_upload_still_persists_the_document_if_enqueueing_fails(_mock_inngest, _mock_r2):
+    """Real failure mode, found while debugging a live 500 on this endpoint: the
+    Inngest Dev Server wasn't running locally, so `enqueue_document_processing`
+    (called AFTER `create_document` has already committed the row and uploaded to R2 —
+    see router.py's ordering comment) raised `inngest.errors.SendEventsError`. That
+    unhandled exception has no app-wide handler (only `PlanLimitExceededError` does —
+    see `main.py`), so it propagates all the way through instead of becoming a clean
+    HTTP response — which is why the browser reported it as a CORS failure rather than
+    a JSON 500 body (the response never got far enough to pick up CORS headers).
+
+    This locks in that "raises loudly" behavior as a deliberate design choice (same
+    reasoning as a missing `INNGEST_EVENT_KEY` — an infra problem should fail hard, not
+    silently drop the event and leave a permanently-`pending` document with no one
+    ever told) — not a bug to silently swallow here. A generic `RuntimeError` stands in
+    for the real `SendEventsError`; what's under test is that ANY enqueue failure
+    behaves this way, not the specific exception type Inngest's SDK happens to raise.
+    """
+    subject_id = _create_subject()
+    _mock_inngest.side_effect = RuntimeError("simulated Inngest Dev Server outage")
+
+    with pytest.raises(RuntimeError, match="simulated Inngest Dev Server outage"):
+        client.post(f"/subjects/{subject_id}/documents", files=_txt_file(b"still saved"))
+
+    # The row and its R2 object are already real — committed by create_document before
+    # the enqueue call that failed — even though the HTTP request itself never
+    # completed (no 201, no response at all, just a propagated exception).
+    with Session(_engine) as session:
+        documents = documents_service.list_documents(session, _TEST_USER, uuid.UUID(subject_id))
+        assert len(documents) == 1
+        assert documents[0].status == documents_service.DocumentStatus.PENDING
+        assert _mock_r2[documents[0].r2_object_key] == b"still saved"
+
+
 # --- Processing (the async job — service.process_document) ------------------
 
 
