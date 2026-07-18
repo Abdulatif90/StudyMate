@@ -139,7 +139,12 @@ def get_document_by_id(session: Session, owner_id: str, document_id: uuid.UUID) 
 
 
 def delete_document(
-    session: Session, owner_id: str, subject_id: uuid.UUID, document_id: uuid.UUID
+    session: Session,
+    owner_id: str,
+    subject_id: uuid.UUID,
+    document_id: uuid.UUID,
+    *,
+    commit: bool = True,
 ) -> bool:
     """Delete a document and everything it owns: its `DocumentChunk` rows, its R2
     object, and the `Document` row itself. Returns `False` (router → 404) if the
@@ -147,17 +152,30 @@ def delete_document(
     owner+subject scoping as `get_document`, so a non-owner can't delete (or even
     detect the existence of) another tenant's document.
 
-    Order, and why: DB rows are deleted and committed *before* the R2 object. If the DB
-    delete fails/rolls back, the R2 object is untouched (still consistent — nothing was
-    removed that the DB still claims exists). Deleting R2 first would risk the reverse:
-    a DB-delete failure after a successful R2 delete would leave a `Document` row
-    pointing at a now-missing object. Once the DB delete has committed, there is no
-    longer any DB row to "point at" anything, so the R2 delete afterward is best-effort
-    and its exceptions are deliberately swallowed (not re-raised) — `delete_object` is
-    idempotent, and a transient R2 failure at that point only leaves a harmless
-    orphaned object (a storage-cost cleanup debt, not a dangling/broken reference,
-    since nothing in the DB references it anymore); it must not turn an
-    already-successful document deletion into a 500 for the caller.
+    Order, and why: DB rows are deleted (and, by default, committed) *before* the R2
+    object. If the DB delete fails/rolls back, the R2 object is untouched (still
+    consistent — nothing was removed that the DB still claims exists). Deleting R2
+    first would risk the reverse: a DB-delete failure after a successful R2 delete
+    would leave a `Document` row pointing at a now-missing object. The R2 delete
+    afterward is best-effort and its exceptions are deliberately swallowed (not
+    re-raised) — `delete_object` is idempotent, and a transient R2 failure at that
+    point only leaves a harmless orphaned object (a storage-cost cleanup debt, not a
+    dangling/broken reference); it must not turn an already-successful document
+    deletion into a 500 for the caller.
+
+    `commit=False` (used by `subjects.service.delete_subject`, cascading a whole
+    subject's deletion in one transaction): the DB delete is `flush()`ed instead of
+    committed, so the caller's own later `commit()`/rollback governs it. The R2 delete
+    still happens immediately either way, not deferred — so if the *caller's*
+    transaction later rolls back, an already-removed R2 object stays removed even
+    though the `Document` row reappears. This is a deliberate, accepted tradeoff (the
+    same one a single `commit=True` call already makes, just visible at a larger
+    scale): R2 has no transaction to roll back, and re-deriving "was this specific R2
+    delete part of a transaction that later rolled back" isn't worth the complexity for
+    what remains a storage-cost cleanup debt, not a correctness bug (nothing in the DB
+    ever points at a missing object — the surviving `Document` row's `r2_object_key`
+    would just point at nothing, same as any other legacy/edge case already tolerated
+    here).
 
     Chunks are deleted (and flushed) *before* the Document row for the same reason
     `ask.service.delete_conversation` flushes before its parent delete: there's no
@@ -173,7 +191,10 @@ def delete_document(
     session.flush()
     r2_object_key = document.r2_object_key
     session.delete(document)
-    session.commit()
+    if commit:
+        session.commit()
+    else:
+        session.flush()
 
     if r2_object_key is not None:
         try:

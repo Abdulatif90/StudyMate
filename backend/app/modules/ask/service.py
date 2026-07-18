@@ -107,7 +107,28 @@ def create_turn(
     return turn
 
 
-def delete_conversation(session: Session, owner_id: str, conversation_id: uuid.UUID) -> bool:
+def list_conversations_by_subject(
+    session: Session, owner_id: str, subject_id: uuid.UUID
+) -> list[Conversation]:
+    """Owner+subject-scoped conversation list. `list_conversations` above is
+    deliberately owner-only (the sidebar spans every subject) — this is for callers
+    that need just one subject's conversations, e.g.
+    `subjects.service.delete_subject`'s cascade delete."""
+    return list(
+        session.exec(
+            select(Conversation).where(
+                Conversation.subject_id == subject_id, Conversation.owner_id == owner_id
+            )
+        )
+    )
+
+
+def delete_conversation(
+    session: Session, owner_id: str, conversation_id: uuid.UUID, *, commit: bool = True
+) -> bool:
+    """`commit=False` (used by `subjects.service.delete_subject`, cascading a whole
+    subject's deletion in one transaction): flushes instead of committing, so the
+    caller's own commit/rollback governs this delete too."""
     conversation = get_conversation(session, owner_id, conversation_id)
     if conversation is None:
         return False
@@ -121,7 +142,10 @@ def delete_conversation(session: Session, owner_id: str, conversation_id: uuid.U
     # was a real failure, not a hypothetical one, via the live end-to-end test.
     session.flush()
     session.delete(conversation)
-    session.commit()
+    if commit:
+        session.commit()
+    else:
+        session.flush()
     return True
 
 

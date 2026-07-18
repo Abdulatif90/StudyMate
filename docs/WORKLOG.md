@@ -2,6 +2,54 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-18 — Backend fix: subject cascade delete
+Closes the backend gap Frontend Increment 3 found and flagged (not fixed there —
+frontend-only scope). `DELETE /subjects/{subject_id}` on a subject with real content
+used to hit an unhandled 500 (no FK cascade, no ordered service-layer delete).
+Commit: `fix(subjects): cascade-delete a subject's documents, quizzes, flashcards,
+and conversations`.
+- **Not a DB-level `ON DELETE CASCADE`, by design**: that would delete `Document` rows
+  while leaving their R2 objects orphaned forever. `subjects.service.delete_subject`
+  instead enumerates each owned child (owner+subject-scoped) and reuses each module's
+  own `delete_document`/`delete_quiz`/`delete_flashcard`/`delete_conversation` —
+  the functions that already know how to clean up their own child rows and, for
+  documents, the R2 object too. Added `ask.service.list_conversations_by_subject`
+  (the existing `list_conversations` is deliberately owner-only, for the
+  cross-subject sidebar).
+- **Two real problems found during Step 0, before writing the actual fix**: (1) all
+  four `delete_*` functions commit internally — calling them in a loop as-is would
+  break "one transaction, full rollback on failure" (a later failure would leave
+  earlier deletes already committed). Fixed with a keyword-only `commit: bool = True`
+  on all four (default preserves every existing call site's behavior — confirmed via
+  grep only their own router calls them). (2) A top-level cross-module import in
+  `subjects/service.py` is a genuine circular import (`documents.service` already
+  imports `subjects.service.get_subject`) — reproduced directly
+  (`ImportError: cannot import name 'get_subject' from partially initialized module`)
+  before fixing it by moving the four imports inside `delete_subject`'s body.
+- **One accepted non-atomic edge, documented in the docstring**: `delete_document`'s R2
+  delete still happens immediately regardless of `commit` (R2 has no transaction to
+  roll back) — an outer-transaction failure after some R2 objects were already removed
+  resurrects their `Document` rows via rollback while the R2 objects stay gone. Same
+  tradeoff a single document delete already accepts, just visible at a larger scale;
+  not made transactional, per the task's explicit instruction.
+- Confirmed via `grep 'foreign_key="subjects.id"'`: exactly the four tables named
+  (documents, quizzes, flashcards, conversations), plus `document_chunks`/
+  `quiz_questions`/`conversation_turns` handled transitively — nothing missed.
+- Tests (`test_subjects.py`, offline, R2 mocked): a subject seeded with one of each
+  child type is deleted → every child row actually gone (re-queried directly, not just
+  the parent lookup returning `None`) and its R2 object gone from the fake store,
+  while a second owner's identically-shaped data is completely untouched (the
+  cross-tenant assertion). Plus the existing empty-subject test kept, and a new one for
+  the enumeration loops being genuine no-ops on an empty subject. Backend
+  **283 passed** (11 deselected live, up from 281/10), `ruff check` clean.
+- **Live-verified** against real Neon + R2 (`-m live`): a real subject with a real
+  ingested document (real `create_document` + `process_document`) deleted via
+  `delete_subject`; confirmed the DB rows and the real R2 object are gone. Queried Neon
+  and R2 directly by the test's owner id afterward, outside the test itself: 0
+  subjects, 0 documents, 0 chunks, 0 R2 objects — confirmed clean, not just asserted.
+- Frontend unchanged — Increment 3's "Please try again" delete-error toast is now
+  reachable only for genuine failures, not the previously near-guaranteed 500.
+
 ## 2026-07-18 — Frontend redesign Increment 3: interaction gaps
 Increment 3 of ~4, gated on a `tekshir` review before Increment 4. Frontend-only, no
 backend change (a real backend gap was found and flagged, not fixed here — see below).

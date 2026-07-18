@@ -1674,6 +1674,75 @@ frontends already shipped.
     subject-delete round-trip against a real subject (empty and non-empty, to observe the
     backend gap above first-hand) all still want a real click-through.
 
+- [x] **Backend fix: subject cascade delete** — closes the gap the Increment-3 frontend
+  work found (above): `DELETE /subjects/{subject_id}` on a subject with real content
+  used to hit an unhandled 500. `subjects.service.delete_subject` now cascades properly.
+  - **Deliberately NOT a DB-level `ON DELETE CASCADE`** (the design constraint the task
+    led with, verified before writing any code): that would delete `Document` *rows* via
+    Postgres while leaving their **R2 objects orphaned forever** — a DB cascade has no
+    idea R2 exists. Instead, `delete_subject` enumerates each owned child
+    (`list_documents`/`list_quizzes`/`list_flashcards` — all already
+    owner+subject-scoped — plus a new owner+subject-scoped
+    `ask.service.list_conversations_by_subject`, since the existing `list_conversations`
+    is deliberately owner-only for the cross-subject sidebar) and reuses each module's
+    own `delete_document`/`delete_quiz`/`delete_flashcard`/`delete_conversation` —
+    exactly the functions that already know how to clean up their own child rows and,
+    for documents, the R2 object too.
+  - **Real problem found during Step 0, not anticipated by the task**: all four
+    `delete_*` functions call `session.commit()` internally (they're written as
+    top-level operations invoked directly from their own router). Calling them as-is in
+    a loop would mean a later failure (e.g. deleting flashcard #3 of 5) leaves the
+    already-committed document/quiz deletes in place — silently violating "one
+    transaction, full rollback on failure." Fixed by giving all four a keyword-only
+    `commit: bool = True` parameter (default preserves every existing call site's exact
+    behavior — confirmed via grep that only their own router calls them, and always
+    positionally) — `commit=False` flushes instead of committing, so
+    `delete_subject`'s own final `session.commit()` is the only commit point across the
+    whole cascade. Confirmed via a second real Step-0 finding: a straightforward
+    top-level `from app.modules.documents.service import ...` in `subjects/service.py`
+    is a genuine circular import (`documents.service` already imports
+    `subjects.service.get_subject`) — reproduced directly (`ImportError: cannot import
+    name 'get_subject' from partially initialized module`) before writing the real fix,
+    then resolved with the standard idiom: the four cross-module imports live inside
+    `delete_subject`'s body, not at module top level.
+  - **The one accepted non-atomic edge, documented in `delete_subject`'s docstring**:
+    `delete_document`'s R2 delete still happens immediately (best-effort, exceptions
+    already swallowed) regardless of `commit` — R2 has no transaction to roll back. If
+    the outer transaction fails *after* some documents' R2 objects were already
+    removed, a DB rollback resurrects those `Document` rows while their R2 objects stay
+    gone — the same tradeoff a single `commit=True` `delete_document` call already
+    accepts (a storage-cost cleanup debt, never a dangling DB reference), just visible
+    at a larger scale. Not made transactional, per the task's explicit instruction.
+  - Confirmed (grep for `foreign_key="subjects.id"`) exactly the four tables the task
+    named — documents, quizzes, flashcards, conversations — plus `document_chunks`
+    (handled transitively via `delete_document`, no separate pass needed) and
+    `quiz_questions`/`conversation_turns` (transitively via `delete_quiz`/
+    `delete_conversation`, neither carries `subject_id` directly). Nothing missed.
+  - Tests (`test_subjects.py`, offline, R2 mocked the same way `test_documents.py` does
+    it): a subject seeded with one of each child type (document + chunk + R2 object,
+    quiz + question, flashcard, conversation + turn) is deleted → every child row is
+    actually gone (`list_questions`/`list_turns` re-queried directly, not just
+    `get_quiz`/`get_conversation` returning `None`, to prove the rows themselves were
+    deleted, not merely unreachable) and its R2 object is gone from the fake store —
+    **while a second owner's identically-shaped data is completely untouched** (the
+    cross-tenant assertion the task called the security crux). Plus the existing
+    empty-subject test kept, and a new one proving the cascade's enumeration loops are
+    genuine no-ops (not skipped) when there's nothing to iterate. Backend **283 passed**
+    (11 deselected live, up from 281/10), `ruff check` clean.
+  - **Live-verified** against real Neon + R2 (`-m live`, run explicitly and reported):
+    a real subject with a real ingested document (real `create_document` +
+    `process_document` — real chunks, real Cohere embeddings, real R2 object) deleted
+    via `delete_subject`; confirmed the `Document`/`DocumentChunk` rows and the R2
+    object are actually gone from the real bucket (`ClientError` on `get_object`), not
+    just that the `Subject` row disappeared. Then queried Neon and R2 directly by the
+    test's owner id outside the test itself: **0 subjects, 0 documents, 0 chunks** in
+    Neon, **0 objects** under that owner's R2 prefix — confirmed clean, not just
+    asserted clean.
+  - Frontend unchanged — the "Please try again" delete-error toast from Increment 3 is
+    now reachable only for genuine failures (a 404/network issue), not the previously
+    near-guaranteed 500 on any non-empty subject. No frontend edit needed this increment
+    (noted for a later polish pass, not scope-creeped in here).
+
 ## Next (Phase 4+)
 - **Frontend redesign roadmap (in progress)** — a phased UI/UX overhaul, one increment per
   commit batch, each gated on a `tekshir` review before the next starts. FRONTEND.md was
@@ -1696,17 +1765,6 @@ frontends already shipped.
   4. **Differentiate Dashboard vs Progress** — Dashboard becomes a hub (greeting, plan/usage
      summary, quick actions, subject list w/ mini-stats); per-subject progress keeps
      `ProgressStats`, restyled with the new tokens/chart palette.
-- **Backend: subject delete has no cascade** — found while wiring the frontend subject-
-  delete button (Increment 3 above). None of the `subject_id` foreign keys on
-  `documents`/`quizzes`/`flashcards` carry `ON DELETE CASCADE`, and the only existing
-  delete-subject test (`test_subjects.py::test_delete_subject_removes_it`) only covers an
-  *empty* subject. Deleting a subject that still has documents/quizzes/flashcards will hit
-  a Postgres FK-violation and most likely surface as an unhandled 500. Needs a real fix —
-  either `ondelete="CASCADE"` on those three FKs via a new migration, or an explicit
-  ordered delete in `subjects.service.delete_subject` (flush children before the parent,
-  the same pattern already used for Document/DocumentChunk, `delete_conversation`, and
-  `delete_document`'s R2 object) — plus a test that actually exercises deleting a
-  non-empty subject, which doesn't exist yet either way.
 - **Confirm the Polar webhook against real delivery** — the one gap in the payment path;
   see "Blockers". Everything else in the payment path is live-verified.
 - **Browser pass on the billing frontend** — the `/billing` page, the checkout→Polar

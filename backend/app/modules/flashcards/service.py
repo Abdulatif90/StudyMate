@@ -181,13 +181,23 @@ def review_flashcard(
     return flashcard
 
 
-def delete_flashcard(session: Session, owner_id: str, flashcard_id: uuid.UUID) -> bool:
+def delete_flashcard(
+    session: Session, owner_id: str, flashcard_id: uuid.UUID, *, commit: bool = True
+) -> bool:
     """Delete a flashcard. Returns `False` (router -> 404) when it doesn't exist or
     isn't owned by `owner_id`. No child rows to order around (unlike Quiz/QuizQuestion)
-    — a plain single-row delete, no flush-before-parent dance needed here."""
+    — a plain single-row delete, no flush-before-parent dance needed here.
+
+    `commit=False` (used by `subjects.service.delete_subject`, cascading a whole
+    subject's deletion in one transaction): flushes instead of committing, so the
+    caller's own commit/rollback governs this delete too.
+    """
     flashcard = get_flashcard(session, owner_id, flashcard_id)
     if flashcard is None:
         return False
     session.delete(flashcard)
-    session.commit()
+    if commit:
+        session.commit()
+    else:
+        session.flush()
     return True

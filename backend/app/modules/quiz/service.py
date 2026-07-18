@@ -125,7 +125,14 @@ def list_questions(session: Session, owner_id: str, quiz_id: uuid.UUID) -> list[
     )
 
 
-def delete_quiz(session: Session, owner_id: str, subject_id: uuid.UUID, quiz_id: uuid.UUID) -> bool:
+def delete_quiz(
+    session: Session,
+    owner_id: str,
+    subject_id: uuid.UUID,
+    quiz_id: uuid.UUID,
+    *,
+    commit: bool = True,
+) -> bool:
     """Delete a quiz and its questions. Returns `False` (router → 404) when the quiz
     doesn't exist, isn't owned by `owner_id`, or isn't in `subject_id` — same
     owner+subject scoping as `get_quiz`.
@@ -135,6 +142,10 @@ def delete_quiz(session: Session, owner_id: str, subject_id: uuid.UUID, quiz_id:
     you — without the flush it can emit `DELETE FROM quizzes` before `DELETE FROM
     quiz_questions` and hit the FK constraint. This is the same flush-before-parent rule
     that surfaced as a real bug in `delete_conversation`/`delete_document` before.
+
+    `commit=False` (used by `subjects.service.delete_subject`, cascading a whole
+    subject's deletion in one transaction): flushes instead of committing, so the
+    caller's own commit/rollback governs this delete too.
     """
     quiz = get_quiz(session, owner_id, subject_id, quiz_id)
     if quiz is None:
@@ -144,5 +155,8 @@ def delete_quiz(session: Session, owner_id: str, subject_id: uuid.UUID, quiz_id:
         session.delete(question)
     session.flush()
     session.delete(quiz)
-    session.commit()
+    if commit:
+        session.commit()
+    else:
+        session.flush()
     return True
