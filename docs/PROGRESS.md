@@ -2111,8 +2111,15 @@ frontends already shipped.
   - **No-browser gap**: language-switch behavior on every newly-converted page (quizzes,
     flashcards, ask, progress, billing) is unverified in an actual browser — only
     `tsc`/`eslint`/`vitest`/`next build` ran in this environment.
-  - Consider typed messages (augment next-intl's `Messages` from `en.json`) so missing
-    keys become a tsc error, and a lint/CI check for catalog parity.
+  - **CI catalog-parity gate — DONE** (see WORKLOG "frontend CI workflow" entry):
+    `.github/workflows/frontend-ci.yml` runs lint + `tsc --noEmit` + `vitest` (which
+    includes `src/i18n/messages.test.ts`, the catalog-parity test) on every push/PR to
+    `main`/`develop`, so a locale catalog falling out of parity with `en.json` now fails
+    CI instead of only being caught locally.
+  - **Typed messages (augment next-intl's `Messages` from `en.json`) — DEFERRED.** Needs a
+    broader refactor first: ~13 call sites use dynamic template-literal keys
+    (`t(\`...\`)`), which the `Messages` augmentation can't typecheck cleanly against.
+    Tracked as a follow-up, not started.
 - **Support/FAQ page — DONE** (see WORKLOG "Support/FAQ page" entry). Frontend-only,
   static content, no backend/CMS: a new `/support` page (`app/(app)/support/page.tsx`)
   reachable from the app-shell nav, with FAQ entries grouped into Getting started /

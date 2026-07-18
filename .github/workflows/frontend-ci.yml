@@ -1,0 +1,35 @@
+name: frontend-ci
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint-typecheck-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npx tsc --noEmit
+
+      # vitest uses mocks, no live backend/Clerk/etc needed; this also runs
+      # src/i18n/messages.test.ts, which enforces locale catalog parity as a
+      # merge gate.
+      - run: npm run test
+
+      # next build step deferred — needs NEXT_PUBLIC_* env (Clerk publishable key etc.) wired as CI vars; lint+tsc+test already gate types/lint/tests/i18n-parity

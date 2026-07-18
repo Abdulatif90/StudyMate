@@ -2,6 +2,27 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-19 — frontend CI workflow
+Added `.github/workflows/frontend-ci.yml`, mirroring `backend-ci.yml`'s structure
+(push/PR to `main`/`develop`, Ubuntu). Steps: checkout, `actions/setup-node@v4` (Node 20 —
+no `.nvmrc`/`engines` field to defer to), `npm ci`, `npm run lint`, `npx tsc --noEmit`,
+`npm run test`. All offline — vitest uses mocks, no live backend/Clerk/etc needed — and
+this includes `src/i18n/messages.test.ts`, so locale catalog parity is now a merge gate,
+not just a local check.
+Commit: `ci(frontend): add lint/typecheck/test workflow`.
+
+- **No `next build` step**, deliberately: it needs `NEXT_PUBLIC_*` env (Clerk publishable
+  key etc.) wired as CI vars, which is out of scope here. Documented inline in the
+  workflow as a YAML comment; lint + tsc + test already gate types/lint/tests/i18n-parity.
+- **Typed next-intl messages (compile-time key checking) intentionally NOT attempted** —
+  deferred per `docs/PROGRESS.md`'s i18n follow-ups: ~13 dynamic template-literal
+  `t(\`...\`)` call sites need a broader refactor before the `Messages`/`AppConfig`
+  augmentation could typecheck cleanly.
+- Verified no source changed: frontend **188 passed** (47 files, unchanged from prior
+  entry), `tsc --noEmit` clean, `eslint` clean. The workflow file itself isn't executable
+  locally (no local GitHub Actions runner) — correctness came from mirroring
+  `backend-ci.yml`'s proven structure plus a `pyyaml` parse of the new file, not execution.
+
 ## 2026-07-19 — Clerk UI localization
 i18n follow-up item (tracked in `docs/PROGRESS.md`'s "i18n follow-ups" list). Clerk's own
 `<SignIn>`/`<SignUp>` widget chrome (labels, buttons, error text — Clerk's internal
