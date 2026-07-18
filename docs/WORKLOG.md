@@ -2,6 +2,80 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-18 — Frontend redesign Increment 3: interaction gaps
+Increment 3 of ~4, gated on a `tekshir` review before Increment 4. Frontend-only, no
+backend change (a real backend gap was found and flagged, not fixed here — see below).
+Commit: `feat(frontend): interaction gaps — confirm, toast, subject delete`.
+- Replaced all 4 `window.confirm` sites (delete-document, delete-quiz, delete-flashcard,
+  delete-conversation) with the shared `useConfirm()` from Increment 1 — async click
+  handlers, early `return` on cancel. Grep-confirmed zero `window.confirm`/`window.alert`
+  remain under `src/`.
+- Routed delete/generate/create/upload feedback through `toast()`, replacing the inline
+  `*Error` state paragraphs FRONTEND.md §3.2 says are the wrong pattern for transient
+  failures: document/quiz/flashcard/conversation/subject delete, document upload, quiz
+  generate, flashcard generate, subject create. The 402 path is the deliberate exception
+  (§3.3) — `parsePlanLimitError(...)` is computed once per failure and only toasts when
+  it's `null`, so a 402 shows only the inline `<UpgradePrompt>`, never also a toast.
+  `UpgradePrompt` needed no restyling — it already reads through Increment 1's palette.
+- Added subject delete: `DELETE /subjects/{subject_id}` already existed on the backend
+  and was already typed in `schema.d.ts`, so no schema regeneration. Destructive icon
+  button per subject card on `subjects/page.tsx`, confirm-guarded, toasting both
+  outcomes. Restructured the subject card so the delete button is a sibling of the
+  `Link`, not nested inside it (the whole card used to be one `<Link>` — a delete click
+  would have also navigated); mirrors the pattern `quizzes/page.tsx` already used.
+- **Backend gap found, not fixed (frontend-only scope)**: none of the `subject_id` FKs
+  on `documents`/`quizzes`/`flashcards` carry `ON DELETE CASCADE`, and the only existing
+  delete-subject test covers an empty subject only — deleting a subject with real
+  content will hit a Postgres FK-violation, likely an unhandled 500. The confirm
+  dialog's copy deliberately does NOT claim cascading deletion; `toast.error` still
+  degrades gracefully if that 500 happens. Flagged in `docs/PROGRESS.md` "Next" — needs
+  a real fix (`ondelete="CASCADE"` via a new migration, or an explicit ordered delete in
+  `subjects.service.delete_subject`) before the button is safe on a non-empty subject.
+- `subjects/page.tsx`'s new confirm/toast/delete strings stayed English on purpose even
+  though that page is already `useTranslations`-converted — matching the other 3
+  (still-English) pages this increment touches was the explicit scope; converting these
+  specific new strings is left to the tracked i18n follow-up.
+- No new pure logic — every change was mutation wiring + JSX inside existing page
+  components, nothing to extract to `lib/`. `tsc --noEmit` clean, `eslint` clean,
+  **134 passed** (31 files, unchanged), `npm run build` succeeds (same 14 routes/URLs).
+- **Not browser-verified** (standing gap, no browser here): confirm-dialog focus-trap/
+  Esc, toast rendering/stacking, and the actual subject-delete round-trip (empty and
+  non-empty, to observe the backend gap first-hand).
+
+## 2026-07-18 — Frontend redesign Increment 2: shared AppShell + navigation
+Increment 2 of ~4, gated on a `tekshir` review before Increment 3. Frontend-only.
+Commit: `feat(frontend): shared AppShell + navigation (redesign increment 2)` (`ea7ae20`).
+- One `AppShell` (`components/app-shell.tsx`) now owns nav + identity/theme/language
+  controls for every authed page — persistent header (Dashboard · Subjects · Plan &
+  billing, active-item highlighting via a new pure `lib/navItems.ts` helper) +
+  `LanguageSwitcher` + `ThemeToggle` + `UserButton`, plus a `ui/dropdown-menu` mobile
+  sheet holding the same three destinations below `sm`.
+- **Step 0 verification, before writing code**: read `@base-ui/react@1.6.0`'s actual
+  `MenuLinkItem` type declarations + runtime source — confirmed `render={<Link .../>}`
+  works, and that it defaults `closeOnClick` to `false` (unlike regular `Menu.Item`,
+  which defaults `true`) with no modifier-key guard in either case — so the mobile sheet
+  passes `closeOnClick` explicitly rather than relying on the default.
+- Adopted via `app/(app)/layout.tsx` wrapping `{children}` in `<AppShell>`. Every authed
+  page moved into the `(app)` route group via `git mv` (URLs unchanged — route groups
+  are URL-transparent): `dashboard`, `subjects` + all subject-scoped sub-routes, and
+  `billing`. Home and sign-in/sign-up stay outside the group.
+- Removed the now-duplicated hand-rolled headers (`LanguageSwitcher` + nav button +
+  `UserButton` row) from `dashboard`/`subjects`/`billing` — kept just each page's `<h1>`.
+- Small fix found in review: `ui/toast.tsx`'s toast transition classes used Base UI's
+  non-existent `data-[ending]`/`data-[starting]` attributes instead of the real
+  `-style` suffix — fixed, toasts now actually fade.
+- Two new i18n keys (`Nav.subjects`, `Nav.menu`) added to `en.json` and mirrored into
+  `uz.json`/`ko.json`/`ru.json`.
+- Tests: `lib/navItems.test.ts` (7) + `components/app-shell.test.tsx` (3, `next/navigation`
+  + `@clerk/nextjs` stubbed). One surprise while writing them: Base UI's `Button`
+  rendered as an `<a>` via `render` keeps `role="button"`, not the anchor's native
+  `role="link"` — tests query accordingly. `tsc --noEmit` clean, `eslint` clean,
+  **134 passed** (31 files, up from 125), `npm run build` succeeds — route list confirms
+  every moved page kept its exact URL.
+- **Not browser-verified** (standing gap, no browser here): mobile nav sheet
+  open/collapse, active-item highlighting, theme toggle, and the language switcher now
+  living in the shell.
+
 ## 2026-07-18 — Frontend redesign Increment 1: design-system foundation
 Phased UI/UX overhaul, increment 1 of ~4 (each gated on a `tekshir` review before the
 next). Frontend-only, no backend change. Two commits.

@@ -9,7 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { toast } from "@/components/ui/toast";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
+import { useConfirm } from "@/components/confirm-provider";
 import { useApiClient } from "@/lib/api/useApiClient";
 import { friendlyDeleteError } from "@/lib/deleteError";
 import { documentStatusVariant } from "@/lib/documentStatus";
@@ -21,10 +23,9 @@ export default function SubjectDetailPage() {
   const { subjectId } = useParams<{ subjectId: string }>();
   const api = useApiClient();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
   const [limitError, setLimitError] = useState<PlanLimitError | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const subjectQuery = useQuery({
     queryKey: ["subjects", subjectId],
@@ -66,21 +67,24 @@ export default function SubjectDetailPage() {
       if (error) {
         // A 402 means the plan's per-subject document cap is hit — capture it (status
         // lives on the response, not the body) so the UI can show an upgrade prompt
-        // instead of the generic upload-error line. Any other status still falls
-        // through to friendlyUploadError below (415/413/generic unchanged).
-        setLimitError(parsePlanLimitError(response.status, error));
-        throw new Error(friendlyUploadError(response.status));
+        // instead of a toast. Any other status toasts a friendly message (415/413/
+        // generic) — the 402 path stays inline per FRONTEND.md §3.3, so it's the one
+        // case that must NOT also fire a toast here.
+        const limit = parsePlanLimitError(response.status, error);
+        setLimitError(limit);
+        const message = friendlyUploadError(response.status);
+        if (!limit) toast.error("Couldn't upload document", message);
+        throw new Error(message);
       }
       return data;
     },
     onMutate: () => setLimitError(null),
-    onSuccess: () => {
-      setUploadError(null);
+    onSuccess: (data) => {
       if (fileInputRef.current) fileInputRef.current.value = "";
       queryClient.invalidateQueries({ queryKey: ["subjects", subjectId, "documents"] });
+      toast.success("Document uploaded", `${data.filename} is processing…`);
     },
-    onError: (error: Error) => {
-      setUploadError(error.message);
+    onError: () => {
       if (fileInputRef.current) fileInputRef.current.value = "";
     },
   });
@@ -94,12 +98,13 @@ export default function SubjectDetailPage() {
       // so `error` (not `data`) is what actually signals failure here.
       if (error) throw new Error(friendlyDeleteError(response.status));
     },
-    onSuccess: () => {
-      setDeleteError(null);
+    onSuccess: (_data, documentId) => {
       queryClient.invalidateQueries({ queryKey: ["subjects", subjectId, "documents"] });
+      const filename = documentsQuery.data?.find((doc) => doc.id === documentId)?.filename;
+      toast.success("Document deleted", filename);
     },
     onError: (error: Error) => {
-      setDeleteError(error.message);
+      toast.error("Couldn't delete document", error.message);
     },
   });
 
@@ -175,11 +180,7 @@ export default function SubjectDetailPage() {
             Processing (parsing, chunking, embedding) runs in the background — a new
             document shows as “pending” until it’s ready.
           </p>
-          {limitError ? (
-            <UpgradePrompt message={limitError.detail} />
-          ) : uploadError ? (
-            <p className="mt-2 text-sm text-destructive">{uploadError}</p>
-          ) : null}
+          {limitError && <UpgradePrompt message={limitError.detail} />}
         </CardContent>
       </Card>
 
@@ -190,7 +191,6 @@ export default function SubjectDetailPage() {
       {documentsQuery.data?.length === 0 && (
         <p className="text-muted-foreground">No documents yet — upload one above.</p>
       )}
-      {deleteError && <p className="mb-2 text-sm text-destructive">{deleteError}</p>}
       <ul className="flex flex-col gap-2">
         {documentsQuery.data?.map((doc) => (
           <li key={doc.id}>
@@ -207,10 +207,14 @@ export default function SubjectDetailPage() {
                     className="shrink-0"
                     aria-label={`Delete ${doc.filename}`}
                     disabled={deleteDocument.isPending && deleteDocument.variables === doc.id}
-                    onClick={() => {
-                      if (window.confirm(`Delete "${doc.filename}"? This can't be undone.`)) {
-                        deleteDocument.mutate(doc.id);
-                      }
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: `Delete "${doc.filename}"?`,
+                        description: "This can't be undone.",
+                        destructive: true,
+                      });
+                      if (!ok) return;
+                      deleteDocument.mutate(doc.id);
                     }}
                   >
                     <Trash2 className="size-3.5" />

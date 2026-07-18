@@ -4,10 +4,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useState } from "react";
+import { Trash2 } from "lucide-react";
+import { useConfirm } from "@/components/confirm-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { toast } from "@/components/ui/toast";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { useApiClient } from "@/lib/api/useApiClient";
 import { parsePlanLimitError, type PlanLimitError } from "@/lib/planLimitError";
@@ -15,6 +18,12 @@ import { parsePlanLimitError, type PlanLimitError } from "@/lib/planLimitError";
 export default function SubjectsPage() {
   const api = useApiClient();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
+  // The confirm/toast strings on this page are deliberately plain English, not run
+  // through next-intl's `t()` — this increment (FRONTEND.md §3) is scoped to closing
+  // interaction gaps, not extending i18n coverage. The rest of this page's existing
+  // copy stays translated; converting these new strings is tracked separately in
+  // docs/PROGRESS.md's i18n follow-ups.
   const t = useTranslations();
   const [name, setName] = useState("");
   const [limitError, setLimitError] = useState<PlanLimitError | null>(null);
@@ -34,18 +43,44 @@ export default function SubjectsPage() {
         body: { name: newName },
       });
       if (error) {
-        // A 402 means the plan's subject cap is hit — capture it (status lives on the
-        // response, not the body) so the UI can show an upgrade prompt instead of a
-        // generic failure. Any other error falls through to the generic message.
-        setLimitError(parsePlanLimitError(response.status, error));
+        // A 402 means the plan's subject cap is hit — stays inline via UpgradePrompt,
+        // not a toast (FRONTEND.md §3.3); any other error toasts a generic failure.
+        const limit = parsePlanLimitError(response.status, error);
+        setLimitError(limit);
+        if (!limit) toast.error("Couldn't create subject", "Please try again.");
         throw error;
       }
       return data;
     },
     onMutate: () => setLimitError(null),
-    onSuccess: () => {
+    onSuccess: (data) => {
       setName("");
       queryClient.invalidateQueries({ queryKey: ["subjects"] });
+      toast.success("Subject created", data.name);
+    },
+  });
+
+  const deleteSubject = useMutation({
+    mutationFn: async (subjectId: string) => {
+      const { error, response } = await api.DELETE("/subjects/{subject_id}", {
+        params: { path: { subject_id: subjectId } },
+      });
+      // 204 No Content on success — `data` is undefined, so `error` is what actually
+      // signals failure here (same as the document/quiz/flashcard delete flows).
+      if (error) {
+        throw new Error(
+          response.status === 404
+            ? "This subject was already deleted or couldn't be found."
+            : "Couldn't delete this subject. Please try again.",
+        );
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["subjects"] });
+      toast.success("Subject deleted");
+    },
+    onError: (error: Error) => {
+      toast.error("Couldn't delete subject", error.message);
     },
   });
 
@@ -81,11 +116,7 @@ export default function SubjectsPage() {
               {createSubject.isPending ? t("Subjects.adding") : t("Subjects.add")}
             </Button>
           </form>
-          {limitError ? (
-            <UpgradePrompt message={limitError.detail} />
-          ) : createSubject.isError ? (
-            <p className="text-destructive mt-2 text-sm">{t("Subjects.createError")}</p>
-          ) : null}
+          {limitError && <UpgradePrompt message={limitError.detail} />}
         </CardContent>
       </Card>
 
@@ -99,18 +130,44 @@ export default function SubjectsPage() {
       <ul className="flex flex-col gap-2">
         {subjectsQuery.data?.map((subject) => (
           <li key={subject.id}>
-            <Link href={`/subjects/${subject.id}`}>
-              <Card className="transition-colors hover:bg-muted/50">
-                <CardContent className="py-4">
-                  <p className="font-medium">{subject.name}</p>
+            <Card>
+              <CardContent className="flex items-center justify-between gap-3 py-4">
+                {/* The delete button below must be a SIBLING of this Link, not nested
+                    inside it — nesting would make a delete click also navigate. */}
+                <Link href={`/subjects/${subject.id}`} className="group min-w-0 flex-1">
+                  <p className="font-medium group-hover:underline">{subject.name}</p>
                   <p className="text-muted-foreground text-xs">
                     {t("Subjects.createdOn", {
                       date: new Date(subject.created_at).toLocaleDateString(),
                     })}
                   </p>
-                </CardContent>
-              </Card>
-            </Link>
+                </Link>
+                <Button
+                  variant="destructive"
+                  size="icon-sm"
+                  className="shrink-0"
+                  aria-label={`Delete ${subject.name}`}
+                  disabled={deleteSubject.isPending && deleteSubject.variables === subject.id}
+                  onClick={async () => {
+                    // Copy deliberately does NOT claim this cascades to the subject's
+                    // documents/quizzes/flashcards — the backend has no ON DELETE
+                    // CASCADE on any of those FKs (checked the migrations), so deleting
+                    // a subject that still has content will error rather than clean up
+                    // after itself. That's a backend gap, flagged in docs/PROGRESS.md;
+                    // out of scope to fix in this frontend-only increment.
+                    const ok = await confirm({
+                      title: `Delete "${subject.name}"?`,
+                      description: "This can't be undone.",
+                      destructive: true,
+                    });
+                    if (!ok) return;
+                    deleteSubject.mutate(subject.id);
+                  }}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </CardContent>
+            </Card>
           </li>
         ))}
       </ul>

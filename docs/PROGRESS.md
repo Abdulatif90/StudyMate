@@ -1608,6 +1608,72 @@ frontends already shipped.
     on-screen behavior at 360/768/1280px per FRONTEND.md §1.7 still wants a real
     click-through.
 
+- [x] **Frontend redesign Increment 3 — interaction gaps** (frontend-only). Closes the
+  gap FRONTEND.md §3 opened in Increment 1: every `window.confirm` replaced with
+  `useConfirm`, mutation feedback routed through `toast()`, and subject delete added.
+  - **All 4 `window.confirm` sites replaced** with the shared `useConfirm()` (async
+    click handlers, `await confirm({ title, description, destructive: true })`, early
+    `return` on cancel): delete-document (`subjects/[subjectId]/page.tsx`),
+    delete-quiz (`quizzes/page.tsx`), delete-flashcard (`flashcards/page.tsx`),
+    delete-conversation (`ask/page.tsx` — this one also gained an `aria-label`, a
+    pre-existing gap on that icon button). Confirmed via grep: zero
+    `window.confirm`/`window.alert` remain anywhere under `src/`.
+  - **Delete + generate/create/upload feedback now routes through `toast()`**, replacing
+    the inline `*Error` state + `<p className="text-destructive">` paragraphs FRONTEND.md
+    §3.2 flags as the wrong pattern for transient failures: document/quiz/flashcard/
+    conversation/subject delete (success + failure), document upload, quiz generate,
+    flashcard generate, and subject create. Each mutation's `onSuccess` fires
+    `toast.success(...)` and its error path fires `toast.error(...)` — one toast per
+    outcome, not per render. The **402 path is the one deliberate exception**
+    (FRONTEND.md §3.3): every create/generate/upload mutation now computes
+    `parsePlanLimitError(...)` once and only toasts when it's `null` — a 402 still shows
+    only the inline `<UpgradePrompt>`, never also a toast, on subjects/documents/quiz/
+    flashcards. `UpgradePrompt` itself needed no restyling — it already reads through
+    Increment 1's palette (`border-destructive/40 bg-destructive/5`, no hardcoded colors).
+  - **Subject delete** (new): `DELETE /subjects/{subject_id}` — already existed on the
+    backend (`subjects/router.py`, `service.delete_subject`) and was already typed in
+    `schema.d.ts`, so no schema regeneration was needed. Added a destructive icon button
+    per subject card on `subjects/page.tsx`, confirm-guarded, toasting on both outcomes,
+    invalidating `["subjects"]` on success. **Link-nesting fix, per the task's own
+    warning**: the whole subject card used to be one giant `<Link>`, which would have
+    made a delete click also navigate — restructured so the `Link` wraps only the
+    text/title portion (`group` + `group-hover:underline`, matching the existing pattern
+    already used on the quizzes list) and the delete button is a sibling inside the same
+    `CardContent` flex row, exactly mirroring how `quizzes/page.tsx` already avoids this
+    for its own delete button.
+  - **Backend gap found while writing this, deliberately NOT fixed here (frontend-only
+    scope)**: checked every `subject_id` foreign key added by the `documents`/`quizzes`/
+    `flashcards` migrations — none carry `ON DELETE CASCADE`, and
+    `test_subjects.py::test_delete_subject_removes_it` only exercises deleting an
+    *empty* subject. Deleting a subject that still has documents/quizzes/flashcards will
+    hit a Postgres FK-violation and most likely surface as an unhandled 500, not a clean
+    cascade. The confirm dialog's copy was written to NOT claim cascading deletion (kept
+    to the same plain "This can't be undone." as the other 3 delete confirms specifically
+    *because* of this); the delete mutation's `toast.error` fallback still degrades
+    gracefully (a friendly message, not a crash) if that 500 happens. **Flagged in "Next"
+    below** — needs a real backend fix (either add `ondelete="CASCADE"` to those three FKs
+    via a new migration, or an explicit ordered-delete in `subjects.service.delete_subject`
+    mirroring the flash-before-parent pattern already used everywhere else in this
+    codebase) before this button is safe to use on a subject with real content.
+  - **Copy stayed English on purpose** (per the task): `subjects/page.tsx` is already
+    `useTranslations`-converted from an earlier increment, so its new confirm/toast/delete
+    strings are the one deliberate inconsistency here — matching the other 3 (still
+    fully-English) pages this increment touches was explicit scope, and converting these
+    specific new strings is left to the tracked i18n follow-up rather than half-converting
+    just this one page's new copy.
+  - No new pure logic emerged worth extracting to `lib/` — every change was mutation
+    wiring + JSX inside existing page components, matching this codebase's established
+    pages-thin/helpers-tested split (nothing to split out this time).
+  - Verified: `npx tsc --noEmit` clean, `npm run lint` clean, **134 passed** (31 files,
+    unchanged — no new tests; this increment's logic is confirm/toast/mutation wiring
+    inside existing untested-at-the-page-level components, consistent with the
+    established pattern, not new pure helpers), `npm run build` succeeds (same 14 routes,
+    same URLs). Grep-confirmed zero `window.confirm`/`window.alert` under `src/`.
+  - **Not browser-verified** (standing gap, no browser in this environment): the
+    confirm-dialog's focus-trap/Esc behavior, toast rendering/stacking, and the actual
+    subject-delete round-trip against a real subject (empty and non-empty, to observe the
+    backend gap above first-hand) all still want a real click-through.
+
 ## Next (Phase 4+)
 - **Frontend redesign roadmap (in progress)** — a phased UI/UX overhaul, one increment per
   commit batch, each gated on a `tekshir` review before the next starts. FRONTEND.md was
@@ -1625,10 +1691,22 @@ frontends already shipped.
      `tekshir` review before Increment 3.
   3. **Interaction gaps** — wire subject delete (`DELETE /subjects/{id}`), replace all 4
      `window.confirm` with `useConfirm`, route mutation errors through `toast()` (402
-     `<UpgradePrompt>` stays inline, restyled).
+     `<UpgradePrompt>` stays inline, restyled). **✓ DONE (see entry above).** Gated on a
+     `tekshir` review before Increment 4.
   4. **Differentiate Dashboard vs Progress** — Dashboard becomes a hub (greeting, plan/usage
      summary, quick actions, subject list w/ mini-stats); per-subject progress keeps
      `ProgressStats`, restyled with the new tokens/chart palette.
+- **Backend: subject delete has no cascade** — found while wiring the frontend subject-
+  delete button (Increment 3 above). None of the `subject_id` foreign keys on
+  `documents`/`quizzes`/`flashcards` carry `ON DELETE CASCADE`, and the only existing
+  delete-subject test (`test_subjects.py::test_delete_subject_removes_it`) only covers an
+  *empty* subject. Deleting a subject that still has documents/quizzes/flashcards will hit
+  a Postgres FK-violation and most likely surface as an unhandled 500. Needs a real fix —
+  either `ondelete="CASCADE"` on those three FKs via a new migration, or an explicit
+  ordered delete in `subjects.service.delete_subject` (flush children before the parent,
+  the same pattern already used for Document/DocumentChunk, `delete_conversation`, and
+  `delete_document`'s R2 object) — plus a test that actually exercises deleting a
+  non-empty subject, which doesn't exist yet either way.
 - **Confirm the Polar webhook against real delivery** — the one gap in the payment path;
   see "Blockers". Everything else in the payment path is live-verified.
 - **Browser pass on the billing frontend** — the `/billing` page, the checkout→Polar
@@ -1650,9 +1728,10 @@ frontends already shipped.
     keys become a tsc error, and a lint/CI check for catalog parity.
 - Remaining per `docs/plan.md`: Business/Teams B2B (Phase 5).
 - Still owed from earlier: a real-browser click-through of the async upload/poll/delete,
-  quiz, hybrid-Ask, flashcards, progress-dashboard, and app-shell nav (mobile sheet,
-  active-item highlighting, theme toggle) flows with live Clerk auth (noted across
-  several increments, never yet done — no browser available in this environment).
+  quiz, hybrid-Ask, flashcards, progress-dashboard, app-shell nav (mobile sheet,
+  active-item highlighting, theme toggle), and the confirm-dialog/toast/subject-delete
+  flows (noted across several increments, never yet done — no browser available in this
+  environment).
 
 ## Blockers / needs from user
 - **Verify the webhook against real Polar delivery** — the only open item on billing.

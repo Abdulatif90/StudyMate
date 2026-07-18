@@ -5,10 +5,12 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { ArrowLeft, Trash2 } from "lucide-react";
+import { useConfirm } from "@/components/confirm-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { toast } from "@/components/ui/toast";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { useApiClient } from "@/lib/api/useApiClient";
 import { friendlyFlashcardError } from "@/lib/flashcardError";
@@ -21,10 +23,9 @@ export default function FlashcardsPage() {
   const { subjectId } = useParams<{ subjectId: string }>();
   const api = useApiClient();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [numCards, setNumCards] = useState(10);
-  const [generateError, setGenerateError] = useState<string | null>(null);
   const [limitError, setLimitError] = useState<PlanLimitError | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const subjectQuery = useQuery({
     queryKey: ["subjects", subjectId],
@@ -67,21 +68,21 @@ export default function FlashcardsPage() {
       });
       // 404/422/502 aren't in the generated error shape (hand-raised HTTPExceptions),
       // so map the real response.status — same pattern as the quiz generate flow. A 402
-      // means the plan's daily generation cap is hit — captured separately so the UI can
-      // show an upgrade prompt instead of the generic generate-error line.
+      // means the plan's daily generation cap is hit — stays inline via UpgradePrompt,
+      // not a toast (FRONTEND.md §3.3); any other status toasts.
       if (error) {
-        setLimitError(parsePlanLimitError(response.status, error));
-        throw new Error(friendlyFlashcardError(response.status));
+        const limit = parsePlanLimitError(response.status, error);
+        setLimitError(limit);
+        const message = friendlyFlashcardError(response.status);
+        if (!limit) toast.error("Couldn't generate flashcards", message);
+        throw new Error(message);
       }
       return data;
     },
     onMutate: () => setLimitError(null),
-    onSuccess: () => {
-      setGenerateError(null);
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["subjects", subjectId, "flashcards"] });
-    },
-    onError: (error: Error) => {
-      setGenerateError(error.message);
+      toast.success(`${data.length} flashcard${data.length === 1 ? "" : "s"} generated`);
     },
   });
 
@@ -95,11 +96,11 @@ export default function FlashcardsPage() {
       if (error) throw new Error("Couldn't delete this flashcard. Please try again.");
     },
     onSuccess: () => {
-      setDeleteError(null);
       queryClient.invalidateQueries({ queryKey: ["subjects", subjectId, "flashcards"] });
+      toast.success("Flashcard deleted");
     },
     onError: (error: Error) => {
-      setDeleteError(error.message);
+      toast.error("Couldn't delete flashcard", error.message);
     },
   });
 
@@ -178,11 +179,7 @@ export default function FlashcardsPage() {
               Generating cards from your material — this can take a few seconds.
             </p>
           )}
-          {limitError ? (
-            <UpgradePrompt message={limitError.detail} />
-          ) : generateError ? (
-            <p className="mt-2 text-sm text-destructive">{generateError}</p>
-          ) : null}
+          {limitError && <UpgradePrompt message={limitError.detail} />}
         </CardContent>
       </Card>
 
@@ -193,7 +190,6 @@ export default function FlashcardsPage() {
       {flashcardsQuery.data?.length === 0 && (
         <p className="text-muted-foreground">No flashcards yet — generate some above.</p>
       )}
-      {deleteError && <p className="mb-2 text-sm text-destructive">{deleteError}</p>}
 
       <ul className="flex flex-col gap-2">
         {flashcardsQuery.data?.map((card) => (
@@ -210,10 +206,14 @@ export default function FlashcardsPage() {
                   className="shrink-0"
                   aria-label={`Delete flashcard "${card.front}"`}
                   disabled={deleteFlashcard.isPending && deleteFlashcard.variables === card.id}
-                  onClick={() => {
-                    if (window.confirm("Delete this flashcard? This can't be undone.")) {
-                      deleteFlashcard.mutate(card.id);
-                    }
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: "Delete this flashcard?",
+                      description: "This can't be undone.",
+                      destructive: true,
+                    });
+                    if (!ok) return;
+                    deleteFlashcard.mutate(card.id);
                   }}
                 >
                   <Trash2 className="size-3.5" />

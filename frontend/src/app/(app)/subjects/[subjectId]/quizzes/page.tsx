@@ -5,10 +5,12 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { ArrowLeft, ChevronRight, Trash2 } from "lucide-react";
+import { useConfirm } from "@/components/confirm-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { toast } from "@/components/ui/toast";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { useApiClient } from "@/lib/api/useApiClient";
 import { parsePlanLimitError, type PlanLimitError } from "@/lib/planLimitError";
@@ -22,11 +24,10 @@ export default function QuizzesPage() {
   const { subjectId } = useParams<{ subjectId: string }>();
   const api = useApiClient();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [numQuestions, setNumQuestions] = useState(5);
   const [title, setTitle] = useState("");
-  const [generateError, setGenerateError] = useState<string | null>(null);
   const [limitError, setLimitError] = useState<PlanLimitError | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const subjectQuery = useQuery({
     queryKey: ["subjects", subjectId],
@@ -61,19 +62,21 @@ export default function QuizzesPage() {
       // the plan's daily generation cap is hit — captured separately so the UI can show
       // an upgrade prompt instead of the generic generate-error line.
       if (error) {
-        setLimitError(parsePlanLimitError(response.status, error));
-        throw new Error(friendlyQuizError(response.status));
+        // A 402 means the plan's daily generation cap is hit — stays inline via
+        // UpgradePrompt, not a toast (FRONTEND.md §3.3); any other status toasts.
+        const limit = parsePlanLimitError(response.status, error);
+        setLimitError(limit);
+        const message = friendlyQuizError(response.status);
+        if (!limit) toast.error("Couldn't generate quiz", message);
+        throw new Error(message);
       }
       return data;
     },
     onMutate: () => setLimitError(null),
-    onSuccess: () => {
-      setGenerateError(null);
+    onSuccess: (data) => {
       setTitle("");
       queryClient.invalidateQueries({ queryKey: ["subjects", subjectId, "quizzes"] });
-    },
-    onError: (error: Error) => {
-      setGenerateError(error.message);
+      toast.success("Quiz generated", data.title || undefined);
     },
   });
 
@@ -87,11 +90,11 @@ export default function QuizzesPage() {
       if (error) throw new Error("Couldn't delete this quiz. Please try again.");
     },
     onSuccess: () => {
-      setDeleteError(null);
       queryClient.invalidateQueries({ queryKey: ["subjects", subjectId, "quizzes"] });
+      toast.success("Quiz deleted");
     },
     onError: (error: Error) => {
-      setDeleteError(error.message);
+      toast.error("Couldn't delete quiz", error.message);
     },
   });
 
@@ -172,11 +175,7 @@ export default function QuizzesPage() {
               Generating questions from your material — this can take a few seconds.
             </p>
           )}
-          {limitError ? (
-            <UpgradePrompt message={limitError.detail} />
-          ) : generateError ? (
-            <p className="mt-2 text-sm text-destructive">{generateError}</p>
-          ) : null}
+          {limitError && <UpgradePrompt message={limitError.detail} />}
         </CardContent>
       </Card>
 
@@ -185,7 +184,6 @@ export default function QuizzesPage() {
       {quizzesQuery.data?.length === 0 && (
         <p className="text-muted-foreground">No quizzes yet — generate one above.</p>
       )}
-      {deleteError && <p className="mb-2 text-sm text-destructive">{deleteError}</p>}
 
       <ul className="flex flex-col gap-2">
         {quizzesQuery.data?.map((quiz) => (
@@ -212,10 +210,14 @@ export default function QuizzesPage() {
                   className="shrink-0"
                   aria-label={`Delete ${quiz.title || "quiz"}`}
                   disabled={deleteQuiz.isPending && deleteQuiz.variables === quiz.id}
-                  onClick={() => {
-                    if (window.confirm(`Delete "${quiz.title || "this quiz"}"? This can't be undone.`)) {
-                      deleteQuiz.mutate(quiz.id);
-                    }
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: `Delete "${quiz.title || "this quiz"}"?`,
+                      description: "This can't be undone.",
+                      destructive: true,
+                    });
+                    if (!ok) return;
+                    deleteQuiz.mutate(quiz.id);
                   }}
                 >
                   <Trash2 className="size-3.5" />

@@ -7,9 +7,11 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { AnswerMessage } from "@/components/answer-message";
+import { useConfirm } from "@/components/confirm-provider";
 import { QuestionMessage } from "@/components/question-message";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/components/ui/toast";
 import { useApiClient } from "@/lib/api/useApiClient";
 import { streamAsk } from "@/lib/api/streamAsk";
 import { filterConversationsBySubject } from "@/lib/conversationFilter";
@@ -27,6 +29,7 @@ export default function AskPage() {
   const api = useApiClient();
   const { getToken } = useAuth();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
 
   const [question, setQuestion] = useState("");
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -112,6 +115,10 @@ export default function AskPage() {
         setActiveConversationId(null);
         setTurns([]);
       }
+      toast.success("Conversation deleted");
+    },
+    onError: () => {
+      toast.error("Couldn't delete conversation", "Please try again.");
     },
   });
 
@@ -292,10 +299,14 @@ export default function AskPage() {
                       variant="ghost"
                       size="icon-sm"
                       className="shrink-0"
-                      onClick={() => {
-                        if (window.confirm("Delete this conversation?")) {
-                          deleteConversation.mutate(conversation.id);
-                        }
+                      aria-label="Delete conversation"
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: "Delete this conversation?",
+                          destructive: true,
+                        });
+                        if (!ok) return;
+                        deleteConversation.mutate(conversation.id);
                       }}
                     >
                       <Trash2 className="size-3.5" />
