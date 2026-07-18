@@ -1,4 +1,5 @@
 import { Check } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -7,9 +8,18 @@ interface PlanCardProps {
   name: string;
   price: string;
   priceSuffix: string;
+  /** Optional one-line blurb between the price and the feature checklist (the
+   * marketing landing page's plan cards; the billing page's own comparison grid
+   * doesn't use this — the plan name + price already carry enough there). */
+  description?: string;
   features: string[];
   ctaLabel: string;
+  /** Exactly one of `onCta` (a mutation/side-effecting action, e.g. billing checkout)
+   * or `ctaHref` (a plain navigation, e.g. the marketing page linking to sign-up) —
+   * the CTA renders as a real `<Link>` when `ctaHref` is given, a plain button
+   * otherwise. */
   onCta?: () => void;
+  ctaHref?: string;
   ctaDisabled?: boolean;
   /** Gets the 1.5px brand-colored border + the overlapping "Most popular" badge. */
   popular?: boolean;
@@ -23,9 +33,11 @@ export function PlanCard({
   name,
   price,
   priceSuffix,
+  description,
   features,
   ctaLabel,
   onCta,
+  ctaHref,
   ctaDisabled,
   popular = false,
   popularLabel,
@@ -45,6 +57,7 @@ export function PlanCard({
             <span className="text-2xl font-bold">{price}</span>
             <span className="text-sm text-muted-foreground">{priceSuffix}</span>
           </p>
+          {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
         </div>
         <ul className="flex flex-1 flex-col gap-2">
           {features.map((feature) => (
@@ -54,14 +67,24 @@ export function PlanCard({
             </li>
           ))}
         </ul>
-        <Button
-          className="w-full"
-          variant={isCurrent ? "outline" : "default"}
-          disabled={ctaDisabled || isCurrent}
-          onClick={onCta}
-        >
-          {ctaLabel}
-        </Button>
+        {ctaHref ? (
+          <Button
+            className="w-full"
+            variant={isCurrent ? "outline" : "default"}
+            disabled={ctaDisabled || isCurrent}
+            nativeButton={false}
+            render={<Link href={ctaHref}>{ctaLabel}</Link>}
+          />
+        ) : (
+          <Button
+            className="w-full"
+            variant={isCurrent ? "outline" : "default"}
+            disabled={ctaDisabled || isCurrent}
+            onClick={onCta}
+          >
+            {ctaLabel}
+          </Button>
+        )}
       </CardContent>
     </Card>
   );

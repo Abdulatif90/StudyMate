@@ -2,6 +2,37 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-18 — Marketing landing page
+The design spec was extended mid-session with a full "Landing page (marketing,
+logged-out)" section — replaces the old `/` (logo + one line + one button) with a
+real page: nav, hero + static product-preview mockup, "how it works", features,
+pricing, closing CTA band, footer. Frontend-only.
+Commit: `feat(frontend): marketing landing page`.
+- The closing CTA band is the one place a full gradient fill is correct, per the
+  spec's own explicit exception for this page — everywhere else reuses the same
+  accent-only gradient rule as the app.
+- Pricing section reuses the existing `PlanCard` (same component the billing page
+  uses) — gave it one additive extension: an optional `ctaHref` (renders the CTA as a
+  real `<Link>`, since this page navigates rather than triggering billing's checkout
+  mutation) and an optional `description` line. Billing's existing `onCta` usage is
+  untouched.
+- Routing taken literally: every "Get started (free)" → sign-up, never sign-in; nav
+  "Sign in" / footer "Already have an account?" → sign-in; Pro/Business CTAs append
+  `?plan=pro`/`?plan=business`. Flagged, not silently skipped: the sign-up page
+  doesn't actually consume that `plan` param yet — that's the signup/checkout flow,
+  past what "generate the landing page" asked for.
+- Product preview mockup is deliberately static/decorative (browser-chrome card,
+  simplified sidebar + two stat tiles) — no API call, no real data.
+- i18n: new `Landing` namespace (~35 keys, including three string-array leaves for
+  pricing feature checklists via `t.raw()`) replaces the now-fully-superseded `Home`
+  namespace. Caught and fixed a first draft that hardcoded "Dashboard" instead of
+  reusing the shared `Nav.dashboard` key. All four catalogs mirrored and verified via
+  the existing scripted `messages.test.ts`.
+- Tests: `plan-card.test.tsx` +2. Frontend **180 passed** (up from 178), `tsc`/
+  `eslint` clean, `npm run build` succeeds — `/` grew from 456 B to 26.8 kB.
+- **Not browser-verified** (standing gap, no browser here): hero layout at different
+  widths, the preview mockup's look, anchor-link scrolling, gradient band contrast.
+
 ## 2026-07-18 — Frontend design system v2 (teal/emerald + dark sidebar)
 A full palette + layout overhaul from a detailed owner spec (`docs/studymate-design-
 prompt.md`). The referenced HTML mockups didn't actually exist on this machine

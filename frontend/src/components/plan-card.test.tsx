@@ -37,6 +37,37 @@ describe("PlanCard", () => {
     expect(screen.getByText("Most popular")).toBeInTheDocument();
   });
 
+  it("renders the CTA as a real link when ctaHref is given", () => {
+    render(
+      <PlanCard
+        name="Free"
+        price="$0"
+        priceSuffix=""
+        features={[]}
+        ctaLabel="Get started free"
+        ctaHref="/sign-up"
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Get started free" })).toHaveAttribute(
+      "href",
+      "/sign-up",
+    );
+  });
+
+  it("shows the description line when given", () => {
+    render(
+      <PlanCard
+        name="Pro"
+        price="$20"
+        priceSuffix="/month"
+        description="For serious, regular studying."
+        features={[]}
+        ctaLabel="Upgrade"
+      />,
+    );
+    expect(screen.getByText("For serious, regular studying.")).toBeInTheDocument();
+  });
+
   it("disables the CTA and shows an outline button for the current plan", () => {
     render(
       <PlanCard

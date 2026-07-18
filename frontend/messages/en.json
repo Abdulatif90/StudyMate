@@ -14,9 +14,64 @@
     "billing": "Plan & billing",
     "menu": "Menu"
   },
-  "Home": {
-    "tagline": "Upload your study materials and get cited, sourced answers to your questions.",
-    "getStarted": "Get started"
+  "Landing": {
+    "ctaGetStartedFree": "Get started free",
+    "nav": {
+      "signIn": "Sign in",
+      "getStarted": "Get started",
+      "features": "Features",
+      "howItWorks": "How it works",
+      "pricing": "Pricing"
+    },
+    "hero": {
+      "eyebrow": "AI study assistant",
+      "headline": "Cited answers from your own study materials",
+      "subheadline": "Upload your notes, textbooks, and slides — ask questions, generate quizzes and flashcards, and get answers cited back to the exact source.",
+      "ctaSecondary": "See how it works",
+      "previewDocuments": "Documents",
+      "previewFlashcardsDue": "Flashcards due"
+    },
+    "how": {
+      "title": "How it works",
+      "step1Title": "Upload your materials",
+      "step1Body": "Add your notes, textbooks, or slides — StudyMate parses and organizes them per subject.",
+      "step2Title": "Ask, quiz, or review",
+      "step2Body": "Ask a question, or generate a quiz or flashcards from what you've uploaded.",
+      "step3Title": "Get answers you can trust",
+      "step3Body": "Every answer cites the exact document and passage it came from — no guessing."
+    },
+    "features": {
+      "title": "Everything you need to study smarter",
+      "citedTitle": "Cited answers",
+      "citedBody": "Every answer names the exact document and passage it's grounded in.",
+      "flashcardsTitle": "Auto-generated flashcards",
+      "flashcardsBody": "Turn any subject's material into spaced-repetition flashcards in seconds.",
+      "quizzesTitle": "Practice quizzes",
+      "quizzesBody": "Generate multiple-choice quizzes from your own material to test yourself.",
+      "organizationTitle": "Per-subject organization",
+      "organizationBody": "Keep every course or subject's material, chats, and progress in one place."
+    },
+    "pricing": {
+      "title": "Simple, transparent pricing",
+      "perMonth": "/month",
+      "popularBadge": "Most popular",
+      "freeDescription": "Everything you need to get started.",
+      "freeFeatures": ["3 subjects", "10 documents per subject", "20 generations per day"],
+      "proDescription": "For serious, regular studying.",
+      "proCta": "Upgrade to Pro",
+      "proFeatures": ["50 subjects", "200 documents per subject", "200 generations per day"],
+      "businessDescription": "For teams and power users.",
+      "businessCta": "Upgrade to Business",
+      "businessFeatures": ["Unlimited subjects", "Unlimited documents", "Unlimited generations"]
+    },
+    "closing": {
+      "title": "Ready to study smarter?",
+      "body": "Start free — no credit card required."
+    },
+    "footer": {
+      "copyright": "© {year} StudyMate",
+      "signInPrompt": "Already have an account?"
+    }
   },
   "Subjects": {
     "heading": "Subjects",

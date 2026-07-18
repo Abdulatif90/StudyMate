@@ -14,9 +14,64 @@
     "billing": "Tarif va to‘lov",
     "menu": "Menyu"
   },
-  "Home": {
-    "tagline": "O‘quv materiallaringizni yuklang va savollaringizga manbali, iqtiboslangan javoblar oling.",
-    "getStarted": "Boshlash"
+  "Landing": {
+    "ctaGetStartedFree": "Bepul boshlash",
+    "nav": {
+      "signIn": "Kirish",
+      "getStarted": "Boshlash",
+      "features": "Imkoniyatlar",
+      "howItWorks": "Qanday ishlaydi",
+      "pricing": "Tariflar"
+    },
+    "hero": {
+      "eyebrow": "AI o‘quv yordamchisi",
+      "headline": "O‘z o‘quv materiallaringizdan manbali javoblar",
+      "subheadline": "Konspekt, darslik va slaydlaringizni yuklang — savol bering, test va kartochkalar yarating va aniq manbaga havola qilingan javob oling.",
+      "ctaSecondary": "Qanday ishlashini ko‘rish",
+      "previewDocuments": "Hujjatlar",
+      "previewFlashcardsDue": "Muddati kelgan kartochkalar"
+    },
+    "how": {
+      "title": "Qanday ishlaydi",
+      "step1Title": "Materiallaringizni yuklang",
+      "step1Body": "Konspekt, darslik yoki slaydlaringizni qo‘shing — StudyMate ularni fanlar bo‘yicha tahlil qilib tartiblaydi.",
+      "step2Title": "So‘rang, test yeching yoki takrorlang",
+      "step2Body": "Savol bering yoki yuklangan materialdan test yoki kartochkalar yarating.",
+      "step3Title": "Ishonchli javoblar oling",
+      "step3Body": "Har bir javob aniq qaysi hujjat va qismdan olinganini ko‘rsatadi — taxmin qilishga hojat yo‘q."
+    },
+    "features": {
+      "title": "O‘qishni yengillashtirish uchun kerakli hamma narsa",
+      "citedTitle": "Manbali javoblar",
+      "citedBody": "Har bir javob u asoslangan aniq hujjat va qismni ko‘rsatadi.",
+      "flashcardsTitle": "Avtomatik kartochkalar",
+      "flashcardsBody": "Har qanday fan materialini bir necha soniyada takrorlash kartochkalariga aylantiring.",
+      "quizzesTitle": "Mashq testlari",
+      "quizzesBody": "O‘z materialingizdan ko‘p tanlovli testlar yarating va o‘zingizni sinab ko‘ring.",
+      "organizationTitle": "Fanlar bo‘yicha tartib",
+      "organizationBody": "Har bir fan yoki kursning materiali, suhbatlari va rivojlanishini bir joyda saqlang."
+    },
+    "pricing": {
+      "title": "Oddiy va shaffof narxlar",
+      "perMonth": "/oy",
+      "popularBadge": "Eng ommabop",
+      "freeDescription": "Boshlash uchun kerakli hamma narsa.",
+      "freeFeatures": ["3 ta fan", "Har fan uchun 10 ta hujjat", "Kuniga 20 ta generatsiya"],
+      "proDescription": "Jiddiy, muntazam o‘qish uchun.",
+      "proCta": "Pro’ga o‘tish",
+      "proFeatures": ["50 ta fan", "Har fan uchun 200 ta hujjat", "Kuniga 200 ta generatsiya"],
+      "businessDescription": "Jamoalar va faol foydalanuvchilar uchun.",
+      "businessCta": "Business’ga o‘tish",
+      "businessFeatures": ["Cheksiz fanlar", "Cheksiz hujjatlar", "Cheksiz generatsiyalar"]
+    },
+    "closing": {
+      "title": "O‘qishni yengillashtirishga tayyormisiz?",
+      "body": "Bepul boshlang — kredit karta talab qilinmaydi."
+    },
+    "footer": {
+      "copyright": "© {year} StudyMate",
+      "signInPrompt": "Hisobingiz bormi?"
+    }
   },
   "Subjects": {
     "heading": "Fanlar",

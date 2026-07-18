@@ -14,9 +14,64 @@
     "billing": "요금제 및 결제",
     "menu": "메뉴"
   },
-  "Home": {
-    "tagline": "학습 자료를 업로드하고 질문에 대한 출처가 표시된 답변을 받아보세요.",
-    "getStarted": "시작하기"
+  "Landing": {
+    "ctaGetStartedFree": "무료로 시작하기",
+    "nav": {
+      "signIn": "로그인",
+      "getStarted": "시작하기",
+      "features": "기능",
+      "howItWorks": "이용 방법",
+      "pricing": "요금제"
+    },
+    "hero": {
+      "eyebrow": "AI 학습 도우미",
+      "headline": "내 학습 자료에서 출처가 표시된 답변을",
+      "subheadline": "노트, 교과서, 슬라이드를 업로드하고 질문하거나 퀴즈와 플래시카드를 생성하세요 — 답변은 정확한 출처와 함께 제공됩니다.",
+      "ctaSecondary": "이용 방법 보기",
+      "previewDocuments": "문서",
+      "previewFlashcardsDue": "학습 예정 카드"
+    },
+    "how": {
+      "title": "이용 방법",
+      "step1Title": "자료 업로드",
+      "step1Body": "노트, 교과서, 슬라이드를 추가하세요 — StudyMate가 과목별로 분석하고 정리합니다.",
+      "step2Title": "질문, 퀴즈, 복습",
+      "step2Body": "질문을 하거나 업로드한 자료로 퀴즈나 플래시카드를 생성하세요.",
+      "step3Title": "믿을 수 있는 답변",
+      "step3Body": "모든 답변은 출처가 된 정확한 문서와 구절을 표시합니다 — 추측이 필요 없습니다."
+    },
+    "features": {
+      "title": "더 효율적인 학습을 위한 모든 기능",
+      "citedTitle": "출처가 표시된 답변",
+      "citedBody": "모든 답변은 근거가 된 정확한 문서와 구절을 알려줍니다.",
+      "flashcardsTitle": "자동 생성 플래시카드",
+      "flashcardsBody": "어떤 과목의 자료든 몇 초 만에 반복 학습용 플래시카드로 변환하세요.",
+      "quizzesTitle": "연습 퀴즈",
+      "quizzesBody": "자신의 자료로 객관식 퀴즈를 생성해 스스로 테스트해보세요.",
+      "organizationTitle": "과목별 정리",
+      "organizationBody": "모든 과목의 자료, 대화, 진행 상황을 한곳에서 관리하세요."
+    },
+    "pricing": {
+      "title": "간단하고 투명한 요금제",
+      "perMonth": "/월",
+      "popularBadge": "가장 인기",
+      "freeDescription": "시작에 필요한 모든 것.",
+      "freeFeatures": ["과목 3개", "과목당 문서 10개", "일일 생성 20회"],
+      "proDescription": "꾸준하고 진지한 학습을 위해.",
+      "proCta": "Pro로 업그레이드",
+      "proFeatures": ["과목 50개", "과목당 문서 200개", "일일 생성 200회"],
+      "businessDescription": "팀과 파워 유저를 위해.",
+      "businessCta": "Business로 업그레이드",
+      "businessFeatures": ["과목 무제한", "문서 무제한", "생성 무제한"]
+    },
+    "closing": {
+      "title": "더 효율적으로 공부할 준비가 되셨나요?",
+      "body": "무료로 시작하세요 — 신용카드가 필요 없습니다."
+    },
+    "footer": {
+      "copyright": "© {year} StudyMate",
+      "signInPrompt": "이미 계정이 있으신가요?"
+    }
   },
   "Subjects": {
     "heading": "과목",

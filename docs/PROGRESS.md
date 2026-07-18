@@ -1973,6 +1973,68 @@ frontends already shipped.
     actual hover-lift/shadow feel all still want a real click-through. Everything
     listed above as verified is offline (tsc/eslint/tests/build).
 
+- [x] **Marketing landing page** — the design system's own spec (re-read after it was
+  extended mid-session with a full "Landing page (marketing, logged-out)" section, in
+  `docs/studymate-design-prompt.md`) replaces the old `/` (logo + one line + one
+  button) with a real marketing page: nav, hero + product-preview mockup, "how it
+  works", features, pricing, closing CTA band, footer. Frontend-only.
+  - **The one place a full gradient fill is correct**, per the spec's own explicit
+    exception for this page (never on the working app screens): the closing CTA band.
+    Everywhere else on this page reuses the same accent-only gradient rule as the app
+    (primary buttons, the "most popular" pricing badge, numbered step badges, the
+    brand mark) — the landing page gets *more* decorative license, not a different
+    palette.
+  - **Reused, not rebuilt**: the pricing section is three `PlanCard`s — the exact same
+    component the billing page already uses. `PlanCard` gained one small, additive
+    extension for this: an optional `ctaHref` (renders the CTA as a real `<Link>`,
+    since a marketing CTA navigates to sign-up rather than triggering a mutation like
+    billing's checkout) and an optional `description` line (the plan-card spec's
+    one-line blurb, which the billing page's own comparison grid never needed). The
+    billing page's existing `onCta`-based usage is untouched — both modes coexist on
+    the same component now, chosen by which prop is passed.
+  - **Routing rules taken literally, not "close enough"**: every "Get started"/"Get
+    started free" CTA → sign-up, never sign-in (a visitor without an account shouldn't
+    be routed to a page that can't help them); the nav "Sign in" and footer "Already
+    have an account?" → sign-in; Pro/Business pricing CTAs append `?plan=pro`/
+    `?plan=business` to the sign-up link exactly as specified. **What this does NOT do
+    (flagged, not silently skipped): the sign-up page doesn't actually read or act on
+    that `plan` query param yet** — building real post-signup plan pre-selection would
+    mean touching the signup/checkout flow itself, past what "generate the landing
+    page" asked for. The link is correct; nothing consumes it yet.
+  - **Product preview mockup is deliberately static/decorative**, not real data or a
+    live component: a browser-chrome-style card (traffic-light dots) framing a
+    simplified sidebar + two stat tiles, illustrating the shape of the real dashboard
+    without claiming to BE it (no API call, no real numbers).
+  - **`PLAN_LABELS`/plan limits reused from existing sources** (`lib/planLimits.ts`,
+    the same numbers already in `billing/page.tsx`'s comparison grid and
+    `billing.service.LIMITS` on the backend) rather than re-typed literals that could
+    drift out of sync with the real caps.
+  - **i18n**: the home page was already `next-intl`-converted (unlike most pages this
+    whole design-system effort has touched), so — consistent with every prior
+    increment's rule here — the entire new page goes through translation, not just
+    the parts that happen to overlap with the old page's two strings. New `Landing`
+    namespace (~35 keys, including three string-array leaves for the pricing plans'
+    feature checklists — `t.raw()`, confirmed to exist and typed for exactly this
+    non-string-message case before relying on it) replaces the now-fully-superseded
+    `Home` namespace (`Home.tagline`/`Home.getStarted`, both confirmed to have no
+    other call sites before deleting). The signed-in state's "Dashboard" button reuses
+    the existing shared `Nav.dashboard` key rather than a duplicate literal — caught
+    and fixed a first draft that hardcoded the English word here instead. All four
+    catalogs mirrored and verified via both a manual parity script and the existing
+    scripted `messages.test.ts` (which handles the new array-valued leaves correctly
+    via its own already-generic flatten — confirmed by actually running it, not
+    assumed).
+  - Tests: `plan-card.test.tsx` (+2 — `ctaHref` renders a real link, `description`
+    renders when given); no new page-level test (matches this codebase's established
+    pattern — pages verified via `tsc`/`eslint`/build, not unit-tested). Frontend
+    **180 passed** (up from 178), `tsc --noEmit` clean, `eslint` clean, `npm run build`
+    succeeds — `/` grew from 456 B to 26.8 kB (a real page now, not a placeholder),
+    same 14 routes otherwise.
+  - **Not browser-verified** (standing gap, no browser here): the hero layout at
+    different widths, the product-preview mockup's actual look, anchor-link scrolling
+    to `#how`/`#features`/`#pricing`, and the gradient CTA band's contrast/legibility
+    all still want a real click-through.
+
 ## Next (Phase 4+)
 - **Frontend redesign roadmap (in progress)** — a phased UI/UX overhaul, one increment per
   commit batch, each gated on a `tekshir` review before the next starts. FRONTEND.md was
