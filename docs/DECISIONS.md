@@ -42,3 +42,43 @@ Settled while wiring it up (2026-07-17):
   "scheduled to cancel, access continues to period end"; revoked means access is gone.
 - **No plan-change endpoint, ever.** A self-serve "set my own plan" route is an
   entitlement bypass; only a paid checkout + verified webhook may move a plan.
+
+## 8. Observability: Sentry (errors) + PostHog (product analytics)
+Sentry for unhandled exceptions (backend + frontend); PostHog for a small, deliberate
+set of product events (frontend). Both optional/env-gated — same pattern as every
+other third-party key in this codebase (Cohere/Anthropic/R2/Polar): unset means the
+integration is simply off, never a startup failure.
+
+- **PII policy**: only the Clerk user id is ever attached to error/event context —
+  never email or name. Sentry's `sendDefaultPii` stays `false` (its own default,
+  kept explicit); PostHog identifies by user id via `posthog.identify(id)`, reset on
+  sign-out. No autocapture on either side — PostHog's DOM-click autocapture is
+  explicitly disabled (`autocapture: false`); only 6 named events are ever sent
+  (`subject_created`, `document_uploaded`, `quiz_generated`, `flashcards_generated`,
+  `question_asked`, `checkout_started`, see `frontend/src/lib/analytics.ts`).
+  Do-Not-Track is respected (`respect_dnt: true`).
+- **`PlanLimitExceededError` is filtered out of Sentry** — it's an expected 402
+  (billing.md's own app-wide handler), not an error worth alerting on. Filtered via
+  `before_send`, generically (by exception type, passed in from `main.py`) rather than
+  `app/core/sentry.py` importing a specific domain exception — keeps `app/core` free
+  of a dependency on `app/modules`.
+- **Backend init lives in a FastAPI `lifespan` hook, not module-level code.**
+  `sentry_sdk.init()` globally patches process-wide machinery (the exception
+  middleware class, `sys.excepthook`), so it must fire exactly once per real process,
+  and normally that means calling it before the app is created. But this repo's tests
+  build `TestClient(app)` without the `with TestClient(app) as client:` form, which
+  means the ASGI lifespan protocol never runs during `pytest` — so module-level init
+  would ALSO silently fire on every offline test run the moment a real `SENTRY_DSN`
+  exists in `.env`, shipping test-generated exceptions to a real Sentry project. A
+  lifespan hook only runs when something actually drives the lifespan (real `uvicorn`
+  serving does; this repo's plain `TestClient(app)` does not) — discovered when a
+  first pass at module-level init made a full `pytest` run try to flush real events on
+  exit, once a real DSN had been added to `.env`.
+- **One DSN for client + server + edge (`NEXT_PUBLIC_SENTRY_DSN`)**: a Sentry DSN is
+  not a secret — the same value already ships inside the client JS bundle — so there's
+  no reason to keep a separate server-only var. Simpler than most examples in Sentry's
+  own docs, deliberately.
+- **PostHog frontend-only.** A server-side PostHog client was in scope only "if
+  clearly worth it" — every one of the 6 events already fires from a place with a
+  Clerk-authenticated browser session, so a backend capture path would just duplicate
+  the same signal through a second SDK for no new information. Skipped.

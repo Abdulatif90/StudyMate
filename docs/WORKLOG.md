@@ -2,6 +2,88 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-18 — Sentry + PostHog observability
+Phase-4 remainder item. Both env-gated, off-by-default, backend + frontend. Two
+commits (Sentry landed first per the task's stated priority).
+Commits: `feat(observability): add Sentry error monitoring (backend + frontend)`,
+`feat(observability): add PostHog product analytics (frontend)`.
+
+**Sentry (errors):**
+- Backend: `Settings.sentry_dsn` (optional); `app/core/sentry.py`'s `init_sentry()` —
+  a no-op unless set, else `sentry_sdk.init(dsn, environment, before_send)`. Called
+  from a new `lifespan` context manager on the `FastAPI` app, **not** module-level
+  code — see DECISIONS.md #8 for why: this repo's tests build `TestClient(app)`
+  without the `with ... as client:` form, so the ASGI lifespan (and therefore Sentry
+  init) never runs during `pytest`, only for a real `uvicorn` process. Caught the hard
+  way: a first pass at module-level init made a full offline `pytest` run try to
+  flush 2 real events to Sentry on exit, once a real `SENTRY_DSN` existed in `.env`.
+  `before_send` drops `PlanLimitExceededError` (expected 402, not an alert-worthy
+  error) — filtered generically by exception type, passed in from `main.py`, so
+  `app/core` stays free of a dependency on `app/modules`.
+- Frontend: `@sentry/nextjs` 10.66.0. Introspected the installed version's actual
+  convention (it's changed across SDK versions) rather than assuming: confirmed via
+  `sentry.client.config.ts`'s own embedded deprecation warning that
+  `src/instrumentation-client.ts` is now the supported client-init file, and via the
+  package's `captureRequestError`/`withSentryConfig` exports that `src/instrumentation.ts`
+  (`register()` + `onRequestError`) and a `next.config.ts` wrap are the modern
+  server/edge + build-time pieces — no `sentry.server.config.ts`/`sentry.edge.config.ts`.
+  Added `src/app/global-error.tsx` (Next's own `next/error` fallback + a
+  `Sentry.captureException` in a `useEffect`) and `onRouterTransitionStart` in
+  `instrumentation-client.ts` — both are things the SDK explicitly asked for at build
+  time (`next build` prints an ACTION REQUIRED line for the second one) rather than
+  something guessed upfront. One DSN (`NEXT_PUBLIC_SENTRY_DSN`) covers client + server
+  + edge — a Sentry DSN isn't a secret (already ships in the client bundle), so no
+  reason for a separate server-only var.
+- PII: `sendDefaultPii: false` (the SDK's own default, kept explicit) on both sides.
+  The only identifier ever attached is the Clerk user id, via
+  `Sentry.setUser({ id })` in the new `ObservabilityIdentity` component
+  (`app/providers.tsx`) — never email or name.
+
+**PostHog (product analytics):**
+- Frontend-only (`posthog-js` + its bundled `posthog-js/react` provider) — a backend
+  capture path was in scope only "if clearly worth it"; skipped, since all 6 events
+  already fire from an authenticated browser session and a server-side duplicate
+  would add no new signal (DECISIONS.md #8).
+- `app/providers.tsx` gained an `Analytics` wrapper that mounts `<PostHogProvider
+  apiKey options>` only when `NEXT_PUBLIC_POSTHOG_KEY` is set — rendering the provider
+  unconditionally with an empty key still logs a console warning and falls back to an
+  unmanaged global instance (read from the provider's own source before relying on
+  it), which isn't a clean "off" state. `autocapture: false` + `respect_dnt: true`.
+- `src/lib/analytics.ts`'s `captureEvent()` is the only way events get sent — the
+  complete, deliberate list: `subject_created`, `document_uploaded`,
+  `quiz_generated`, `flashcards_generated`, `question_asked`, `checkout_started`.
+  Wired into the relevant mutation's `onSuccess` on `subjects`, subject-detail
+  (upload), `quizzes`, `flashcards`, `ask` (the stream's `onDone`), and `billing`
+  (checkout, with the target plan as a property).
+- Identifies by Clerk user id only (`ObservabilityIdentity`, shared with the Sentry
+  half above) — `posthog.identify(id)` on sign-in, `posthog.reset()` on sign-out.
+
+**A real Sentry DSN and PostHog key already exist** in `backend/.env`/`frontend/.env`
+— found live during this work, not added by the builder (the user's answer going in
+was "no keys yet, build it env-gated"). Two real misconfigurations found and left for
+the user to fix (not the builder's call to edit a secrets file): frontend
+`NEXT_PUBLIC_POSTHOG_HOST` is set to a PostHog *session-replay page* URL, not an API
+host (posthog-js will fail to POST events there); frontend's Sentry DSN is under the
+plain key `SENTRY_DSN`, not `NEXT_PUBLIC_SENTRY_DSN`, so frontend Sentry stays off
+until renamed. Backend `SENTRY_DSN` is already correctly named. See PROGRESS.md
+"Blockers" for the full detail.
+- Tests: `backend/tests/test_sentry.py` (5 — no-op when unset, `sentry_sdk.init`
+  called with the right kwargs when set, `before_send` drops/keeps the right
+  exceptions). `frontend/src/lib/analytics.test.ts` (4 — no-op when unset, correct
+  event-name mapping, properties passed through, all 6 events map correctly).
+  Backend: **289 passed** (11 deselected live), `ruff check` → clean. Frontend:
+  **184 passed** (46 files), `tsc --noEmit` clean, `eslint` clean, `npm run build`
+  succeeds cleanly (no Sentry warnings once global-error.tsx/onRouterTransitionStart
+  were added).
+- **Env-gating proven both ways**: the no-op tests above inject an unset DSN/key
+  directly (mocked, not reading the real `.env`), and separately, neither the
+  backend's `lifespan`-gated init nor the frontend's Provider-mounting code path is
+  ever exercised by the existing test suites regardless of what's in `.env` — so both
+  suites are "green with observability off" by construction, not by coincidence.
+- **Live capture is UNVERIFIED** — no error was deliberately sent to Sentry, no event
+  deliberately sent to PostHog. That needs the two env-var fixes above, then a real
+  browser/server exception and a real product action to confirm delivery.
+
 ## 2026-07-18 — next-intl: remaining pages
 Paid down the i18n debt left by the redesign roadmap: converted every page/component
 the "next-intl foundation" entry had left in English. Frontend-only, no i18n

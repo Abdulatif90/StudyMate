@@ -6,6 +6,9 @@ Docs:         http://localhost:8000/docs
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 import inngest.fast_api
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +16,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
 from app.core.inngest_client import get_inngest_client
+from app.core.sentry import init_sentry
 from app.modules.ask.router import conversations_router
 from app.modules.ask.router import router as ask_router
 from app.modules.billing.router import router as billing_router
@@ -28,10 +32,32 @@ from app.modules.subjects.router import router as subjects_router
 
 settings = get_settings()
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Runs once, at real server startup — deliberately NOT at module import time.
+
+    `sentry_sdk.init()` globally patches process-wide machinery (the exception
+    middleware class, `sys.excepthook`, ...), so it must run exactly once per real
+    process. Module-level init would ALSO fire on every `pytest` run that imports this
+    module (every test file that builds a `TestClient` does), which — the moment a real
+    `SENTRY_DSN` lands in `.env` for actual use — would start shipping test-generated
+    exceptions to a real Sentry project on every offline test run. A lifespan hook only
+    runs when something actually drives the ASGI lifespan protocol: real `uvicorn`
+    serving does; this repo's `TestClient(app)` usage (no test uses the `with
+    TestClient(app) as client:` form) does not. No-op unless SENTRY_DSN is set (see
+    init_sentry's docstring). PlanLimitExceededError is excluded — it's an expected 402
+    (handled by the app-wide handler below), not an error worth alerting on.
+    """
+    init_sentry(ignored_exceptions=[PlanLimitExceededError])
+    yield
+
+
 app = FastAPI(
     title="StudyMate API",
     version="0.1.0",
     description="AI study assistant — RAG over your own materials.",
+    lifespan=lifespan,
 )
 
 app.add_middleware(

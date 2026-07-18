@@ -2059,6 +2059,27 @@ frontends already shipped.
      `ProgressStats`, restyled with the new tokens/chart palette. **✓ DONE (see entry
      above) — closes the redesign roadmap.** No further increment queued; a `tekshir`
      review of this one is still outstanding.
+- **Observability: Sentry (errors) + PostHog (product analytics) — DONE (see WORKLOG
+  "Sentry + PostHog observability" entry).** Both fully env-gated (backend
+  `SENTRY_DSN`; frontend `NEXT_PUBLIC_SENTRY_DSN`/`NEXT_PUBLIC_POSTHOG_KEY`/
+  `NEXT_PUBLIC_POSTHOG_HOST`) — unset means simply off everywhere, never a crash, same
+  convention as every other optional key in this project. Backend Sentry init moved
+  into a FastAPI `lifespan` hook (not module-level) specifically so it can never
+  fire during `pytest` even once a real DSN exists in `.env`. `PlanLimitExceededError`
+  is filtered from Sentry (expected 402, not an error). PostHog captures 6 named
+  product events only (`subject_created`, `document_uploaded`, `quiz_generated`,
+  `flashcards_generated`, `question_asked`, `checkout_started`) — autocapture off,
+  Do-Not-Track respected. Both identify by Clerk user id only, never email/name.
+  **Real credentials already exist** (found live in `backend/.env`/`frontend/.env`
+  during this work — not added by the builder): backend `SENTRY_DSN` is real and
+  correctly named; frontend has `NEXT_PUBLIC_POSTHOG_KEY` set (real) but
+  **`NEXT_PUBLIC_POSTHOG_HOST` is malformed** (a PostHog session-replay page URL, not
+  an API host — see Blockers) and frontend Sentry's var is named plain `SENTRY_DSN`
+  (server-only convention) rather than `NEXT_PUBLIC_SENTRY_DSN`, so frontend Sentry
+  currently stays off until renamed. **Live capture is UNVERIFIED** — no error was
+  deliberately sent to Sentry, no event deliberately sent to PostHog; verified only at
+  the code/test level (mocked SDKs, env-gating proven both set and unset, full
+  backend+frontend suites green, clean `next build`).
 - **Confirm the Polar webhook against real delivery** — the one gap in the payment path;
   see "Blockers". Everything else in the payment path is live-verified.
 - **Browser pass on the billing frontend** — the `/billing` page, the checkout→Polar
@@ -2087,7 +2108,8 @@ frontends already shipped.
     `tsc`/`eslint`/`vitest`/`next build` ran in this environment.
   - Consider typed messages (augment next-intl's `Messages` from `en.json`) so missing
     keys become a tsc error, and a lint/CI check for catalog parity.
-- Remaining per `docs/plan.md`: Business/Teams B2B (Phase 5).
+- Remaining per `docs/plan.md` Phase 4: Referral, Support/FAQ. Then Phase 5
+  (Business/Teams B2B).
 - Still owed from earlier: a real-browser click-through of the async upload/poll/delete,
   quiz, hybrid-Ask, flashcards, progress-dashboard, app-shell nav (mobile sheet,
   active-item highlighting, theme toggle), and the confirm-dialog/toast/subject-delete
@@ -2095,6 +2117,20 @@ frontends already shipped.
   environment).
 
 ## Blockers / needs from user
+- **Fix two observability env vars, from the user** (both discovered live in `.env`
+  during the Sentry/PostHog increment, neither touched by the builder):
+  1. `frontend/.env`'s `NEXT_PUBLIC_POSTHOG_HOST` is set to a PostHog *session-replay
+     page* URL (`https://us.posthog.com/project/.../replay/...`), not an API host.
+     posthog-js will POST events at that literal URL and fail. Should be
+     `https://us.i.posthog.com` (US cloud), `https://eu.i.posthog.com` (EU cloud), or
+     a self-hosted instance's own URL.
+  2. `frontend/.env` has a real Sentry DSN under the key `SENTRY_DSN` (no
+     `NEXT_PUBLIC_` prefix). The frontend code reads `NEXT_PUBLIC_SENTRY_DSN` (see
+     `src/instrumentation.ts`/`instrumentation-client.ts`) — rename the key (Sentry
+     DSNs aren't secret, so the public prefix is fine) to turn frontend Sentry on.
+  Backend `SENTRY_DSN` is already correctly named and will pick up real errors once a
+  real one occurs — untested end-to-end (no error was deliberately triggered against
+  the real DSN).
 - **Verify the webhook against real Polar delivery** — the only open item on billing.
   Polar has never actually delivered an event to `/billing/webhook`; everything else in
   the flow is live-verified (see the Polar increment above). Needs, from the user:

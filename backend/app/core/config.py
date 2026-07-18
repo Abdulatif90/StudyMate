@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     polar_product_id_pro: str | None = None
     polar_product_id_business: str | None = None
 
+    # Error monitoring (Sentry). Optional so the app/tests boot without it —
+    # app/core/sentry.py's init_sentry() is a no-op when unset, never a crash (a missing
+    # DSN means "no observability", not a startup failure).
+    sentry_dsn: str | None = None
+
     # Comma-separated (not JSON) so a plain `.env` value like
     # `CORS_ORIGINS=http://localhost:3000,https://app.example.com` just works —
     # pydantic-settings expects JSON for genuine list-typed fields, which is more

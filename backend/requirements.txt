@@ -35,3 +35,6 @@ boto3>=1.34
 # Billing (Polar, Merchant of Record) — app/core/polar_client.py. Brings in
 # `standardwebhooks`, which backs the webhook signature verification.
 polar-sdk>=0.31
+
+# Error monitoring (Sentry) — app/core/sentry.py. Optional/env-gated (SENTRY_DSN).
+sentry-sdk>=2.0
