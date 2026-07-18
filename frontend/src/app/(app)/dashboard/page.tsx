@@ -1,11 +1,9 @@
 "use client";
 
-import { UserButton } from "@clerk/nextjs";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { LanguageSwitcher } from "@/components/language-switcher";
 import { ProgressStats } from "@/components/progress-stats";
 import { useApiClient } from "@/lib/api/useApiClient";
 
@@ -24,18 +22,7 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-2xl p-4 sm:p-8">
-      <div className="mb-8 flex items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">{t("Dashboard.heading")}</h1>
-        <div className="flex items-center gap-2">
-          <LanguageSwitcher />
-          <Button
-            variant="outline"
-            nativeButton={false}
-            render={<Link href="/billing">{t("Nav.billing")}</Link>}
-          />
-          <UserButton />
-        </div>
-      </div>
+      <h1 className="mb-8 text-2xl font-semibold">{t("Dashboard.heading")}</h1>
 
       {progressQuery.isLoading && <p>{t("Common.loading")}</p>}
       {progressQuery.isError && (

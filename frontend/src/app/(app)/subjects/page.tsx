@@ -1,6 +1,5 @@
 "use client";
 
-import { UserButton } from "@clerk/nextjs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
@@ -9,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LanguageSwitcher } from "@/components/language-switcher";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { useApiClient } from "@/lib/api/useApiClient";
 import { parsePlanLimitError, type PlanLimitError } from "@/lib/planLimitError";
@@ -53,18 +51,7 @@ export default function SubjectsPage() {
 
   return (
     <div className="mx-auto max-w-2xl p-4 sm:p-8">
-      <div className="mb-8 flex items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">{t("Subjects.heading")}</h1>
-        <div className="flex items-center gap-2">
-          <LanguageSwitcher />
-          <Button
-            variant="outline"
-            nativeButton={false}
-            render={<Link href="/dashboard">{t("Nav.dashboard")}</Link>}
-          />
-          <UserButton />
-        </div>
-      </div>
+      <h1 className="mb-8 text-2xl font-semibold">{t("Subjects.heading")}</h1>
 
       <Card className="mb-8">
         <CardHeader>

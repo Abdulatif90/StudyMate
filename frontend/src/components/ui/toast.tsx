@@ -80,7 +80,7 @@ export function Toaster() {
               toast={item}
               className={cn(
                 "flex items-start gap-3 rounded-lg border border-border bg-card p-4 shadow-lg",
-                "data-[ending]:opacity-0 data-[starting]:opacity-0 transition-opacity",
+                "data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 transition-opacity",
               )}
             >
               <Icon aria-hidden className={cn("mt-0.5 size-5 shrink-0", TYPE_ACCENT[type])} />

@@ -7,8 +7,10 @@
   },
   "Nav": {
     "dashboard": "대시보드",
+    "subjects": "과목",
     "goToSubjects": "과목으로 이동",
-    "billing": "요금제 및 결제"
+    "billing": "요금제 및 결제",
+    "menu": "메뉴"
   },
   "Home": {
     "tagline": "학습 자료를 업로드하고 질문에 대한 출처가 표시된 답변을 받아보세요.",

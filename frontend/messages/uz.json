@@ -7,8 +7,10 @@
   },
   "Nav": {
     "dashboard": "Boshqaruv paneli",
+    "subjects": "Fanlar",
     "goToSubjects": "Fanlarga o‘tish",
-    "billing": "Tarif va to‘lov"
+    "billing": "Tarif va to‘lov",
+    "menu": "Menyu"
   },
   "Home": {
     "tagline": "O‘quv materiallaringizni yuklang va savollaringizga manbali, iqtiboslangan javoblar oling.",

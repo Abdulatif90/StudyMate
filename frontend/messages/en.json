@@ -7,8 +7,10 @@
   },
   "Nav": {
     "dashboard": "Dashboard",
+    "subjects": "Subjects",
     "goToSubjects": "Go to Subjects",
-    "billing": "Plan & billing"
+    "billing": "Plan & billing",
+    "menu": "Menu"
   },
   "Home": {
     "tagline": "Upload your study materials and get cited, sourced answers to your questions.",

@@ -1,9 +1,6 @@
 "use client";
 
-import { UserButton } from "@clerk/nextjs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -75,17 +72,6 @@ export default function BillingPage() {
 
   return (
     <div className="mx-auto max-w-2xl p-4 sm:p-8">
-      <div className="mb-6 flex items-center justify-between gap-2">
-        <Link
-          href="/dashboard"
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" />
-          Dashboard
-        </Link>
-        <UserButton />
-      </div>
-
       <h1 className="mb-6 text-2xl font-semibold">Plan &amp; billing</h1>
 
       {justUpgraded && (

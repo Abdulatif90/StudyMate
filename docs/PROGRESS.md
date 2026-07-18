@@ -1538,6 +1538,76 @@ frontends already shipped.
   Tailwind v4's `.dark` custom-variant). **Foundation only — no page consumes it yet**
   (Increments 2–3 do that). **125 passed**, tsc/eslint/build clean. Not browser-verified.
 
+- [x] **Frontend redesign Increment 2 — shared app shell + navigation** (frontend-only).
+  One `AppShell` now owns nav + identity/theme/language controls for every authed page;
+  no page hand-rolls its own header anymore.
+  - **Step 0 verification, done before writing any code**: confirmed `@base-ui/react@1.6.0`
+    is the actually-installed version (`^1.6.0` in `package.json`); read
+    `MenuLinkItem`'s real type declarations and runtime source directly — it renders an
+    `<a>`, accepts `render` (via `BaseUIComponentProps`, so `render={<Link .../>}` works
+    exactly like the existing `Button`/`Link` pattern), and — the one genuine surprise —
+    **defaults `closeOnClick` to `false`** (regular `Menu.Item` defaults `true`; its
+    runtime has no modifier-key guard either way, confirmed by reading
+    `useMenuItemCommonProps`), so the mobile nav sheet passes `closeOnClick` explicitly
+    rather than relying on the default. Next 15.5.20's route groups are URL-transparent
+    (well-established, version-independent App Router behavior — not re-verified via
+    introspection); `src/middleware.ts`'s matchers (`/subjects(.*)`, `/dashboard(.*)`,
+    `/billing(.*)`) needed no edit since none of the URLs changed.
+  - `src/lib/navItems.ts` (new, pure, tested): `NAV_ITEMS` (Dashboard/Subjects/Plan &
+    billing, each with an href + icon) and `isNavItemActive(pathname, href)` — a
+    trailing-slash-bounded prefix match, not exact equality, so `/subjects` stays the
+    active destination on any subject-scoped sub-route (`/subjects/abc/quizzes`, etc.)
+    without false-positiving on an unrelated route that merely shares the text prefix.
+  - `src/components/app-shell.tsx` (new): persistent header — brand mark, the three
+    primary destinations (hidden `sm:flex`, active one styled via `isNavItemActive` +
+    `aria-current="page"`), `LanguageSwitcher` + `ThemeToggle` + `UserButton`, and a
+    `ui/dropdown-menu` sheet (not hand-rolled) holding the same three destinations for
+    `<sm` screens via a `Menu` icon trigger — every primary destination, billing
+    included, stays reachable on every screen width (FRONTEND.md §4.2).
+  - `src/app/(app)/layout.tsx` (new): wraps `{children}` in `<AppShell>`. Every authed
+    page moved under the `(app)` route group via `git mv` (URLs unchanged — route groups
+    are URL-transparent): `dashboard`, `subjects` (+ all subject-scoped sub-routes: the
+    subject detail page, ask, flashcards + its review session, progress, quizzes + quiz
+    detail), and `billing`. Home (`/`) and sign-in/sign-up stay outside the group,
+    unwrapped, per the task.
+  - Removed the now-duplicated hand-rolled headers: `dashboard/page.tsx` and
+    `subjects/page.tsx` each lost their `LanguageSwitcher` + nav-button + `UserButton`
+    row (kept just their `<h1>`); `billing/page.tsx` lost its back-link + `UserButton`
+    row the same way. Every other subject-scoped page's own back-link
+    (`← Subjects`/`← Subject` breadcrumbs) is page-local context, not shell duplication,
+    and was left untouched.
+  - Small cleanup found in review, fixed alongside: `ui/toast.tsx`'s toast-item
+    transition classes used Base UI's non-existent `data-[ending]`/`data-[starting]`
+    attributes (dead — the real ones are `data-[ending-style]`/`data-[starting-style]`,
+    confirmed against `@base-ui/react`'s own `stateAttributesMapping`, and already used
+    correctly by `dialog.tsx`/`dropdown-menu.tsx`) — fixed to the `-style` suffix, so
+    toasts now actually fade instead of popping in/out instantly.
+  - Two new i18n keys (`Nav.subjects`, `Nav.menu`) added to `en.json` first, then
+    mirrored into `uz.json`/`ko.json`/`ru.json` per `messages/README.md`'s process.
+  - Tests: `lib/navItems.test.ts` (7 — exact match, sub-route match, no false-positive on
+    a route that only shares a text prefix, sibling destinations don't cross-match, root
+    `/` matches nothing). `components/app-shell.test.tsx` (3, `next/navigation` +
+    `@clerk/nextjs` stubbed like `language-switcher.test.tsx` already stubs
+    `next/navigation` — every destination renders as a real link to the right URL, the
+    active one carries `aria-current="page"` and inactive ones don't, `UserButton` +
+    children render). One query-role surprise hit while writing these: Base UI's
+    `Button` rendered as an `<a>` via `render={<Link .../>}` keeps `role="button"`, not
+    the anchor's native `role="link"` — tests query `getByRole("button", ...)`
+    accordingly, matching how this codebase's other CTA buttons already render.
+  - Verified: `npx tsc --noEmit` clean (after clearing a stale `.next/types` cache still
+    pointing at the pre-move file paths — expected, not a bug, since `.next` is
+    regenerated on the next build/dev run), `npm run lint` clean, **134 passed** (31
+    files, up from 125), `npm run build` succeeds — route list confirms `/dashboard`,
+    `/subjects`, `/subjects/[subjectId]` (+ its 5 sub-routes), and `/billing` are all
+    unchanged URLs now served from the `(app)` group, and `/`, `/sign-in`, `/sign-up`
+    still render outside it.
+  - **Not browser-verified** (standing gap, no browser in this environment): mobile nav
+    sheet open/collapse, active-item highlighting rendered visually, theme toggle, and
+    the language switcher now living in the shell instead of a page header. Everything
+    listed above as "Verified" is offline (tsc/eslint/tests/build); the shell's actual
+    on-screen behavior at 360/768/1280px per FRONTEND.md §1.7 still wants a real
+    click-through.
+
 ## Next (Phase 4+)
 - **Frontend redesign roadmap (in progress)** — a phased UI/UX overhaul, one increment per
   commit batch, each gated on a `tekshir` review before the next starts. FRONTEND.md was
@@ -1551,7 +1621,8 @@ frontends already shipped.
   2. **Shared app shell + navigation** — one `AppShell` (persistent nav + ThemeToggle +
      UserButton + language-switcher slot), adopted via an `app/(app)/` route-group layout;
      remove per-page headers. (Do this BEFORE the i18n page-conversion so the
-     LanguageSwitcher drops into the shell slot.)
+     LanguageSwitcher drops into the shell slot.) **✓ DONE (see entry above).** Gated on a
+     `tekshir` review before Increment 3.
   3. **Interaction gaps** — wire subject delete (`DELETE /subjects/{id}`), replace all 4
      `window.confirm` with `useConfirm`, route mutation errors through `toast()` (402
      `<UpgradePrompt>` stays inline, restyled).
@@ -1579,8 +1650,9 @@ frontends already shipped.
     keys become a tsc error, and a lint/CI check for catalog parity.
 - Remaining per `docs/plan.md`: Business/Teams B2B (Phase 5).
 - Still owed from earlier: a real-browser click-through of the async upload/poll/delete,
-  quiz, hybrid-Ask, flashcards, and progress-dashboard flows with live Clerk auth (noted
-  across several increments, never yet done — no browser available in this environment).
+  quiz, hybrid-Ask, flashcards, progress-dashboard, and app-shell nav (mobile sheet,
+  active-item highlighting, theme toggle) flows with live Clerk auth (noted across
+  several increments, never yet done — no browser available in this environment).
 
 ## Blockers / needs from user
 - **Verify the webhook against real Polar delivery** — the only open item on billing.
