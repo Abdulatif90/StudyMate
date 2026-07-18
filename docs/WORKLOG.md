@@ -2,6 +2,47 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-19 — Clerk UI localization
+i18n follow-up item (tracked in `docs/PROGRESS.md`'s "i18n follow-ups" list). Clerk's own
+`<SignIn>`/`<SignUp>` widget chrome (labels, buttons, error text — Clerk's internal
+strings, not ours) was always English regardless of the app's next-intl locale.
+Commit: `feat(i18n): localize Clerk sign-in/sign-up widgets`.
+
+- Verified reality before writing code, per the task's Step 0: installed
+  `@clerk/localizations` (v4.13.5) and introspected its actual exports
+  (`Object.keys(require('@clerk/localizations'))`, 50 total) rather than assuming.
+  Confirmed exports for the app's 4 locales: `enUS`, `koKR`, `ruRU` exist; **no Uzbek
+  variant exists** (no `uzUZ`/`uzUz`/anything `uz*`) — matches the task's expectation.
+  Also confirmed `layout.tsx` resolves the active locale via `getLocale()` from
+  `next-intl/server` (no `[locale]` URL segment, cookie-driven) and that its return type
+  is plain `string` (no `next-intl` locale-union augmentation in this repo).
+- New `frontend/src/i18n/clerkLocalization.ts`: a `LOCALE_TO_CLERK` record mapping each
+  app `Locale` (`en`/`uz`/`ko`/`ru`) to a Clerk `LocalizationResource`
+  (`en→enUS`, `ko→koKR`, `ru→ruRU`, `uz→enUS` fallback) and a pure
+  `resolveClerkLocalization(locale)` function. `LocalizationResource`'s canonical home is
+  `@clerk/shared/types` (a valid public subpath export of the already-installed
+  `@clerk/shared`, a transitive dep of `@clerk/nextjs`) — `@clerk/localizations`' own
+  `.d.ts` files import the type from there, not from a (nonexistent, in this install)
+  `@clerk/types` package.
+- `frontend/src/app/layout.tsx`: `<ClerkProvider>` now takes
+  `localization={resolveClerkLocalization(resolveLocale(locale))}` — re-narrowing
+  `getLocale()`'s `string` through the existing `resolveLocale` (same defensive pattern
+  already used in `i18n/request.ts`/`i18n/setLocale.ts`) before handing it to the new
+  pure resolver.
+- Uzbek intentionally has no hand-written partial translation of Clerk's internal keys
+  (explicitly out of scope, fragile) — `uz` falls back to `enUS`, so Clerk's widget UI
+  stays English for Uzbek users while the rest of the app (nav, content, etc.) still
+  renders in Uzbek. Documented as a known, correct degradation in `docs/PROGRESS.md`.
+- New `frontend/src/i18n/clerkLocalization.test.ts`: asserts each of the 3 real mappings
+  resolves to the exact imported Clerk object (`toBe`, not deep-equal) and that `uz`
+  falls back to `enUS`.
+- Frontend: **188 passed** (47 files, +1 file/+4 tests over the prior 184/46), `tsc
+  --noEmit` clean, `eslint` clean. `next build` not run per the coordinator's standing
+  instruction (shared `next dev` server on port 3000).
+- Not yet browser-verified (no browser in this environment): actually opening
+  `/sign-in`/`/sign-up` under `ko`/`ru` to see Clerk's widget chrome translated — consistent
+  with every other frontend item in this backlog's no-browser gaps.
+
 ## 2026-07-19 — Support/FAQ page
 Phase-4 item, frontend-only, no backend/CMS (KISS/YAGNI) — static content by design.
 Commit: `feat(frontend): Support/FAQ page`.

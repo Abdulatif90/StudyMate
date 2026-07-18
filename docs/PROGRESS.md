@@ -2101,8 +2101,13 @@ frontends already shipped.
     "Delete"/"Confirm"/"Cancel" button labels (`lib/confirmState.ts`, unit-tested as
     literal English), and the dashboard's `aria-label="Loading dashboard"` skeleton
     region.
-  - **Clerk UI localization** — sign-in/sign-up render Clerk's own widgets; localize them
-    via `@clerk/localizations` (map the 4 locales) if their English UI matters.
+  - ~~Clerk UI localization~~ **✓ DONE (see WORKLOG "Clerk UI localization" entry).**
+    `<ClerkProvider localization={...}>` now resolves the app's active locale to a Clerk
+    localization resource via `resolveClerkLocalization` (`frontend/src/i18n/
+    clerkLocalization.ts`). `@clerk/localizations` v4.13.5 ships `enUS`/`koKR`/`ruRU` but
+    **no Uzbek resource** — `uz` falls back to `enUS`, so Clerk's sign-in/sign-up widget
+    UI stays English for Uzbek users (the rest of the app still renders in Uzbek); revisit
+    if Clerk adds Uzbek upstream.
   - **No-browser gap**: language-switch behavior on every newly-converted page (quizzes,
     flashcards, ask, progress, billing) is unverified in an actual browser — only
     `tsc`/`eslint`/`vitest`/`next build` ran in this environment.
