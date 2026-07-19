@@ -28,12 +28,13 @@ submission tracking (who did the assignment), per-student targeting, and any fro
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
-from sqlmodel import Session, select
+from sqlmodel import Session, delete, select
 
 from app.core.org import OrgContext, is_teacher_role
-from app.modules.assignments.models import Assignment
-from app.modules.assignments.schemas import AssignmentCreate
+from app.modules.assignments.models import Assignment, AssignmentSubmission
+from app.modules.assignments.schemas import AssignmentCreate, AssignmentSubmissionCreate
 from app.modules.quiz.models import Quiz
 from app.modules.subjects.service import require_writable_subject
 
@@ -56,6 +57,13 @@ class AssignmentDeleteForbiddenError(Exception):
     delete it — a plain member (student), not its creator and not a teacher/admin of the
     org (→ 403). Distinct from `AssignmentNotFoundError` because the caller already knows
     it exists, so a 403 is honest and leaks nothing."""
+
+
+class SubmissionViewForbiddenError(Exception):
+    """Raised when the caller can READ an assignment (a member of its org) but may not see
+    the roster of submissions — the teacher view is teacher/admin-only, so a plain member
+    (student) is forbidden (→ 403). Distinct from `AssignmentNotFoundError`: the caller
+    already knows the assignment exists (they're in its org), so a 403 is honest here."""
 
 
 def _get_by_id(session: Session, assignment_id: uuid.UUID) -> Assignment | None:
@@ -159,6 +167,108 @@ def delete_assignment(
         return False
     if assignment.owner_id != caller_id and not is_teacher_role(org_ctx.org_role):
         raise AssignmentDeleteForbiddenError(assignment_id)
+    # Delete the assignment's submission rows (every student's) and flush BEFORE the
+    # parent assignment — the same flush-before-parent-delete FK ordering the rest of
+    # this codebase follows (no ORM cascade to order it for us; deleting the assignment
+    # first would violate the submissions' `assignment_id` FK → a loud 500).
+    session.exec(
+        delete(AssignmentSubmission).where(AssignmentSubmission.assignment_id == assignment_id)
+    )
+    session.flush()
     session.delete(assignment)
     session.commit()
     return True
+
+
+def submit_assignment(
+    session: Session,
+    caller_id: str,
+    org_ctx: OrgContext,
+    assignment_id: uuid.UUID,
+    data: AssignmentSubmissionCreate,
+) -> AssignmentSubmission:
+    """Mark an assignment complete for the CALLER (records their own owner-scoped
+    submission). The primary actor is a student, but a teacher may harmlessly submit too.
+
+    Gate: the caller must be able to READ the assignment (`get_assignment` → it's in their
+    active org), else `AssignmentNotFoundError` (→ 404) — a caller from another org (or no
+    org) can neither submit nor learn the assignment exists.
+
+    UPSERT on the `(assignment_id, owner_id)` uniqueness: a re-submit updates the caller's
+    existing row (`completed_at`/`score`/`note`) rather than inserting a duplicate — the
+    operation is idempotent and the DB constraint holds even under a race.
+    """
+    if get_assignment(session, org_ctx, assignment_id) is None:
+        raise AssignmentNotFoundError(assignment_id)
+
+    submission = session.exec(
+        select(AssignmentSubmission).where(
+            AssignmentSubmission.assignment_id == assignment_id,
+            AssignmentSubmission.owner_id == caller_id,
+        )
+    ).first()
+
+    if submission is None:
+        submission = AssignmentSubmission(
+            assignment_id=assignment_id,
+            owner_id=caller_id,
+            score=data.score,
+            note=data.note,
+        )
+        session.add(submission)
+    else:
+        submission.completed_at = datetime.now(UTC)
+        submission.score = data.score
+        submission.note = data.note
+
+    session.commit()
+    session.refresh(submission)
+    return submission
+
+
+def list_submissions(
+    session: Session, caller_id: str, org_ctx: OrgContext, assignment_id: uuid.UUID
+) -> list[AssignmentSubmission]:
+    """The TEACHER view — every student's submission for one assignment.
+
+    Two gates: the assignment must exist in the caller's active org (`get_assignment` →
+    else `AssignmentNotFoundError` → 404, hiding existence from other orgs), AND the caller
+    must hold the teacher/admin role (`is_teacher_role`) → else `SubmissionViewForbiddenError`
+    (→ 403). Org-safe: the assignment is already confirmed in the caller's org and only a
+    teacher of that org reaches the listing, so no cross-org submission can leak.
+
+    **Known limitation (by design):** Clerk owns org membership, our DB does not, so we
+    cannot enumerate "all students in the org" — this lists the submissions that EXIST
+    (students who acted), NOT a full roster diff of who hasn't submitted. See PROGRESS.md;
+    a roster diff needs a Clerk member-list call (a later increment).
+    """
+    if get_assignment(session, org_ctx, assignment_id) is None:
+        raise AssignmentNotFoundError(assignment_id)
+    if not is_teacher_role(org_ctx.org_role):
+        raise SubmissionViewForbiddenError(assignment_id)
+    return list(
+        session.exec(
+            select(AssignmentSubmission)
+            .where(AssignmentSubmission.assignment_id == assignment_id)
+            .order_by(AssignmentSubmission.completed_at.desc(), AssignmentSubmission.id)
+        ).all()
+    )
+
+
+def get_my_submission(
+    session: Session, caller_id: str, org_ctx: OrgContext, assignment_id: uuid.UUID
+) -> AssignmentSubmission | None:
+    """The caller's OWN submission for an assignment, or `None` if they haven't submitted.
+
+    Gate on assignment readability first (`get_assignment` → else `AssignmentNotFoundError`
+    → 404): a caller from another org can't probe. Owner-scoped — only ever returns the
+    caller's own row, never another student's.
+    """
+    if get_assignment(session, org_ctx, assignment_id) is None:
+        raise AssignmentNotFoundError(assignment_id)
+    return session.exec(
+        select(AssignmentSubmission).where(
+            AssignmentSubmission.assignment_id == assignment_id,
+            AssignmentSubmission.owner_id == caller_id,
+        )
+    ).first()

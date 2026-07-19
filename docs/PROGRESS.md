@@ -2243,14 +2243,32 @@ frontends already shipped.
       `faccee6a0508`, hand-written because Neon isn't up to date) — **NOT yet applied to
       Neon** (pending live step, batched with `5ccf38a52dfb`). 17 new tests in
       `test_assignments.py`.
-    - **Increment 3b — completion/submission tracking + per-student targeting — TODO (NOT
-      started).** Track *who did* an assignment (submission/completion rows, per-student
-      state), let a teacher view student progress across the org, and add per-student
-      targeting (assign to specific members rather than the whole org). Increment 3a
-      deliberately targets the **whole active org** only and stores no completion state —
-      no Clerk member-list call anywhere.
-    - **Frontend for assignments — TODO (NOT started).** No UI shipped in 3a (backend
-      only): teacher create/list/delete views + a student "my assignments" list.
+    - **Increment 3b — completion/submission tracking (backend) — DONE** (2026-07-20; see
+      WORKLOG "Teams: assignment completion tracking"). The "tracks" half. New
+      `AssignmentSubmission` model — **strictly owner-scoped** (the student who acted owns
+      the row, unlike the org-broadcast Assignment), unique on `(assignment_id, owner_id)`
+      at the DB level so a re-submit UPSERTs one row. `POST /assignments/{id}/submit` (a
+      student marks complete, idempotent, optional self-reported score 0–100 / note),
+      `GET /assignments/{id}/submissions` (teacher/admin-only roster of the submissions
+      that EXIST — 403 for a plain member, 404 cross-org), `GET /assignments/{id}/my-submission`
+      (the caller's own row only). Every read org-gated via the reused `get_assignment`;
+      `delete_assignment` now cascades its submission rows first (flush-before-parent,
+      plain-FK). New table `assignment_submissions` (migration `a1b2c3d4e5f6`, hand-written
+      because Neon isn't up to date) — **NOT yet applied to Neon** (pending live step,
+      batched with `faccee6a0508` / `5ccf38a52dfb`). 16 new tests in `test_assignments.py`.
+    - **Roster diff ("who HASN'T submitted") — TODO (NOT started, known limitation).** Clerk
+      owns org membership, our DB does not, so the backend cannot enumerate all students in
+      the org — the teacher view therefore lists the submissions that EXIST (students who
+      acted), NOT a full roster diff. Closing this needs a Clerk member-list API call, the
+      same "Clerk owns membership" boundary the Assignment model already lives within.
+    - **Auto-grading / quiz-attempt linkage — TODO (NOT started).** 3b's `score` is
+      student self-reported; tying completion to a real quiz attempt + auto-scoring it is a
+      later increment (no quiz-attempt linkage exists yet).
+    - **Per-student targeting — TODO (NOT started).** Assignments target the **whole active
+      org** only; assigning to specific members rather than broadcasting is future work.
+    - **Frontend for assignments — TODO (NOT started).** No UI shipped in 3a/3b (backend
+      only): teacher create/list/delete + submission-roster views, and a student
+      "my assignments" list with a mark-complete action.
   - **Admin / billing seats** — org-level plan + per-seat billing (Polar), seat counts,
     admin management. Ties into the existing entitlement layer.
   - **Live Clerk-config confirmation + real-browser pass — mostly RESOLVED** (see WORKLOG

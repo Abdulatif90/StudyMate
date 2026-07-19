@@ -18,13 +18,13 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.core.auth import get_current_user_id, get_org_context
 from app.core.db import get_session
 from app.core.org import OrgContext
 from app.main import app
-from app.modules.assignments.models import Assignment
+from app.modules.assignments.models import Assignment, AssignmentSubmission
 from app.modules.quiz.models import Quiz
 
 # --- Identities -------------------------------------------------------------
@@ -279,3 +279,161 @@ def test_teacher_of_different_org_gets_404_on_delete():
     assert client.delete(f"/assignments/{assignment_id}").status_code == 404
     with Session(_engine) as session:
         assert session.get(Assignment, uuid.UUID(assignment_id)) is not None  # still there
+
+
+# ---------------------------------------------------------------------------
+# Submission — a student marks complete (owner-scoped, org-gated, idempotent).
+# ---------------------------------------------------------------------------
+
+
+def test_student_submits_creating_one_owned_row():
+    assignment_id = _make_one_assignment()
+    _act_as(STUDENT, ORG_O, _ROLE_MEMBER)
+    response = client.post(f"/assignments/{assignment_id}/submit", json={"score": 90})
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["assignment_id"] == assignment_id
+    assert body["owner_id"] == STUDENT
+    assert body["score"] == 90
+    with Session(_engine) as session:
+        rows = list(session.exec(select(AssignmentSubmission)))
+        assert len(rows) == 1
+        assert rows[0].owner_id == STUDENT
+        assert rows[0].assignment_id == uuid.UUID(assignment_id)
+
+
+def test_resubmit_is_idempotent_updates_same_row():
+    assignment_id = _make_one_assignment()
+    _act_as(STUDENT, ORG_O, _ROLE_MEMBER)
+    first = client.post(f"/assignments/{assignment_id}/submit", json={"score": 50})
+    assert first.status_code == 201
+    first_id = first.json()["id"]
+
+    second = client.post(
+        f"/assignments/{assignment_id}/submit", json={"score": 88, "note": "redid it"}
+    )
+    assert second.status_code == 201, second.text
+    assert second.json()["id"] == first_id  # same row, not a duplicate
+    assert second.json()["score"] == 88
+    assert second.json()["note"] == "redid it"
+    with Session(_engine) as session:
+        rows = list(session.exec(select(AssignmentSubmission)))
+        assert len(rows) == 1  # unique (assignment, owner) held — no second row
+
+
+def test_two_students_each_get_their_own_submission():
+    assignment_id = _make_one_assignment()
+    _act_as(STUDENT, ORG_O, _ROLE_MEMBER)
+    assert client.post(f"/assignments/{assignment_id}/submit", json={}).status_code == 201
+    _act_as(TEACHER2, ORG_O, _ROLE_ADMIN)  # a second acting user in the org
+    assert client.post(f"/assignments/{assignment_id}/submit", json={}).status_code == 201
+    with Session(_engine) as session:
+        rows = list(session.exec(select(AssignmentSubmission)))
+        assert {r.owner_id for r in rows} == {STUDENT, TEACHER2}
+
+
+def test_student_of_different_org_cannot_submit():
+    assignment_id = _make_one_assignment()
+    _act_as(OTHER_ORG_STUDENT, ORG_O2, _ROLE_MEMBER)
+    assert client.post(f"/assignments/{assignment_id}/submit", json={}).status_code == 404
+    with Session(_engine) as session:
+        assert list(session.exec(select(AssignmentSubmission))) == []  # nothing written
+
+
+def test_loner_with_no_active_org_cannot_submit():
+    assignment_id = _make_one_assignment()
+    _act_as(LONER, None, None)
+    assert client.post(f"/assignments/{assignment_id}/submit", json={}).status_code == 404
+
+
+def test_submit_score_out_of_range_rejected():
+    assignment_id = _make_one_assignment()
+    _act_as(STUDENT, ORG_O, _ROLE_MEMBER)
+    response = client.post(f"/assignments/{assignment_id}/submit", json={"score": 101})
+    assert response.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Teacher view — lists every student's submission; teacher/admin only; org-gated.
+# ---------------------------------------------------------------------------
+
+
+def _seed_two_submissions(assignment_id: str) -> None:
+    _act_as(STUDENT, ORG_O, _ROLE_MEMBER)
+    r1 = client.post(f"/assignments/{assignment_id}/submit", json={"score": 70})
+    assert r1.status_code == 201
+    _act_as(TEACHER2, ORG_O, _ROLE_ADMIN)
+    r2 = client.post(f"/assignments/{assignment_id}/submit", json={})
+    assert r2.status_code == 201
+
+
+def test_teacher_views_all_submissions():
+    assignment_id = _make_one_assignment()
+    _seed_two_submissions(assignment_id)
+    _act_as(TEACHER, ORG_O, _ROLE_ADMIN)
+    response = client.get(f"/assignments/{assignment_id}/submissions")
+    assert response.status_code == 200, response.text
+    owners = {s["owner_id"] for s in response.json()}
+    assert owners == {STUDENT, TEACHER2}
+
+
+def test_plain_member_cannot_view_submissions():
+    assignment_id = _make_one_assignment()
+    _seed_two_submissions(assignment_id)
+    _act_as(STUDENT, ORG_O, _ROLE_MEMBER)
+    assert client.get(f"/assignments/{assignment_id}/submissions").status_code == 403
+
+
+def test_teacher_of_different_org_gets_404_on_submissions():
+    # 404 hides existence — the wrong-org teacher must not learn the assignment exists.
+    assignment_id = _make_one_assignment()
+    _seed_two_submissions(assignment_id)
+    _act_as(OTHER_ORG_TEACHER, ORG_O2, _ROLE_ADMIN)
+    assert client.get(f"/assignments/{assignment_id}/submissions").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# my-submission — owner-scoped; never another student's.
+# ---------------------------------------------------------------------------
+
+
+def test_my_submission_returns_own_only():
+    assignment_id = _make_one_assignment()
+    _seed_two_submissions(assignment_id)
+    _act_as(STUDENT, ORG_O, _ROLE_MEMBER)
+    response = client.get(f"/assignments/{assignment_id}/my-submission")
+    assert response.status_code == 200, response.text
+    assert response.json()["owner_id"] == STUDENT  # own row, never TEACHER2's
+
+
+def test_my_submission_404_when_none():
+    assignment_id = _make_one_assignment()
+    _act_as(STUDENT, ORG_O, _ROLE_MEMBER)  # hasn't submitted
+    assert client.get(f"/assignments/{assignment_id}/my-submission").status_code == 404
+
+
+def test_my_submission_404_for_other_org():
+    assignment_id = _make_one_assignment()
+    _seed_two_submissions(assignment_id)
+    _act_as(OTHER_ORG_STUDENT, ORG_O2, _ROLE_MEMBER)
+    # Can't even probe an assignment outside their org.
+    assert client.get(f"/assignments/{assignment_id}/my-submission").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Delete cascade — an assignment's submissions go with it (no FK violation).
+# ---------------------------------------------------------------------------
+
+
+def test_delete_assignment_cascades_submissions():
+    assignment_id = _make_one_assignment()
+    _seed_two_submissions(assignment_id)
+    with Session(_engine) as session:
+        assert len(list(session.exec(select(AssignmentSubmission)))) == 2
+
+    _act_as(TEACHER, ORG_O, _ROLE_ADMIN)
+    assert client.delete(f"/assignments/{assignment_id}").status_code == 204  # no FK 500
+
+    with Session(_engine) as session:
+        assert session.get(Assignment, uuid.UUID(assignment_id)) is None
+        assert list(session.exec(select(AssignmentSubmission))) == []  # cascaded away

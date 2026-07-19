@@ -33,3 +33,23 @@ class AssignmentRead(BaseModel):
     description: str | None = None
     due_at: datetime | None = None
     created_at: datetime
+
+
+class AssignmentSubmissionCreate(BaseModel):
+    """A student's self-reported completion payload. Both fields optional — the mere act
+    of submitting records completion; `score`/`note` are extras the student may attach.
+    Bounded (score 0–100, note length) so a client can't push nonsense values."""
+
+    score: int | None = Field(default=None, ge=0, le=100)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class AssignmentSubmissionRead(BaseModel):
+    id: uuid.UUID
+    assignment_id: uuid.UUID
+    # The submitting student's Clerk user id. Exposed so the teacher view can attribute
+    # each submission to its student (all persisted fields).
+    owner_id: str
+    completed_at: datetime
+    score: int | None = None
+    note: str | None = None
