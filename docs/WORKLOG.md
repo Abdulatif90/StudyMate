@@ -2,6 +2,64 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-20 — Teams: Team Plan upgrade UI for org admins (Phase 5)
+Frontend-only close-out of the seats feature: `/billing` gained a "Team Plan" upgrade
+card, gated to org admins, so an admin can actually subscribe their org from the app
+instead of only via a raw API call.
+Commit: `feat(teams): Team Plan upgrade UI for org admins (Phase 5)`.
+
+- **Step 0.** Regenerated `frontend/src/lib/api/schema.d.ts` from the live `:8000`
+  `openapi.json` (`npm run generate-api-types`) — confirmed `POST /billing/team-checkout`
+  takes `TeamCheckoutCreateRequest` (`success_url?: string`) and returns the SAME
+  `CheckoutCreateResponse` (`{ checkout_url: string }`) shape as the individual checkout.
+  Read the existing `/billing` page's `checkout` mutation to mirror it exactly: `POST
+  /billing/checkout` → `onSuccess` fires `captureEvent` then `window.location.href =
+  data.checkout_url`; errors render as an inline `text-sm text-destructive` paragraph
+  (there's no toast call anywhere in this app despite a `components/ui/toast.tsx`
+  existing, so inline error text — not a toast — is the actual established pattern, and
+  that's what got mirrored). Confirmed the org-admin gate pattern from
+  `assignments/page.tsx`: `useOrganization()` → `orgCapability(membership?.role)`.
+- **New `lib/teamUpgrade.ts`** — pure `canShowTeamUpgrade(hasActiveOrg: boolean, role:
+  string | null | undefined): boolean`, `hasActiveOrg && isTeacherRole(role)`. UX-only
+  mirror of the backend's real `require_teacher` guard on `POST /billing/team-checkout`;
+  a plain member or a signed-in user with no active org never sees the card. New
+  `lib/teamUpgrade.test.ts` (4 cases: admin+org, member+org, admin+no-org, unknown role).
+- **`/billing/page.tsx`**: added a `teamCheckout` mutation (`POST
+  /billing/team-checkout`, `success_url` = `/billing?upgraded=1`, same redirect-on-success
+  as the individual `checkout` mutation) and a gated `Card` — "Team Plan" title,
+  "$10/seat/month" price, one-line benefit, "Upgrade to Team" button (disabled + shows
+  "Redirecting…" while pending, reusing the existing `Billing.redirecting` key), inline
+  destructive-text error on failure. Individual plan/checkout UI, usage meters, and the
+  referral card are untouched.
+- **Fallout from regenerating the client**: the backend's `Plan` enum already included
+  `"team"` (shipped in the prior backend-only increment below), which the OLD hand-typed
+  client didn't reflect. Regenerating surfaced 4 `tsc` errors — three `Record<Plan, …>`
+  maps (`PLAN_LABELS` in `lib/planLimits.ts`; `PLAN_PRICE`/`PLAN_FEATURES_KEY`/
+  `CHECKOUT_TARGETS` in `billing/page.tsx`) stopped being exhaustive. Fixed with `team`
+  entries: `PLAN_LABELS.team = "Team"` is load-bearing (an org member's `GET
+  /billing/plan` can now read back `"team"` as their effective individual plan value, and
+  that label feeds the existing "Current plan" badge unchanged). The other three are
+  unreachable stubs — the individual compare-grid's `PLAN_ORDER` constant still lists
+  only `free/pro/business`, so this does NOT change the individual-checkout UI's actual
+  rendered behavior, just satisfies TS.
+- **i18n**: new `Billing.teamPlan.{title,price,benefit,cta}` keys, added to `en.json` and
+  mirrored via targeted anchored edits (not a full JSON round-trip) into `uz.json`
+  (`Jamoa tarifi` / `$10 / o'rin / oyiga` / ...), `ko.json` (`팀 요금제` / `좌석당 $10 / 월` /
+  ...), `ru.json` (`Командный тариф` / `$10 / место / в месяц` / ...).
+- **Checks**: `npm run test` — **237 passed** across 56 files (was 233/55 — +1 new test
+  file, +4 tests), including the new `teamUpgrade.test.ts` and the existing
+  `messages.test.ts` key-parity check across all 4 locales. `npx tsc --noEmit` clean.
+  `npm run lint` clean. No `next build` run (dev server owns `:3000`).
+- **Not yet browser-verified** (standing no-browser gap, batched to the user's
+  project-end pass per `blockers_deferred_to_end.md`): the actual click → Polar-hosted
+  checkout → redirect-back round trip for the Team Plan card.
+- **With this, Phase 5 (Business/Teams B2B) is fully complete** — org
+  foundation, org-scoped subject sharing, flashcard/quiz org read-through, shared-subject
+  delete cascade, assignments (create/submit/roster, org-broadcast only), graded quiz
+  attempts, and now Team Plan billing seats end-to-end (backend + this UI). The only
+  remaining project-wide item is the batched real-browser click-through pass noted
+  throughout this log.
+
 ## 2026-07-20 — Teams: org/team billing seats — Team Plan subscription + org-aware entitlements (Phase 5)
 An org admin can now subscribe the whole organization to the Polar **Team Plan**, lifting
 every member to Team (unlimited) entitlements. Backend only; the team-upgrade UI is a

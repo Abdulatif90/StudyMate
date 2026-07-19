@@ -2427,6 +2427,29 @@ frontends already shipped.
     your org" button → `POST /billing/team-checkout`, and showing the effective/org plan on
     `/billing`) is the remaining frontend increment. With this, **Phase 5 is essentially
     complete on the backend.**
+  - **Team upgrade UI — DONE** (2026-07-20; see WORKLOG "Team Plan upgrade UI for org
+    admins"). Closes the seats feature end-to-end. `/billing` gained a "Team Plan" card —
+    gated to org admins (`canShowTeamUpgrade(hasActiveOrg, role)` in new
+    `lib/teamUpgrade.ts`, mirroring `require_teacher`/`isTeacherRole`; a plain member or a
+    user with no active org never sees it) — with the $10/seat/month price, a one-line
+    benefit, and an "Upgrade to Team" button that mutates `POST /billing/team-checkout` and
+    redirects to the returned Polar `checkout_url` (identical redirect + inline
+    `text-destructive` error pattern as the existing individual `POST /billing/checkout`
+    flow; no toast component is actually used anywhere in this app, so none was introduced
+    here either). Typed client regenerated from the live `:8000` `openapi.json` — this
+    surfaced that the backend's `Plan` enum already includes `"team"` (from the prior
+    backend increment), which broke `Record<Plan, …>` exhaustiveness in three places
+    (`PLAN_LABELS`, and `PLAN_PRICE`/`PLAN_FEATURES_KEY`/`CHECKOUT_TARGETS` in
+    `billing/page.tsx`); fixed with `team` entries — `PLAN_LABELS.team = "Team"` genuinely
+    matters (an org member's `GET /billing/plan` can read back `"team"`), the other three
+    are unreachable stubs since the individual compare-grid's `PLAN_ORDER` still only lists
+    free/pro/business, so the existing individual-checkout UI's rendered behavior is
+    unchanged. i18n: new `Billing.teamPlan.{title,price,benefit,cta}` keys added to
+    en/uz/ko/ru via targeted edits; new `lib/teamUpgrade.test.ts`. **237 passed** (was 233),
+    `tsc --noEmit` clean, `eslint` clean. **Not yet browser-verified** (standing no-browser
+    gap, batched to the user's project-end pass per `blockers_deferred_to_end.md`). **With
+    this, Phase 5 (Business/Teams B2B) is fully complete** — the only remaining item
+    project-wide is the batched no-browser click-through pass.
   - **Live Clerk-config confirmation + real-browser pass — mostly RESOLVED** (see WORKLOG
     "Live verification: Polar webhook, observability env, Clerk orgs" entry): the user
     enabled Organizations in Clerk, created an organization from the app, invited a

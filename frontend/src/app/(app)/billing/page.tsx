@@ -1,17 +1,20 @@
 "use client";
 
+import { useOrganization } from "@clerk/nextjs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { ErrorState } from "@/components/error-state";
 import { PlanCard } from "@/components/plan-card";
 import { ReferralCard } from "@/components/referral-card";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UsageMeters } from "@/components/usage-meters";
 import { captureEvent } from "@/lib/analytics";
 import { useApiClient } from "@/lib/api/useApiClient";
 import { PLAN_LABELS } from "@/lib/planLimits";
+import { canShowTeamUpgrade } from "@/lib/teamUpgrade";
 import type { components } from "@/lib/api/schema";
 
 type Plan = components["schemas"]["Plan"];
@@ -23,10 +26,15 @@ type Plan = components["schemas"]["Plan"];
 // side (the dashboard's condensed UsageStatCard grid never repeats this).
 const PLAN_ORDER: Plan[] = ["free", "pro", "business"];
 
+// "team" isn't in PLAN_ORDER (it's not a self-serve individual-checkout plan — see the
+// Team Plan card below), so these entries are never actually read at runtime. They
+// exist only so these Records stay exhaustive over `Plan` now that the backend's enum
+// includes it (an org member's effective plan can read back as "team").
 const PLAN_PRICE: Record<Plan, string> = {
   free: "$0",
   pro: "$20",
   business: "$100",
+  team: "$10",
 };
 
 // Mirrors the marketing landing page's plan cards — same three plans, same caps — so
@@ -36,6 +44,7 @@ const PLAN_FEATURES_KEY: Record<Plan, string> = {
   free: "Landing.pricing.freeFeatures",
   pro: "Landing.pricing.proFeatures",
   business: "Landing.pricing.businessFeatures",
+  team: "Landing.pricing.businessFeatures",
 };
 
 const POPULAR_PLAN: Plan = "pro";
@@ -46,6 +55,7 @@ const CHECKOUT_TARGETS: Record<Plan, Exclude<Plan, "free">[]> = {
   free: ["pro", "business"],
   pro: ["business"],
   business: [],
+  team: [],
 };
 
 export default function BillingPage() {
@@ -53,6 +63,7 @@ export default function BillingPage() {
   const api = useApiClient();
   const queryClient = useQueryClient();
   const [justUpgraded, setJustUpgraded] = useState(false);
+  const { organization, membership } = useOrganization();
 
   const planQuery = useQuery({
     queryKey: ["billing", "plan"],
@@ -92,8 +103,26 @@ export default function BillingPage() {
     },
   });
 
+  const teamCheckout = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await api.POST("/billing/team-checkout", {
+        body: {
+          success_url: `${window.location.origin}/billing?upgraded=1`,
+        },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      captureEvent("checkoutStarted", { plan: "team" });
+      // Hand off to Polar's hosted checkout page (same mechanism as the individual plan).
+      window.location.href = data.checkout_url;
+    },
+  });
+
   const plan = planQuery.data;
   const checkoutTargets = plan ? CHECKOUT_TARGETS[plan.plan] : [];
+  const showTeamUpgrade = canShowTeamUpgrade(organization != null, membership?.role);
 
   return (
     <div>
@@ -187,6 +216,30 @@ export default function BillingPage() {
 
           {checkout.isError && (
             <p className="text-sm text-destructive">{t("Billing.checkoutError")}</p>
+          )}
+
+          {showTeamUpgrade && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">{t("Billing.teamPlan.title")}</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3">
+                <p className="text-2xl font-bold">
+                  {t("Billing.teamPlan.price")}
+                </p>
+                <p className="text-sm text-muted-foreground">{t("Billing.teamPlan.benefit")}</p>
+                <Button
+                  className="w-full sm:w-auto"
+                  disabled={teamCheckout.isPending}
+                  onClick={() => teamCheckout.mutate()}
+                >
+                  {teamCheckout.isPending ? t("Billing.redirecting") : t("Billing.teamPlan.cta")}
+                </Button>
+                {teamCheckout.isError && (
+                  <p className="text-sm text-destructive">{t("Billing.checkoutError")}</p>
+                )}
+              </CardContent>
+            </Card>
           )}
         </div>
       )}

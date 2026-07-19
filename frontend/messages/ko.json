@@ -272,7 +272,13 @@
     "redirecting": "이동하는 중…",
     "upgradeTo": "{plan}로 업그레이드",
     "notAvailable": "이용 불가",
-    "checkoutError": "결제를 시작하지 못했습니다. 다시 시도해 주세요."
+    "checkoutError": "결제를 시작하지 못했습니다. 다시 시도해 주세요.",
+    "teamPlan": {
+      "title": "팀 요금제",
+      "price": "좌석당 $10 / 월",
+      "benefit": "조직 전체에 무제한 생성 제공",
+      "cta": "팀 요금제로 업그레이드"
+    }
   },
   "QuestionMessage": {
     "cancel": "취소",

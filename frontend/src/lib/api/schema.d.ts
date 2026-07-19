@@ -346,6 +346,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/billing/team-checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Team Checkout
+         * @description Start a Polar checkout that subscribes the caller's active organization to the Team
+         *     Plan. **Teacher/admin only** (`require_teacher`): subscribing the whole org is an admin
+         *     action, so a plain member gets 403 and a caller with no active org gets 403 too (both
+         *     from the guard). The org id is the caller's active org from their verified token — never
+         *     client-supplied — so nobody can subscribe an org they don't administer.
+         */
+        post: operations["create_team_checkout_billing_team_checkout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/billing/webhook": {
         parameters: {
             query?: never;
@@ -926,7 +950,7 @@ export interface components {
          * Plan
          * @enum {string}
          */
-        Plan: "free" | "pro" | "business";
+        Plan: "free" | "pro" | "business" | "team";
         /**
          * PlanLimitsRead
          * @description `null` means unlimited for that dimension (Business).
@@ -1151,6 +1175,17 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * TeamCheckoutCreateRequest
+         * @description Start a Team-Plan checkout for the caller's *active organization*. There is no
+         *     `plan` field — this endpoint always buys Team — and no `org_id`: the org comes from
+         *     the caller's verified token (and only a teacher/admin may reach the route), so a caller
+         *     can neither pick another product nor subscribe an org they don't administer.
+         */
+        TeamCheckoutCreateRequest: {
+            /** Success Url */
+            success_url?: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -1981,6 +2016,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CheckoutCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckoutCreateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_team_checkout_billing_team_checkout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamCheckoutCreateRequest"];
             };
         };
         responses: {

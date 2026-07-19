@@ -272,7 +272,13 @@
     "redirecting": "Redirecting…",
     "upgradeTo": "Upgrade to {plan}",
     "notAvailable": "Not available",
-    "checkoutError": "Couldn't start checkout. Please try again."
+    "checkoutError": "Couldn't start checkout. Please try again.",
+    "teamPlan": {
+      "title": "Team Plan",
+      "price": "$10 / seat / month",
+      "benefit": "Unlimited generations for your whole organization",
+      "cta": "Upgrade to Team"
+    }
   },
   "QuestionMessage": {
     "cancel": "Cancel",

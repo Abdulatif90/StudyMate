@@ -7,6 +7,10 @@ export const PLAN_LABELS: Record<Plan, string> = {
   free: "Free",
   pro: "Pro",
   business: "Business",
+  // Not self-serve-purchasable (bought only via an org admin's team checkout), but a
+  // member's effective plan can read back as "team" once their org subscribes — needed
+  // so "Current plan" renders a real label instead of `undefined`.
+  team: "Team",
 };
 
 export interface UsageMeter {

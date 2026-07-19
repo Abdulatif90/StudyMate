@@ -272,7 +272,13 @@
     "redirecting": "Yo‘naltirilmoqda…",
     "upgradeTo": "{plan}ga o‘tish",
     "notAvailable": "Mavjud emas",
-    "checkoutError": "To‘lovni boshlab bo‘lmadi. Qayta urinib ko‘ring."
+    "checkoutError": "To‘lovni boshlab bo‘lmadi. Qayta urinib ko‘ring.",
+    "teamPlan": {
+      "title": "Jamoa tarifi",
+      "price": "$10 / o‘rin / oyiga",
+      "benefit": "Butun tashkilotingiz uchun cheksiz generatsiyalar",
+      "cta": "Jamoa tarifiga o‘tish"
+    }
   },
   "QuestionMessage": {
     "cancel": "Bekor qilish",
