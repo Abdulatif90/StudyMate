@@ -53,3 +53,30 @@ class AssignmentSubmissionRead(BaseModel):
     completed_at: datetime
     score: int | None = None
     note: str | None = None
+
+
+class RosterMember(BaseModel):
+    """One person on an assignment's roster — a Clerk org member, plus whether they've
+    submitted and (if so) their score/timestamp. `submitted=False` rows carry no
+    score/completed_at; `submitted=True` rows carry the values from their submission."""
+
+    user_id: str
+    submitted: bool
+    score: int | None = None
+    completed_at: datetime | None = None
+
+
+class AssignmentRoster(BaseModel):
+    """The teacher's roster-diff view: every org member cross-referenced against existing
+    submissions, split into who HAS and who HASN'T submitted. Counts are precomputed so a
+    client needn't re-derive them. `submitted` may include an ex-member who submitted then
+    left the org (they no longer appear in Clerk's member list) — surfaced so their result
+    isn't silently dropped; such rows are counted in `submitted_count` but never in
+    `total_members` (which reflects current Clerk membership only)."""
+
+    assignment_id: uuid.UUID
+    total_members: int
+    submitted_count: int
+    not_submitted_count: int
+    submitted: list[RosterMember]
+    not_submitted: list[RosterMember]

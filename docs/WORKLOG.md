@@ -2,6 +2,71 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-20 — Teams: assignment submission roster via Clerk org members (Phase 5)
+The teacher's submissions view could only list submissions that EXIST — it couldn't show
+WHO HASN'T submitted, because our DB doesn't store org membership (Clerk owns it, ADR #9).
+This increment adds the roster diff: enumerate an org's members via Clerk, diff against
+existing submissions. Backend only — frontend is a separate later increment. Commit:
+`feat(teams): assignment submission roster via Clerk org members (Phase 5)`.
+
+- **Architectural expansion — call it out.** Until now the backend NEVER called Clerk's
+  API: `app/core/auth.py` only *verifies* the session JWT against Clerk's JWKS, and
+  `app/core/org.py` only reads claims out of an already-verified token (ADR #9 — "we only
+  read JWT claims"). A roster requires *enumerating* members, which only Clerk can answer.
+  This is a deliberate, flagged widening of that boundary, kept isolated behind ONE client
+  module (`app/core/clerk_api.py`) and env-gated so the rest of the app is unaffected —
+  and, when the key is unconfigured, unbroken.
+- **Verified the external contract BEFORE coding (Step 0, no guessing).** Confirmed against
+  Clerk's official Backend API OpenAPI spec (`bapi/2024-10-01.yml`, source:
+  `raw.githubusercontent.com/clerk/openapi-specs/main/bapi/2024-10-01.yml`, operationId
+  `ListOrganizationMemberships`): endpoint `GET https://api.clerk.com/v1/organizations/
+  {organization_id}/memberships`; auth `Authorization: Bearer <secret key>` (bearerAuth,
+  `sk_<env>_<value>`); pagination `limit` (1–500, default 10) + `offset` (default 0);
+  response `OrganizationMemberships` = `{ data: OrganizationMembership[], total_count: int }`
+  (both required); each `OrganizationMembership.public_user_data.user_id` (string, required)
+  is the member's Clerk user id. All five facts read directly from the spec's schema
+  definitions (not the SDK-doc paraphrase, which uses camelCase), so the REST field names
+  the client uses (`data`, `total_count`, `public_user_data.user_id`) are exact.
+- **`app/core/clerk_api.py` (new).** `list_organization_member_ids(org_id) -> list[str]`
+  walks `offset` in pages of 100 until `total_count` is read, extracting
+  `public_user_data.user_id`. Missing `CLERK_SECRET_KEY` → `ClerkConfigError` at point of
+  use (same loud-failure pattern as `embedding.py`/`llm.py`/`r2_client.py`/
+  `inngest_client.py`); a non-2xx from Clerk → `ClerkAPIError`. ALL Clerk-REST specifics
+  (base URL, bearer header, paging, JSON shape) live here and nowhere else.
+- **`assignments/service.py`.** `build_roster_diff(member_ids, submissions)` is the PURE,
+  I/O-free diff (members − submitters) → `(submitted, not_submitted)` lists of `RosterMember`;
+  it also surfaces an ex-member submitter (submitted then left the org — an `owner_id` not
+  in the member list) rather than dropping their result. `get_submission_roster(...)` runs
+  the SAME teacher-gate as `list_submissions` (assignment in caller's active org via
+  `get_assignment` → else 404; caller must be teacher/admin → else 403) BEFORE any Clerk
+  call, then fetches members (Clerk) + submissions (DB) and assembles `AssignmentRoster`.
+- **`assignments/router.py`.** `GET /assignments/{id}/roster` (thin, error-translating):
+  404 cross-org, 403 plain member, **503** when `CLERK_SECRET_KEY` is unset ("roster
+  unavailable — Clerk not configured" — chosen over a 500 leak, since a missing key is a
+  config gap not a fault), 502 on an upstream Clerk failure.
+- **Config + env.** Added optional `clerk_secret_key: str | None = None` to `Settings` and
+  documented `CLERK_SECRET_KEY` in `backend/.env.example` (Phase 5 section). Distinct from
+  the existing `clerk_jwks_url`/`clerk_issuer`: those verify JWTs, this calls the API.
+- **No schema change → no migration.** Confirmed: the roster is COMPUTED at request time
+  (Clerk members diffed against existing `AssignmentSubmission` rows), never stored.
+- **Tests (offline, network-free — Clerk MOCKED, never called for real).** `test_roster_diff.py`
+  (8 pure-diff cases: {A,B,C}∩{A}, empty members, all/none submitted, ex-member submitter,
+  dedupe, order). `test_clerk_api.py` (5: missing-key raises BEFORE any network via a
+  transport that would assert on a real call; single-page extraction; pagination across two
+  pages; non-200 → `ClerkAPIError`; asserts the on-the-wire path + bearer header match the
+  verified contract, using `httpx.MockTransport`). `test_assignment_roster.py` (7 endpoint:
+  teacher gets the diff, none-submitted, 403 plain member + 404 cross-org BOTH proven to run
+  before any Clerk call, missing-key→503, upstream→502, ex-member surfaced).
+- **DEVIATION — flag for review.** The task premise said "no Clerk secret key is set here";
+  in fact `backend/.env` DOES contain a live `CLERK_SECRET_KEY=sk_test_...`. I did NOT touch
+  `.env` and do not reproduce the value. Consequence: the missing-key path can't be proven
+  by simply having no key in this env, so it's proven deterministically instead — the client
+  unit test overrides settings to `None` (real `ClerkConfigError`, no network), and the
+  endpoint test mocks the client to raise `ClerkConfigError` (real 503 translation). No test
+  ever hits real Clerk. The app + full suite still boot/pass exactly as required — verified.
+- **Tests: backend 441 passed, 11 deselected (live), 0 failed** (`pytest tests`); `ruff
+  check .` clean; `ruff format --check .` clean (128 files). No frontend touched.
+
 ## 2026-07-20 — Teams: graded quiz flow UI (Phase 5 increment 4b)
 Frontend half of 4a — wires the quiz-taking page and the assignments student view to the
 new server-graded attempt endpoint, replacing the manual self-reported score/note. Commit:

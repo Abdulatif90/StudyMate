@@ -28,13 +28,20 @@ submission tracking (who did the assignment), per-student targeting, and any fro
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from datetime import UTC, datetime
 
 from sqlmodel import Session, delete, select
 
+from app.core import clerk_api
 from app.core.org import OrgContext, is_teacher_role
 from app.modules.assignments.models import Assignment, AssignmentSubmission
-from app.modules.assignments.schemas import AssignmentCreate, AssignmentSubmissionCreate
+from app.modules.assignments.schemas import (
+    AssignmentCreate,
+    AssignmentRoster,
+    AssignmentSubmissionCreate,
+    RosterMember,
+)
 from app.modules.quiz.models import Quiz
 from app.modules.subjects.service import require_writable_subject
 
@@ -336,3 +343,104 @@ def get_my_submission(
             AssignmentSubmission.owner_id == caller_id,
         )
     ).first()
+
+
+def build_roster_diff(
+    member_ids: Iterable[str],
+    submissions: Iterable[AssignmentSubmission],
+) -> tuple[list[RosterMember], list[RosterMember]]:
+    """PURE roster diff: `(submitted, not_submitted)` from a list of org member ids and the
+    assignment's existing submissions. No DB, no Clerk, no I/O — the unit-testable core.
+
+    Returns two lists of `RosterMember`:
+      - `not_submitted`: current members with NO submission (the "who still owes it" list),
+        in `member_ids` order.
+      - `submitted`: current members WHO submitted, in `member_ids` order, each carrying
+        their `score`/`completed_at`; followed by any **ex-member submitters** — an
+        `owner_id` present in `submissions` but absent from `member_ids` (a student who
+        submitted then left the org), sorted by `user_id` for determinism so their result
+        is surfaced rather than silently dropped (the "handle gracefully" edge).
+
+    A duplicated member id is de-duplicated (first occurrence wins). Multiple submissions
+    for one owner shouldn't occur (DB uniqueness), but if they did the last one wins.
+    """
+    submission_by_owner = {submission.owner_id: submission for submission in submissions}
+
+    submitted: list[RosterMember] = []
+    not_submitted: list[RosterMember] = []
+    seen_members: set[str] = set()
+
+    for member_id in member_ids:
+        if member_id in seen_members:
+            continue
+        seen_members.add(member_id)
+        submission = submission_by_owner.get(member_id)
+        if submission is not None:
+            submitted.append(
+                RosterMember(
+                    user_id=member_id,
+                    submitted=True,
+                    score=submission.score,
+                    completed_at=submission.completed_at,
+                )
+            )
+        else:
+            not_submitted.append(RosterMember(user_id=member_id, submitted=False))
+
+    # Ex-member submitters: submitted but no longer in the org's member list. Surface them
+    # (with their score) so their work isn't lost; sorted for a deterministic response.
+    ex_member_ids = sorted(set(submission_by_owner) - seen_members)
+    for owner_id in ex_member_ids:
+        submission = submission_by_owner[owner_id]
+        submitted.append(
+            RosterMember(
+                user_id=owner_id,
+                submitted=True,
+                score=submission.score,
+                completed_at=submission.completed_at,
+            )
+        )
+
+    return submitted, not_submitted
+
+
+def get_submission_roster(
+    session: Session, caller_id: str, org_ctx: OrgContext, assignment_id: uuid.UUID
+) -> AssignmentRoster:
+    """The TEACHER roster-diff view — every org member cross-referenced against who has
+    submitted, so the teacher can see WHO HASN'T (which the plain submissions list can't
+    show, since it only holds students who acted).
+
+    Same teacher-gate as `list_submissions`: the assignment must exist in the caller's
+    active org (`get_assignment` → else `AssignmentNotFoundError` → 404, hiding existence
+    from other orgs), AND the caller must hold the teacher/admin role (`is_teacher_role`)
+    → else `SubmissionViewForbiddenError` (→ 403). Both gates run BEFORE any Clerk call, so
+    a non-teacher or cross-org caller never triggers an outbound request.
+
+    Then the org's members come from Clerk (`clerk_api.list_organization_member_ids` — the
+    only place we enumerate membership, since Clerk owns it, not our DB) and the diff is the
+    pure `build_roster_diff`. If `CLERK_SECRET_KEY` is unset the Clerk call raises
+    `ClerkConfigError`, which the router turns into a clean 503 rather than a 500.
+
+    `org_ctx.org_id` is guaranteed non-None here: `get_assignment` only returns a row when
+    `assignment.org_id == org_ctx.org_id` and an assignment's `org_id` is never NULL.
+    """
+    if get_assignment(session, org_ctx, assignment_id) is None:
+        raise AssignmentNotFoundError(assignment_id)
+    if not is_teacher_role(org_ctx.org_role):
+        raise SubmissionViewForbiddenError(assignment_id)
+
+    member_ids = clerk_api.list_organization_member_ids(org_ctx.org_id)
+    submissions = session.exec(
+        select(AssignmentSubmission).where(AssignmentSubmission.assignment_id == assignment_id)
+    ).all()
+
+    submitted, not_submitted = build_roster_diff(member_ids, submissions)
+    return AssignmentRoster(
+        assignment_id=assignment_id,
+        total_members=len(set(member_ids)),
+        submitted_count=len(submitted),
+        not_submitted_count=len(not_submitted),
+        submitted=submitted,
+        not_submitted=not_submitted,
+    )

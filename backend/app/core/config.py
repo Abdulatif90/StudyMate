@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     database_url: str | None = None
     clerk_jwks_url: str | None = None
     clerk_issuer: str | None = None
+    # Clerk *Backend API* secret key (sk_...). Distinct from the JWKS/issuer above:
+    # auth only *verifies JWT claims* (no Clerk API call), but the assignment roster diff
+    # must *enumerate* an org's members, which only Clerk can answer. Optional/env-gated so
+    # the app/tests boot without it; app/core/clerk_api.py raises a clear error at point of
+    # use, and the roster endpoint returns 503 (not 500) until it's set.
+    clerk_secret_key: str | None = None
     cohere_api_key: str | None = None
     anthropic_api_key: str | None = None
     # Inngest (async document processing). Optional so the app/tests boot without

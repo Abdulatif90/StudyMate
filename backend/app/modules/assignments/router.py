@@ -8,6 +8,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session
 
+from app.core import clerk_api
 from app.core.auth import get_current_user_id, get_org_context, require_teacher
 from app.core.db import get_session
 from app.core.org import OrgContext
@@ -16,6 +17,7 @@ from app.modules.assignments.models import Assignment, AssignmentSubmission
 from app.modules.assignments.schemas import (
     AssignmentCreate,
     AssignmentRead,
+    AssignmentRoster,
     AssignmentSubmissionCreate,
     AssignmentSubmissionRead,
 )
@@ -121,6 +123,37 @@ def list_submissions(
     except service.SubmissionViewForbiddenError as exc:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN, "You don't have permission to view these submissions"
+        ) from exc
+
+
+@router.get("/{assignment_id}/roster", response_model=AssignmentRoster)
+def get_submission_roster(
+    assignment_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    caller_id: str = Depends(get_current_user_id),
+    org_ctx: OrgContext = Depends(get_org_context),
+) -> AssignmentRoster:
+    # Teacher roster diff: every org member vs. who has submitted (so the teacher sees who
+    # HASN'T). 404 if not in the caller's org; 403 if the caller is a plain member. The
+    # member list comes from Clerk's Backend API — env-gated: if CLERK_SECRET_KEY is unset
+    # we surface a clean 503 (feature unavailable), and an upstream Clerk failure is a 502,
+    # so neither leaks as a 500.
+    try:
+        return service.get_submission_roster(session, caller_id, org_ctx, assignment_id)
+    except service.AssignmentNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Assignment not found") from exc
+    except service.SubmissionViewForbiddenError as exc:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "You don't have permission to view this roster"
+        ) from exc
+    except clerk_api.ClerkConfigError as exc:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Roster unavailable — Clerk is not configured on the server",
+        ) from exc
+    except clerk_api.ClerkAPIError as exc:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, "Roster unavailable — could not reach Clerk"
         ) from exc
 
 

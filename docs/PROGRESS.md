@@ -2295,12 +2295,26 @@ frontends already shipped.
       started. Frontend: `tsc --noEmit` clean, `eslint` clean. **Not yet browser-verified**
       (no browser in this environment) — batched with every other frontend increment's
       no-browser gap, see "Still owed" below.
-    - **Roster diff ("who HASN'T submitted") — DEFERRED, revisit after the project is
-      finished (kept simple for the portfolio).** Clerk owns org membership, our DB does
-      not, so the backend cannot enumerate all students in the org — the teacher view (both
-      backend and 3c's frontend) therefore lists the submissions that EXIST (students who
-      acted), NOT a full roster diff. Closing this needs a Clerk member-list API call, the
-      same "Clerk owns membership" boundary the Assignment model already lives within.
+    - **Roster diff ("who HASN'T submitted") — BACKEND DONE, env-gated** (2026-07-20; see
+      WORKLOG "Teams: assignment submission roster via Clerk org members"). Previously
+      deferred because Clerk owns org membership and our DB does not, so the backend could
+      not enumerate all students. This increment adds that enumeration via the **Clerk
+      Backend API** — a deliberate, flagged expansion of the org-foundation design (until
+      now the backend NEVER called Clerk's API, only verified JWT claims; ADR #9). New
+      `app/core/clerk_api.py` calls `GET /v1/organizations/{org_id}/memberships` (Bearer
+      secret key, paginated) and returns member user ids; the pure `build_roster_diff`
+      (members − submitters) splits the org into `submitted` / `not_submitted`, exposed at
+      `GET /assignments/{id}/roster` (same teacher-gate as `/submissions`: 404 cross-org,
+      403 plain member). **Env-gated**: `CLERK_SECRET_KEY` is optional (like every other
+      integration key) — unset, the app + full test suite still boot and pass, and the
+      roster endpoint returns a clean **503** ("roster unavailable — Clerk not configured"),
+      never a 500. **No schema change / no migration** — the roster is computed at request
+      time (Clerk members diffed against existing `AssignmentSubmission` rows), not stored.
+      **Blocker (flagged for the end-of-project pass, `blockers_deferred_to_end.md`):**
+      going live needs the user's real Clerk **Secret Key** in `backend/.env`
+      (`CLERK_SECRET_KEY=sk_...`). **Frontend is a follow-up increment** — this is
+      backend-only; 3c's teacher view still shows only existing submissions until the UI is
+      wired to `/roster`.
     - **Increment 4a — server-graded quiz attempts + auto-complete linked assignments
       (backend) — DONE** (2026-07-20; see WORKLOG "Teams: server-graded quiz attempts").
       Closes the "Auto-grading / quiz-attempt linkage" TODO: 3b's self-reported `score` is
