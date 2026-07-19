@@ -2,6 +2,30 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-19 — Fix timezone-fragile frontend test (CI red on UTC)
+The new `frontend-ci` workflow (Ubuntu/UTC) was red while the suite passed on the
+developer's UTC+09:00 machine. Reproduced locally with `TZ=UTC npm run test`.
+
+- Root cause was the **test**, not the impl: `groupConversationsByDate.test.ts` used a
+  fixed `NOW = new Date("2026-07-16T15:00:00Z")` plus fixed `...Z` fixture instants. The
+  impl (correctly) buckets by the viewer's LOCAL calendar day, so the real-time distance
+  between `NOW` and each fixture — and therefore which bucket it lands in — shifts with
+  the runner's timezone. Under +09:00 the arithmetic happened to line up; under UTC the
+  "yesterday" fixture fell 15h before local midnight instead of >24h, landing in Today and
+  leaving the Yesterday bucket (and label) missing.
+- Rewrote the test to build `NOW` and every fixture with LOCAL-time date arithmetic
+  (`new Date(2026, 6, 16, 12, 0, 0)` plus a `fixtureAtDaysAgo` helper) instead of fixed
+  UTC instants, so the fixtures land in the intended bucket regardless of the runner's
+  timezone. Along the way, precisely characterized the impl's `floor((startOfToday -
+  createdAt) / DAY)` bucketing: a timestamp lands in bucket `daysAgo` when it sits at
+  local noon on the day that is `daysAgo + 1` days before NOW's calendar day (documented
+  in the helper's comment) — the impl itself is unchanged, only the test fixtures.
+- Verified tz-independence by running the full suite under three timezones — all
+  **200 passed (49 files)**: `TZ=UTC`, `TZ=America/New_York` (negative offset),
+  `TZ=Asia/Tokyo` (the +09:00 it already passed under). Did not pin `TZ` in vitest config;
+  the fix is in the test data alone. `npx tsc --noEmit` and `npm run lint` both clean.
+- Commit: `test(frontend): make groupConversationsByDate test timezone-independent`.
+
 ## 2026-07-19 — Live verification: Polar webhook, observability env, Clerk orgs
 Docs-only housekeeping: three previously-open blockers were confirmed live by the user in
 a real session and are now recorded as resolved in `docs/PROGRESS.md`. No code, tests, or
