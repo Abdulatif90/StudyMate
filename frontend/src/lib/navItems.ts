@@ -4,12 +4,13 @@ import {
   LayoutDashboard,
   LifeBuoy,
   type LucideIcon,
+  Users,
 } from "lucide-react";
 
 export interface NavItem {
   href: string;
   /** Key into the `Nav` next-intl namespace. */
-  translationKey: "dashboard" | "subjects" | "billing" | "support";
+  translationKey: "dashboard" | "subjects" | "billing" | "team" | "support";
   icon: LucideIcon;
 }
 
@@ -17,6 +18,7 @@ export interface NavItem {
 export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/dashboard", translationKey: "dashboard", icon: LayoutDashboard },
   { href: "/subjects", translationKey: "subjects", icon: BookOpen },
+  { href: "/team", translationKey: "team", icon: Users },
   { href: "/billing", translationKey: "billing", icon: CreditCard },
   { href: "/support", translationKey: "support", icon: LifeBuoy },
 ];

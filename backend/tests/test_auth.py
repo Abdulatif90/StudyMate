@@ -77,3 +77,91 @@ def test_get_current_user_id_rejects_invalid_token():
     with pytest.raises(HTTPException) as exc_info:
         auth.get_current_user_id(credentials=credentials, jwks_client=_make_fake_jwks_client())
     assert exc_info.value.status_code == 401
+
+
+# --- Organization context (Phase 5 foundation, Clerk Organizations) ------------
+# Same local-RSA-keypair pattern as above: we mint Clerk-shaped tokens WITH and
+# WITHOUT org claims and assert the org-context dependency extracts them. No network,
+# no live Clerk. Covers both session-token claim shapes Clerk can emit (flat v1 and
+# nested v2) plus the pure role helpers.
+
+from app.core.org import (  # noqa: E402  (grouped with the org tests, not module top)
+    OrgContext,
+    extract_org_context,
+    is_teacher_role,
+    org_capability,
+)
+
+
+def test_extract_org_context_reads_flat_v1_claims():
+    ctx = extract_org_context({"sub": "user_1", "org_id": "org_abc", "org_role": "org:admin"})
+    assert ctx == OrgContext(org_id="org_abc", org_role="org:admin")
+
+
+def test_extract_org_context_reads_nested_v2_claims():
+    # v2 session token: org info under the nested `o` object (o.id / o.rol).
+    ctx = extract_org_context(
+        {"sub": "user_1", "v": 2, "o": {"id": "org_xyz", "rol": "org:member"}}
+    )
+    assert ctx == OrgContext(org_id="org_xyz", org_role="org:member")
+
+
+def test_extract_org_context_none_when_no_active_org():
+    # Personal workspace / Organizations not enabled: no org claims at all.
+    ctx = extract_org_context({"sub": "user_1", "iss": _ISSUER})
+    assert ctx == OrgContext(org_id=None, org_role=None)
+
+
+def test_get_org_context_returns_org_for_token_with_org_claims():
+    token = _make_token(sub="user_1", iss=_ISSUER, org_id="org_abc", org_role="org:admin")
+    credentials = SimpleNamespace(credentials=token)
+    ctx = auth.get_org_context(credentials=credentials, jwks_client=_make_fake_jwks_client())
+    assert ctx == OrgContext(org_id="org_abc", org_role="org:admin")
+
+
+def test_get_org_context_returns_none_for_token_without_org_claims():
+    token = _make_token(sub="user_1", iss=_ISSUER)
+    credentials = SimpleNamespace(credentials=token)
+    ctx = auth.get_org_context(credentials=credentials, jwks_client=_make_fake_jwks_client())
+    assert ctx == OrgContext(org_id=None, org_role=None)
+
+
+def test_get_org_context_rejects_missing_credentials():
+    with pytest.raises(HTTPException) as exc_info:
+        auth.get_org_context(credentials=None, jwks_client=_make_fake_jwks_client())
+    assert exc_info.value.status_code == 401
+
+
+def test_get_org_context_rejects_invalid_token():
+    token = _make_token(sub="user_1", iss="https://wrong-issuer")
+    credentials = SimpleNamespace(credentials=token)
+    with pytest.raises(HTTPException) as exc_info:
+        auth.get_org_context(credentials=credentials, jwks_client=_make_fake_jwks_client())
+    assert exc_info.value.status_code == 401
+
+
+def test_role_helpers_map_admin_to_teacher_and_member_to_student():
+    assert is_teacher_role("org:admin") is True
+    assert is_teacher_role("org:member") is False
+    assert is_teacher_role(None) is False
+    assert org_capability("org:admin") == "teacher"
+    assert org_capability("org:member") == "student"
+    assert org_capability(None) == "student"
+
+
+def test_require_teacher_allows_teacher_role():
+    org = OrgContext(org_id="org_abc", org_role="org:admin")
+    assert auth.require_teacher(org=org) is org
+
+
+def test_require_teacher_rejects_student_role():
+    org = OrgContext(org_id="org_abc", org_role="org:member")
+    with pytest.raises(HTTPException) as exc_info:
+        auth.require_teacher(org=org)
+    assert exc_info.value.status_code == 403
+
+
+def test_require_teacher_rejects_no_active_org():
+    with pytest.raises(HTTPException) as exc_info:
+        auth.require_teacher(org=OrgContext(org_id=None, org_role=None))
+    assert exc_info.value.status_code == 403

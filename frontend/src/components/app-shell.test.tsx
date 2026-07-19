@@ -14,6 +14,7 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@clerk/nextjs", () => ({
   UserButton: () => <div data-testid="user-button" />,
+  OrganizationSwitcher: () => <div data-testid="org-switcher" />,
   useUser: () => ({ user: { fullName: "Ada Lovelace", primaryEmailAddress: null } }),
 }));
 // The sidebar's usage widget + profile row both call useQuery for GET /billing/plan —

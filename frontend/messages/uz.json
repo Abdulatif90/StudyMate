@@ -16,6 +16,7 @@
     "subjects": "Fanlar",
     "goToSubjects": "Fanlarga o‘tish",
     "billing": "Tarif va to‘lov",
+    "team": "Jamoa",
     "support": "Yordam",
     "menu": "Menyu",
     "accountFallback": "Hisob"
@@ -332,5 +333,11 @@
     "referredCount": "{count, plural, =0 {Hali hech kim taklif qilinmagan} other {# kishi taklif qilingan}}",
     "loadError": "Taklif havolangizni yuklab bo‘lmadi.",
     "redeemedToast": "Do‘stingiz havolasi orqali qo‘shilganingiz uchun rahmat!"
+  },
+  "Team": {
+    "title": "Jamoa",
+    "description": "Tashkilotingiz, a'zolar va rollarni boshqaring.",
+    "noOrgDescription": "Birga o‘qish uchun tashkilot yarating — a'zolarni taklif qiling va fanlarni jamoangiz bilan baham ko‘ring.",
+    "loading": "Tashkilotingiz yuklanmoqda…"
   }
 }

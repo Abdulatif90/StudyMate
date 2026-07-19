@@ -82,3 +82,32 @@ integration is simply off, never a startup failure.
   clearly worth it" — every one of the 6 events already fires from a place with a
   Clerk-authenticated browser session, so a backend capture path would just duplicate
   the same signal through a second SDK for no new information. Skipped.
+
+## 9. Teams/Orgs (Phase 5): Clerk Organizations, not custom DB tables
+Organizations, memberships, roles, and invitations are backed by **Clerk Organizations**
+(Clerk's native feature) — StudyMate builds **no** org/membership/invite tables of its
+own. Clerk owns that data; our backend reads the *active organization* out of the same
+Clerk session JWT it already verifies for auth (`app/core/auth.py` JWKS path), and the
+frontend mounts Clerk's own org UI (`<OrganizationSwitcher/>`, `<OrganizationProfile/>`,
+`<CreateOrganization/>`). Chosen because it eliminates a whole class of B2B auth work
+(invite tokens, seat management, role storage, membership races) — the same "don't
+hand-roll auth" reasoning as ADR #2 (Clerk over hand-rolled JWT).
+
+- **Reading org context**: `app/core/org.py::extract_org_context(claims)` pulls the
+  active org id/role out of an already-verified claim dict, handling **both** Clerk
+  session-token shapes — v1 flat (`org_id`/`org_role`, present only with an active org)
+  and v2 nested (`"v":2` → `o.id`/`o.rol`). No active org (personal workspace, or
+  Organizations disabled on the instance) → `OrgContext(None, None)`, a valid state, not
+  an error/401. `get_org_context` / `require_teacher` (FastAPI deps in `auth.py`) reuse
+  the existing JWKS verification — no second verification path, no unverified token.
+- **Role mapping**: Clerk's default org roles are `org:admin` / `org:member` (verified
+  against the installed `@clerk/*` SDK type docs). We map **admin → `teacher`, member →
+  `student`** (a custom `org:teacher` role is also honored if the instance ever adds
+  one). Mirrored client-side in `frontend/src/lib/orgRole.ts` so UI and API authorize on
+  the same role keys and can't drift. `student` is the safe default (teacher is the
+  privileged capability).
+- **Scope of increment 1 = foundation only**: create org / add-invite members / roles /
+  see membership, via Clerk's UI + the backend org-context deps. **No content is
+  org-scoped yet** — existing subjects/documents/quiz/flashcards stay `owner_id`-scoped
+  unchanged; `require_teacher` guards nothing yet. Content org-scoping, teacher
+  assign/track, and admin/billing seats are later Phase 5 increments.

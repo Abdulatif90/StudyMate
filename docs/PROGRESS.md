@@ -2160,6 +2160,26 @@ frontends already shipped.
   entitlement/billing layer, add its own abuse guards (e.g. reward only on a *genuine* new
   signup, not a churned/self account) and tests. **Phase 4 is NOT fully closed until this
   ships.** Then Phase 5 (Business/Teams B2B).
+- **Phase 5 (Business/Teams B2B) — Increment 1 (org foundation) DONE** (see WORKLOG
+  "Teams: org foundation via Clerk Organizations" entry; ADR #9). Orgs/members/roles/invites
+  are backed by **Clerk Organizations** (no custom DB tables). Backend: `app/core/org.py`
+  (`OrgContext`, `extract_org_context` handling both v1-flat and v2-nested token shapes,
+  `is_teacher_role`/`org_capability`) + `auth.py` `get_org_context`/`require_teacher` deps
+  (reuse the existing JWKS path; no active org = valid `None,None`; `require_teacher` guards
+  nothing yet). Role mapping: `org:admin`→teacher, `org:member`→student. Frontend:
+  `<OrganizationSwitcher/>` in the AppShell + a `/team` page (`<OrganizationProfile/>` /
+  `<CreateOrganization/>`) + a "Team" nav item; client role mirror `lib/orgRole.ts`. **No
+  content org-scoping this increment** — existing `owner_id` scoping untouched.
+  **REMAINING Phase 5 increments (explicit TODOs, not started):**
+  - **Content org-scoping** — let subjects/documents/quiz/flashcards belong to an org (not
+    just an individual `owner_id`), scoped by the active `org_id` from `get_org_context`;
+    decide the personal-vs-org ownership model and migrate the schema.
+  - **Teacher assigns + tracks** — teacher-only actions (guarded by `require_teacher`):
+    assign material/quizzes to students, view student progress across the org.
+  - **Admin / billing seats** — org-level plan + per-seat billing (Polar), seat counts,
+    admin management. Ties into the existing entitlement layer.
+  - **Live Clerk-config confirmation** (see Blockers) + a real-browser pass of the
+    create-org/invite/switch flow.
 - Still owed from earlier: a real-browser click-through of the async upload/poll/delete,
   quiz, hybrid-Ask, flashcards, progress-dashboard, app-shell nav (mobile sheet,
   active-item highlighting, theme toggle), and the confirm-dialog/toast/subject-delete
@@ -2167,6 +2187,20 @@ frontends already shipped.
   environment).
 
 ## Blockers / needs from user
+- **Confirm Clerk Organizations config (Phase 5 org foundation)** — the code is built and
+  defensively correct (no active org = a valid `None,None` state, so nothing breaks if orgs
+  are off), but these are live-instance settings that can't be verified from this offline
+  environment (no dashboard/token access; builder must not touch `.env`/Clerk config):
+  1. **Enable Organizations** in the Clerk dashboard if not already on — otherwise the
+     `<OrganizationSwitcher/>`/`/team` UI has nothing to create/switch and the token never
+     carries org claims.
+  2. **Confirm the session token carries org claims.** Clerk v5+ default sessions include
+     them automatically when an org is active (no custom JWT template needed). If a **custom**
+     JWT template is configured, add the org claims to it. Backend reads either shape:
+     v1 flat `org_id`/`org_role`, or v2 nested `o.id`/`o.rol`.
+  3. **Confirm the org roles** are the defaults `org:admin` / `org:member`. The chosen mapping
+     is `org:admin`→teacher, `org:member`→student (ADR #9). If custom roles were created,
+     revisit `TEACHER` role keys in `backend/app/core/org.py` + `frontend/src/lib/orgRole.ts`.
 - **Fix two observability env vars, from the user** (both discovered live in `.env`
   during the Sentry/PostHog increment, neither touched by the builder):
   1. `frontend/.env`'s `NEXT_PUBLIC_POSTHOG_HOST` is set to a PostHog *session-replay

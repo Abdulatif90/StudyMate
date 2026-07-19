@@ -16,6 +16,7 @@
     "subjects": "Subjects",
     "goToSubjects": "Go to Subjects",
     "billing": "Plan & billing",
+    "team": "Team",
     "support": "Support",
     "menu": "Menu",
     "accountFallback": "Account"
@@ -332,5 +333,11 @@
     "referredCount": "{count, plural, =0 {No one referred yet} one {# person referred} other {# people referred}}",
     "loadError": "Couldn't load your referral link.",
     "redeemedToast": "Thanks for joining through a friend's link!"
+  },
+  "Team": {
+    "title": "Team",
+    "description": "Manage your organization, members, and roles.",
+    "noOrgDescription": "Create an organization to study together — invite members and share subjects with your team.",
+    "loading": "Loading your organization…"
   }
 }

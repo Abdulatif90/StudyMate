@@ -2,6 +2,75 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-19 — Teams: org foundation via Clerk Organizations (Phase 5, increment 1)
+Phase 5 (Business/Teams B2B), **increment 1 of several: org foundation ONLY**. Two fixed
+product decisions: (1) orgs/members/roles/invites are backed by **Clerk Organizations**,
+not our own DB tables; (2) scope = create org / add-invite members / roles / see
+membership — **no content org-scoping** (existing `owner_id` scoping untouched).
+Commit: `feat(teams): org foundation via Clerk Organizations (Phase 5 increment 1)`.
+
+- **Step 0 — verified against the installed SDK, not assumed** (the live Clerk instance
+  itself can't be inspected from this offline environment — no dashboard, no real token,
+  and the task forbids touching `.env`/Clerk config; those live-config items are flagged
+  as a user blocker below):
+  - **SDK supports Organizations fully**: `@clerk/nextjs` 7.5.18 exports
+    `OrganizationSwitcher`, `OrganizationProfile`, `CreateOrganization`, `OrganizationList`,
+    `useOrganization`, `useOrganizationList` (introspected `Object.keys(require('@clerk/nextjs'))`).
+  - **Which org claims are in the token** — read the real `JwtPayload` type
+    (`@clerk/shared/dist/types/jwtv2.d.ts`, via `@clerk/backend` 3.11.5). Clerk emits
+    **two** session-token shapes: **v1** flat `org_id`/`org_role`/`org_slug`/`org_permissions`
+    (present only when a session has an active org) and **v2** (`"v":2`) a nested `o`
+    object (`o.id`/`o.rol`/`o.slg`). Backend handles **both**, preferring nested (mirrors
+    Clerk's own SDK). No active org → both `None` (valid state).
+  - **Roles**: Clerk's documented default roles are `org:admin` / `org:member` (confirmed
+    in `@clerk/shared`'s `OrganizationCustomRoleKey` doc comment). **Mapping chosen:
+    `org:admin` → teacher, `org:member` → student** (student = safe default; a custom
+    `org:teacher` also honored). Recorded as ADR #9.
+  - **Clerk localization already wired**: root `layout.tsx` sets
+    `<ClerkProvider localization={resolveClerkLocalization(...)}>`, so the org components
+    inherit the app locale for free — no new wiring.
+- **Backend (no new tables, no migration, no route)**:
+  - `app/core/org.py` (pure, tested): `OrgContext{org_id, org_role}` dataclass,
+    `extract_org_context(claims)` (both token shapes), `is_teacher_role`, `org_capability`.
+  - `app/core/auth.py`: `get_org_context()` dependency (reuses the existing
+    `decode_clerk_token` JWKS path — no second verification) returning `OrgContext`
+    (`None,None` for no active org, still 401 on missing/invalid token); `require_teacher`
+    guard raising 403 when the active role isn't teacher/admin. **Nothing is guarded by it
+    this increment** — it's the foundation the next increment stands on.
+  - Tests `backend/tests/test_auth.py` (+10, offline, same local-RSA-keypair pattern):
+    extract flat-v1 / nested-v2 / no-org claims; `get_org_context` with a token carrying
+    org claims → extracted, without → `None,None`, missing creds → 401, invalid token →
+    401; role helpers (admin→teacher, member→student, None→student); `require_teacher`
+    allows teacher, 403s student, 403s no-active-org.
+- **Frontend (mobile-first, semantic tokens)**:
+  - `<OrganizationSwitcher/>` mounted in the AppShell's desktop utility row + mobile top
+    bar (NOT the always-dark sidebar — same reasoning as ThemeToggle/LanguageSwitcher:
+    Clerk renders against general theme tokens). Users create/switch orgs and, as admin,
+    invite members via Clerk's own flow — we build no invite form.
+  - New `/team` page (`app/(app)/team/page.tsx`): `useOrganization()` → active org shows
+    `<OrganizationProfile/>` (members, roles, invitations); no active org shows
+    `<CreateOrganization/>`. Added a "Team" nav item (`Users` icon) + `/team(.*)` to the
+    protected-route matcher in `middleware.ts`.
+  - `frontend/src/lib/orgRole.ts` (+`orgRole.test.ts`, 4): client mirror of the backend
+    role→capability mapping, so UI/API can't drift.
+  - i18n: `Nav.team` + a new `Team` namespace (title/description/noOrgDescription/loading)
+    added to `en.json` and mirrored key-for-key into `uz`/`ko`/`ru` via targeted tail/anchor
+    edits (no full parse/stringify — avoids the reflow bug). `messages.test.ts` parity green.
+  - **No API schema regen** — added no backend HTTP route (org context is read from Clerk
+    client-side; the backend deps are foundation for the next increment).
+- **All five checks green**: backend `pytest` **324 passed, 11 deselected** (+10),
+  `ruff check` clean; frontend `vitest` **200 passed (49 files)** (+4), `tsc --noEmit`
+  clean, `eslint` clean.
+- **Needs the user to confirm in Clerk (live-config, un-verifiable offline — see
+  Blockers)**: Organizations must be **enabled** on the instance; the session token must
+  actually carry org claims (v5+ default sessions do when an org is active — no custom JWT
+  template needed; if a custom template is in use, add org claims); and the real roles
+  should be the default `org:admin`/`org:member` (else revisit the mapping). The backend is
+  defensively correct either way (no active org = a valid `None,None` state), so nothing
+  breaks if orgs are off — the feature just stays dormant until enabled.
+- **Not browser-verified** (standing no-browser gap): the real create-org → invite-member
+  → switch-org round-trip through Clerk's UI, and the `/team` page's active-vs-no-org branch.
+
 ## 2026-07-19 — Referral: attribution foundation (no reward this increment)
 Phase 4 Referral, scoped by the user to the **attribution layer only** — build the
 provider-agnostic "who referred whom" layer and surface the user's code in the UI. **No

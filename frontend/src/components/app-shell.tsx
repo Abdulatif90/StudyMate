@@ -1,6 +1,6 @@
 "use client";
 
-import { UserButton, useUser } from "@clerk/nextjs";
+import { OrganizationSwitcher, UserButton, useUser } from "@clerk/nextjs";
 import { useQuery } from "@tanstack/react-query";
 import { BookOpen, Menu as MenuIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -143,6 +143,14 @@ function MobileTopBar({ pathname, t }: { pathname: string; t: ReturnType<typeof 
       </Link>
 
       <div className="flex items-center gap-2">
+        {/* Org create/switch (and admin member-invite) via Clerk's own flow — see the
+            desktop utility row below for the reasoning on placing it here, not the
+            always-dark sidebar. `afterCreate/SelectOrganizationUrl` route to the Team
+            page so a fresh org lands on its management surface. */}
+        <OrganizationSwitcher
+          afterCreateOrganizationUrl="/team"
+          afterSelectOrganizationUrl="/team"
+        />
         <ThemeToggle />
         <LanguageSwitcher />
         <UserButton />
@@ -219,9 +227,18 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="lg:pl-[236px]">
-        {/* Desktop-only utility row (theme + language) — mobile gets the same
-            controls inside MobileTopBar instead, not duplicated here. */}
+        {/* Desktop-only utility row (org switcher + theme + language) — mobile gets the
+            same controls inside MobileTopBar instead, not duplicated here. The
+            OrganizationSwitcher (create/switch orgs; admins invite members via Clerk's
+            own flow) lives here with ThemeToggle/LanguageSwitcher, NOT the sidebar, for
+            the same reason those two do: it renders with Clerk's own light/dark styling
+            against the general theme tokens, which would look wrong pinned inside the
+            sidebar's separate always-dark tokens. */}
         <div className="hidden items-center justify-end gap-2 px-12 pt-6 lg:flex">
+          <OrganizationSwitcher
+            afterCreateOrganizationUrl="/team"
+            afterSelectOrganizationUrl="/team"
+          />
           <ThemeToggle />
           <LanguageSwitcher />
         </div>
