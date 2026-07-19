@@ -111,6 +111,40 @@ Commit: `feat(frontend): Support/FAQ page`.
   page all want a manual pass, consistent with every other frontend page in this
   project's backlog.
 
+## 2026-07-19 — generation responds in the selected UI language (backfilled docs)
+Backfill for the already-merged commit `865eab4` `fix(generation): respond in the
+selected UI language, not the source material's`, which shipped with no WORKLOG/PROGRESS
+entry (a review finding). Placed in chronological position (that commit predates the
+three 2026-07-19 entries above it). No code change in this docs commit — this entry
+documents work that already landed, plus a live migration-state check.
+Commit: `docs: backfill worklog/progress for the generation-language fix`.
+
+- **The problem it fixed**: summary/quiz/flashcard prompts told Claude to mirror the
+  *source document's* own language, and the frontend language switcher's selection was
+  never sent to the backend at all — so generated content came back in whatever language
+  the uploaded material happened to be in, ignoring the user's chosen locale.
+- **The fix** (`865eab4`): a new `app/shared/language.py` maps a locale code
+  (`en`/`uz`/`ko`/`ru`, mirroring `frontend/src/i18n/locales.ts`) to a full language name
+  for prompt interpolation, defaulting to English for anything unset/unknown (a stale
+  client or typo is never trusted verbatim into the prompt). A target `language` is threaded
+  through `documents/summarization.py`, `quiz/generation.py`, `flashcards/generation.py`
+  and their services/routers/schemas. `Document` gained a `language` column captured at
+  upload time (summarization runs async in the Inngest job, so the locale has to be persisted
+  with the document rather than read from a request later); quiz/flashcard generation take
+  `language` as a request field instead. Frontend sends `useLocale()` through on upload and
+  on quiz/flashcard generation.
+- **Migration `4885e5ab676c_add_language_column_to_documents`** adds `documents.language`
+  (`AutoString`, NOT NULL) with a temporary `server_default="en"` to backfill existing rows,
+  dropped immediately after so future inserts go through the model's Python-side default.
+  **Neon migration status: verified ALREADY APPLIED** — `alembic current` returns
+  `4885e5ab676c (head)`, equal to `alembic heads`, and `information_schema.columns` confirms
+  the `language` column exists on `documents` (`character varying`, `is_nullable = NO`). Not
+  applied by this docs pass; it was already live from the original commit.
+- Tests already shipped with `865eab4`: `test_language.py` (new), plus additions to
+  `test_documents.py`/`test_quiz.py`/`test_flashcards.py`/`test_quiz_generation.py`/
+  `test_flashcard_generation.py` covering the threaded-through target language. No new tests
+  in this docs-only backfill.
+
 ## 2026-07-18 — Sentry + PostHog observability
 Phase-4 remainder item. Both env-gated, off-by-default, backend + frontend. Two
 commits (Sentry landed first per the task's stated priority).

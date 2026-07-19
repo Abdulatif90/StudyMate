@@ -2120,6 +2120,15 @@ frontends already shipped.
     broader refactor first: ~13 call sites use dynamic template-literal keys
     (`t(\`...\`)`), which the `Messages` augmentation can't typecheck cleanly against.
     Tracked as a follow-up, not started.
+- **Generation responds in the selected UI language — DONE** (see WORKLOG
+  "generation responds in the selected UI language" entry; original commit `865eab4`).
+  Summary, quiz, and flashcard generation now respond in the user's selected UI language
+  (not the source material's), via `app.shared.language` (locale code → full language name,
+  defaulting to English for anything unset/unknown). `Document` carries a `language` column
+  captured at upload (summarization is async); quiz/flashcard generation take `language` as
+  a request field; the frontend threads `useLocale()` through. Migration `4885e5ab676c`
+  (adds `documents.language`) is applied on Neon (verified `alembic current` == `heads` and
+  the column exists via `information_schema`).
 - **Support/FAQ page — DONE** (see WORKLOG "Support/FAQ page" entry). Frontend-only,
   static content, no backend/CMS: a new `/support` page (`app/(app)/support/page.tsx`)
   reachable from the app-shell nav, with FAQ entries grouped into Getting started /
