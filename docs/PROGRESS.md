@@ -2256,9 +2256,39 @@ frontends already shipped.
       plain-FK). New table `assignment_submissions` (migration `a1b2c3d4e5f6`, hand-written
       because Neon isn't up to date) — **NOT yet applied to Neon** (pending live step,
       batched with `faccee6a0508` / `5ccf38a52dfb`). 16 new tests in `test_assignments.py`.
-    - **Roster diff ("who HASN'T submitted") — TODO (NOT started, known limitation).** Clerk
-      owns org membership, our DB does not, so the backend cannot enumerate all students in
-      the org — the teacher view therefore lists the submissions that EXIST (students who
+    - **Increment 3c — assignment UI (frontend) — DONE** (2026-07-20; see WORKLOG
+      "Teams: assignment UI"). Closes the "Frontend for assignments" TODO below — the
+      "teacher assigns + tracks" vertical slice is now demoable end-to-end. One
+      role-adaptive `/assignments` page (new nav entry, `/assignments(.*)` protected in
+      middleware): teacher gets a create form (title/subject/description/due date/optional
+      quiz picker scoped to the chosen subject) + the org's assignment list, each with
+      delete (creator-or-teacher, routed through `useConfirm` + `toast`) and a "view
+      submissions" toggle labeled as the submissions that EXIST, not "X of N students"
+      (same roster limitation as the backend); student gets the list + a minimal
+      "mark complete" form (optional self-reported score/note) and their own
+      per-assignment status from `my-submission`. No active org mirrors `/team`'s
+      empty state. `lib/assignmentPermissions.ts` (`canCreateAssignment`/
+      `canDeleteAssignment`, mirroring the backend's `require_teacher` create gate and
+      `service.delete_assignment`'s creator-or-teacher delete gate) and
+      `lib/assignmentDueDate.ts` (`dueStatus`) are the two extracted pure helpers, unit
+      tested. Typed client regenerated (`AssignmentRead`/`AssignmentSubmissionRead` etc.
+      now in `schema.d.ts`) — via an offline `app.openapi()` dump rather than the live
+      dev server's `/openapi.json`, since that server process turned out to be running
+      stale code (pre-dated the 3a/3b commits; a fresh Python import of `app.main` already
+      had the routes, confirming it's a stale-process issue, not a code issue — left
+      untouched, not restarted, since it wasn't this increment's to manage). i18n:
+      `Assignments` namespace + `Nav.assignments`, mirrored across all 4 locales,
+      `messages.test.ts` parity green. **DEFERRED (kept simple for the portfolio,
+      explicitly out of scope for this increment):** admin/org billing seats (Polar
+      per-seat) and the roster diff ("who HASN'T submitted") — both need heavier pieces
+      (Polar seat billing / a Clerk member-list API call) tracked separately, not
+      started. Frontend: `tsc --noEmit` clean, `eslint` clean. **Not yet browser-verified**
+      (no browser in this environment) — batched with every other frontend increment's
+      no-browser gap, see "Still owed" below.
+    - **Roster diff ("who HASN'T submitted") — DEFERRED, revisit after the project is
+      finished (kept simple for the portfolio).** Clerk owns org membership, our DB does
+      not, so the backend cannot enumerate all students in the org — the teacher view (both
+      backend and 3c's frontend) therefore lists the submissions that EXIST (students who
       acted), NOT a full roster diff. Closing this needs a Clerk member-list API call, the
       same "Clerk owns membership" boundary the Assignment model already lives within.
     - **Auto-grading / quiz-attempt linkage — TODO (NOT started).** 3b's `score` is
@@ -2266,10 +2296,9 @@ frontends already shipped.
       later increment (no quiz-attempt linkage exists yet).
     - **Per-student targeting — TODO (NOT started).** Assignments target the **whole active
       org** only; assigning to specific members rather than broadcasting is future work.
-    - **Frontend for assignments — TODO (NOT started).** No UI shipped in 3a/3b (backend
-      only): teacher create/list/delete + submission-roster views, and a student
-      "my assignments" list with a mark-complete action.
-  - **Admin / billing seats** — org-level plan + per-seat billing (Polar), seat counts,
+    - **Frontend for assignments — DONE (increment 3c above).**
+  - **Admin / billing seats (Polar per-seat) — DEFERRED, revisit after the project is
+    finished (kept simple for the portfolio).** Org-level plan + per-seat billing (Polar), seat counts,
     admin management. Ties into the existing entitlement layer.
   - **Live Clerk-config confirmation + real-browser pass — mostly RESOLVED** (see WORKLOG
     "Live verification: Polar webhook, observability env, Clerk orgs" entry): the user
@@ -2289,7 +2318,8 @@ frontends already shipped.
   quiz, hybrid-Ask, flashcards, progress-dashboard, app-shell nav (mobile sheet,
   active-item highlighting, theme toggle), and the confirm-dialog/toast/subject-delete
   flows (noted across several increments, never yet done — no browser available in this
-  environment).
+  environment). Now also includes the new `/assignments` page (increment 3c): teacher
+  create/delete/view-submissions, student mark-complete, and the no-active-org empty state.
 
 ## Blockers / needs from user
 - ~~Confirm Clerk Organizations config (Phase 5 org foundation)~~ **RESOLVED —

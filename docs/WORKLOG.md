@@ -2,6 +2,64 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-20 — Teams: assignment UI — teacher create + student submit (Phase 5, increment 3c)
+Frontend for the assignments backend that landed in 3a+3b (commits d2af931 + cae83c9),
+closing the "teacher assigns + tracks" vertical slice so it's demoable end-to-end.
+**Frontend only** — no backend changes. Commit:
+`feat(teams): assignment UI — teacher create + student submit (Phase 5 increment 3c)`.
+
+- **Typed client regenerated.** The live dev backend's `/openapi.json` turned out to be
+  stale (missing the assignments routes entirely — a fresh Python import of `app.main`
+  had them, confirming the running `uvicorn` process just pre-dated the 3a/3b commits, not
+  a code problem). Used the prompt's documented fallback instead of restarting someone
+  else's dev server: dumped `app.openapi()` to a temp file and ran `openapi-typescript`
+  against that. `src/lib/api/schema.d.ts` diff was purely additive (379 lines, 0 deleted) —
+  confirms nothing else was dropped by using the offline snapshot.
+  `AssignmentRead`/`AssignmentCreate`/`AssignmentSubmissionRead`/`AssignmentSubmissionCreate`
+  and all 5 endpoints now present.
+- **One role-adaptive page**, `src/app/(app)/assignments/page.tsx`, mirroring the
+  `/subjects` and `/team` patterns (typed client + TanStack Query, `useConfirm` for
+  delete, `toast()` for mutation errors, native `<select>` for pickers — no shadcn Select
+  primitive exists in this repo, same as the language switcher).
+  - **No active org**: mirrors `/team`'s empty state — an `EmptyState` with a "Go to Team"
+    link, not `<CreateOrganization/>` itself (that stays Team's job).
+  - **Teacher** (`orgRole` → `"teacher"`): create form (title, subject `<select>` from
+    `GET /subjects`, optional description/due-date/quiz — the quiz `<select>` populates
+    from `GET /subjects/{id}/quizzes` only once a subject is chosen, kept minimal per the
+    task's "your call, favor simple"); the org's assignment list; per-assignment delete
+    (creator-or-teacher gated) and a "View submissions" toggle that expands
+    `GET /assignments/{id}/submissions` inline, explicitly labeled as "submissions
+    received... not the full roster" (mirrors the backend's own documented roster
+    limitation — Clerk owns membership, we can't enumerate "who hasn't submitted").
+  - **Student** (plain member): the same list, each card either showing "Mark complete"
+    (an inline form with optional self-reported score 0–100 + note, `POST .../submit`) or,
+    once submitted, a completed badge with the date/score from `GET .../my-submission`.
+    Each assignment's own-submission query treats a 404 as "not submitted" (`data: null`),
+    not an error — fetched per-assignment via `useQueries`, same pattern as the Ask page's
+    conversation-preview sidebar.
+- **Two extracted pure helpers, unit-tested** (this codebase's page-untested/
+  helpers-tested convention): `lib/assignmentPermissions.ts` (`canCreateAssignment`/
+  `canDeleteAssignment`, mirroring `require_teacher` and `service.delete_assignment`'s
+  creator-or-teacher gate exactly) and `lib/assignmentDueDate.ts` (`dueStatus` →
+  none/upcoming/overdue, purely presentational, no backend deadline enforcement exists).
+  10 new tests across the two files.
+- **Nav + routing**: `lib/navItems.ts` gained an `assignments` entry (`ClipboardList`
+  icon) between Team and Billing — `AppShell` already renders every `NAV_ITEMS` entry, no
+  shell change needed. `middleware.ts` gained `/assignments(.*)` to the protected-route
+  matcher. `navItems.test.ts` updated for the new href list.
+- **i18n**: new `Assignments` namespace (40 keys) + `Nav.assignments`, mirrored into
+  `uz`/`ko`/`ru` via anchored edits (not a full JSON round-trip, per the prior-increment
+  formatting-reflow bug) — `messages.test.ts` catalog-parity + ICU-plural tests green.
+- **Deliberately deferred** (portfolio-keep-it-simple steer, tracked in PROGRESS "Next",
+  not started): admin/org billing seats (Polar per-seat) and the roster diff ("who
+  HASN'T submitted" — needs a Clerk member-list API call). Neither touched.
+- **No backend changes** — the API was already shipped in 3a/3b; nothing found that
+  needed fixing.
+- Frontend: `tsc --noEmit` clean, `eslint` clean, **216 passed** (52 files, up from 206 —
+  10 new: `assignmentPermissions.test.ts` + `assignmentDueDate.test.ts`).
+- **Not yet browser-verified** (no browser in this environment) — batched with every
+  other frontend increment's no-browser gap; see PROGRESS "Still owed".
+
 ## 2026-07-20 — Teams: assignment completion tracking (Phase 5, increment 3b)
 The "tracks" half of the roadmap's "Teacher assigns + tracks": a student marks an
 assignment complete (their own per-student submission) and a teacher views the submissions
