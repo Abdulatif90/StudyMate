@@ -2227,11 +2227,12 @@ frontends already shipped.
   `recurring_interval: None`). They're superseded by the new recurring monthly Pro/Business
   and were deliberately left untouched. They are not wired to anything, so they're inert —
   but a one-time product can never drive a subscription, so nothing should point at them.
-- **Confirm/adjust the plan limits** in `billing/service.LIMITS` — still the task's
-  defaults (Free 3 subjects / 10 docs per subject / 20 generations per day; Pro
-  50/200/200; Business unlimited). One dict, one-line changes. Note the sandbox products
-  state no caps at all, so `LIMITS` is the *only* thing enforcing them — nothing
-  contradicts it, but nothing corroborates it either.
+- **Plan limits confirmed as the intended defaults for now** (Free 3 subjects / 10 docs
+  per subject / 20 generations per day; Pro 50/200/200; Business unlimited) — in
+  `billing/service.LIMITS`. Final review deferred to the end-of-project pass, before
+  production launch. Note the sandbox products state no caps at all, so `LIMITS` is the
+  *only* thing enforcing them — nothing contradicts it, but nothing corroborates it
+  either.
 - **Polar is SANDBOX-only so far.** Going live needs `POLAR_SERVER=production`, a
   production org token, production product ids, and a production webhook secret —
   production has its own separate dashboard, products and tokens.
