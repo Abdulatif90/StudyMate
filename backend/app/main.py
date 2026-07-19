@@ -21,6 +21,7 @@ from app.core.org import OrgContext, org_capability
 from app.core.sentry import init_sentry
 from app.modules.ask.router import conversations_router
 from app.modules.ask.router import router as ask_router
+from app.modules.assignments.router import router as assignments_router
 from app.modules.billing.router import router as billing_router
 from app.modules.billing.service import PlanLimitExceededError
 from app.modules.documents.jobs import process_document_fn
@@ -81,6 +82,7 @@ app.include_router(progress_router)
 app.include_router(progress_overall_router)
 app.include_router(billing_router)
 app.include_router(referral_router)
+app.include_router(assignments_router)
 
 
 @app.exception_handler(PlanLimitExceededError)

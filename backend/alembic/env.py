@@ -27,6 +27,7 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 # Each domain module's models must be imported here so its SQLModel classes register
 # on this metadata and `autogenerate` can see them.
 from app.modules.ask.models import Conversation, ConversationTurn  # noqa: E402, F401
+from app.modules.assignments.models import Assignment  # noqa: E402, F401
 from app.modules.billing.models import GenerationUsage, UserPlan  # noqa: E402, F401
 from app.modules.documents.models import Document, DocumentChunk  # noqa: E402, F401
 from app.modules.flashcards.models import Flashcard, FlashcardReviewState  # noqa: E402, F401

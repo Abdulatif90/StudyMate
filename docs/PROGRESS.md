@@ -2228,8 +2228,29 @@ frontends already shipped.
       members used without hitting an FK violation, and every member's documents/quizzes/
       flashcards (+ all reviewers' `FlashcardReviewState` rows)/conversations are cleaned.
       Authorization unchanged (`require_writable_subject`). No schema change.
-  - **Teacher assigns + tracks** — teacher-only actions (guarded by `require_teacher`):
-    assign material/quizzes to students, view student progress across the org.
+  - **Teacher assigns + tracks** — teacher-only actions (guarded by `require_teacher`).
+    - **Increment 3a — assignment foundation (backend) — DONE** (2026-07-20; see WORKLOG
+      "Teams: assignment foundation"). New `assignments` module: a teacher creates an
+      `Assignment` (title/description/due_at, optional link to one of their quizzes over
+      the same subject) broadcast to their **active org** (`org_id`). Reads are
+      **org-scoped, not owner-scoped** — a deliberate departure from CLAUDE.md rule 2,
+      mirroring the org-owned subject read model and documented in the service docstring:
+      `GET /assignments` and `GET /{id}` return an assignment iff `org_id ==` the caller's
+      active org; a caller with **no active org sees an empty list / 404** (fails closed,
+      never leaks). Create requires `require_writable_subject` (teacher/admin of the
+      subject's org); delete is allowed for the creator OR any teacher/admin of the org, a
+      plain member is 403, cross-org is 404. New table `assignments` (migration
+      `faccee6a0508`, hand-written because Neon isn't up to date) — **NOT yet applied to
+      Neon** (pending live step, batched with `5ccf38a52dfb`). 17 new tests in
+      `test_assignments.py`.
+    - **Increment 3b — completion/submission tracking + per-student targeting — TODO (NOT
+      started).** Track *who did* an assignment (submission/completion rows, per-student
+      state), let a teacher view student progress across the org, and add per-student
+      targeting (assign to specific members rather than the whole org). Increment 3a
+      deliberately targets the **whole active org** only and stores no completion state —
+      no Clerk member-list call anywhere.
+    - **Frontend for assignments — TODO (NOT started).** No UI shipped in 3a (backend
+      only): teacher create/list/delete views + a student "my assignments" list.
   - **Admin / billing seats** — org-level plan + per-seat billing (Polar), seat counts,
     admin management. Ties into the existing entitlement layer.
   - **Live Clerk-config confirmation + real-browser pass — mostly RESOLVED** (see WORKLOG
