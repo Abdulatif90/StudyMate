@@ -333,6 +333,7 @@
     "copiedToast": "Ulashish havolasi vaqtinchalik xotiraga nusxalandi.",
     "copyError": "Havolani nusxalab bo‘lmadi. Iltimos, uni qo‘lda nusxalang.",
     "referredCount": "{count, plural, =0 {Hali hech kim taklif qilinmagan} other {# kishi taklif qilingan}}",
+    "bonusEarned": "Siz kuniga {count, plural, other {+# ta generatsiya}} qo‘shimcha oldingiz",
     "loadError": "Taklif havolangizni yuklab bo‘lmadi.",
     "redeemedToast": "Do‘stingiz havolasi orqali qo‘shilganingiz uchun rahmat!"
   },

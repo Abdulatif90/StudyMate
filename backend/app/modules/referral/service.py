@@ -100,13 +100,39 @@ def redeem(session: Session, owner_id: str, code: str) -> ReferralAttribution:
     return attribution
 
 
-def get_referral_summary(session: Session, owner_id: str) -> ReferralRead:
-    """The caller's code (created if needed) plus an owner-scoped count of people they've
-    referred — everything `GET /referral` needs in one call."""
-    code = get_or_create_code(session, owner_id).code
-    referred_count = session.exec(
+def count_referrals(session: Session, owner_id: str) -> int:
+    """How many people this owner has referred — an owner-scoped COUNT of the
+    `ReferralAttribution` rows where they are the referrer.
+
+    Extracted so both `get_referral_summary` (surfacing the reward) and
+    `billing.service.effective_generations_per_day` (granting it) read the referral count
+    from ONE place, never a duplicated query that could drift. It is a pure function of the
+    attribution rows — which the redeem/attribution layer already guards (self-referral
+    blocked, one attribution per referee via a DB unique constraint, no referrer-switching)
+    — so counting them needs no additional abuse guard of its own.
+    """
+    total = session.exec(
         select(func.count(ReferralAttribution.id)).where(
             ReferralAttribution.referrer_owner_id == owner_id
         )
     ).one()
-    return ReferralRead(code=code, referred_count=int(referred_count))
+    return int(total)
+
+
+def get_referral_summary(session: Session, owner_id: str) -> ReferralRead:
+    """The caller's code (created if needed), an owner-scoped count of people they've
+    referred, and the reward those referrals have earned — everything `GET /referral`
+    needs in one call.
+
+    `bonus_generations_per_day` is DERIVED from `referred_count` (no stored reward row), so
+    it inherits the attribution layer's abuse guards for free. It surfaces only the bonus
+    the referrals earned, NOT the raw effective daily cap (that stays in billing)."""
+    from app.modules.billing.service import BONUS_PER_REFERRAL
+
+    code = get_or_create_code(session, owner_id).code
+    referred_count = count_referrals(session, owner_id)
+    return ReferralRead(
+        code=code,
+        referred_count=referred_count,
+        bonus_generations_per_day=referred_count * BONUS_PER_REFERRAL,
+    )

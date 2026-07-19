@@ -2,6 +2,61 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-20 — Referral reward grant — bonus daily generations (Phase 4 completion)
+Closes the last open Phase 4 item (attribution existed since the referral increment; this
+adds the actual reward). Commit:
+`feat(referral): bonus daily generations reward (Phase 4 completion)`.
+
+- **Reward model chosen: DERIVED bonus, no new table, no Polar.** Every genuine referral
+  grants the referrer `BONUS_PER_REFERRAL = 5` bonus daily generations. The bonus is a pure
+  function of the existing `ReferralAttribution` rows — `bonus = count_referrals * 5` — so
+  there is **no stored reward state** to keep consistent and **nothing touches Polar**. Of
+  the three options previously listed (bonus generations / plan credit / Polar discount) this
+  is the KISS portfolio choice: an internal entitlement tweak that reuses everything already
+  built.
+- **Why it's abuse-safe with NO new guard.** Because the reward derives entirely from
+  attribution rows, it inherits that layer's existing guards automatically: self-referral is
+  blocked (400), a referee can be attributed at most once (DB unique on `referred_owner_id`),
+  and a referee can't switch referrers. There is no new surface to abuse — you can only raise
+  your cap by genuinely referring distinct new accounts. This reasoning is documented in
+  comments in both `billing.service` and `referral.service` so the reviewer sees it's
+  deliberate, not an oversight.
+- **Single source of truth for the effective cap.** New
+  `billing.service.effective_generations_per_day(session, owner_id) -> int | None`: returns
+  `None` for Business (unlimited stays unlimited — a bonus on `None` is meaningless), else
+  `plan_cap + count_referrals * BONUS_PER_REFERRAL`. `ensure_can_generate` now enforces this
+  effective cap, and `GET /billing/plan` surfaces it in `limits.max_generations_per_day`, so
+  the enforced cap and the displayed usage-meter cap can never disagree. `record_generation`
+  / counting are unchanged.
+- **Module wiring / import direction.** `billing.service` imports `count_referrals` from
+  `referral.service` at module level (billing depends on the referral count — the natural
+  direction). `referral.service` reads `BONUS_PER_REFERRAL` back only via a **deferred**
+  (function-level) import inside `get_referral_summary`, so there is no import cycle. Extracted
+  `referral.service.count_referrals(session, owner_id) -> int` so the count query lives in ONE
+  place (previously inline in `get_referral_summary`).
+- **Surfaced reward.** `GET /referral` (`ReferralRead`) gained `bonus_generations_per_day`
+  (= `count_referrals * 5`) — the bonus earned, NOT the raw effective cap (that stays in
+  billing). Schema + `get_referral_summary` updated.
+- **Tests (offline, isolated SQLite + dependency-overrides).**
+  - `tests/test_billing.py` (+5): zero referrals → effective cap == plan cap and blocked at
+    it (pins prior behavior); N attributions → effective cap == plan_cap + N*5, allowed past
+    the base cap but blocked at the bonused cap (error names the raised cap); Business stays
+    unlimited regardless of referrals; tenant isolation (another owner's attributions don't
+    inflate mine); `GET /billing/plan` surfaces the bonused cap.
+  - `tests/test_referral.py` (+2): `GET /referral` bonus is 0 with no referrals and
+    `count * 5` with N (parity with the existing owner-scoped `referred_count`).
+  - **Backend: 409 passed, 11 deselected.** `ruff check` + `ruff format --check` clean.
+- **Frontend (one added line).** Typed client regenerated via the offline `app.openapi()`
+  dump → `openapi-typescript` (schema diff purely the new `bonus_generations_per_day` field).
+  `ReferralCard` on `/billing` now shows "You've earned +N generations/day" when
+  `bonus_generations_per_day > 0` (new i18n key `Referral.bonusEarned`, mirrored key-for-key
+  into uz/ko/ru via targeted anchored edits — no full JSON round-trip). Card left otherwise
+  unchanged. **Frontend: 216 passed (52 files)**, `tsc --noEmit` + `eslint` clean.
+- **No-browser gap:** the added ReferralCard line hasn't been verified in a real browser with
+  Clerk auth (no browser in this environment) — it's covered by the parity test + tsc/eslint
+  and the backend field is fully tested, but the rendered line itself is unverified visually.
+- **No schema change / no alembic** — the reward is derived, so no new table and no migration.
+
 ## 2026-07-20 — Teams: assignment UI — teacher create + student submit (Phase 5, increment 3c)
 Frontend for the assignments backend that landed in 3a+3b (commits d2af931 + cae83c9),
 closing the "teacher assigns + tracks" vertical slice so it's demoable end-to-end.

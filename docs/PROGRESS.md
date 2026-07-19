@@ -16,7 +16,9 @@ layer itself stays provider-agnostic. **Nothing is blocked on keys any more**; t
 endpoint + a real sandbox checkout that flipped the user's plan Free→Pro end-to-end — see
 WORKLOG), and Polar is sandbox-only so far. The **billing frontend** is now
 done too — a `/billing` page (plan + usage meters + upgrade→Polar-checkout) plus a 402
-upgrade prompt on subject-create — leaving only the browser click-through open. Phase 1–3 recap: Subjects, documents
+upgrade prompt on subject-create — leaving only the browser click-through open. The
+**referral reward grant** (bonus daily generations derived from the attribution count, no
+new table/Polar) has now shipped too, **fully closing Phase 4**. Phase 1–3 recap: Subjects, documents
 (R2 + Inngest ingest with auto-summary, deletable), hybrid Ask/RAG (Postgres FTS + vector
 + RRF + Cohere Rerank, streaming), Conversations, Quiz (tool-use generation + full UI),
 Flashcards + SM-2 (tool-use generation + full review-session UI) — all with their own
@@ -2157,15 +2159,19 @@ frontends already shipped.
   `referral_attributions`) applied to Neon (verified via `information_schema`, unique
   indexes confirmed). **Attribution ONLY — no reward is granted and nothing touches Polar
   this increment** (deliberate; see the TODO immediately below).
-- **Referral reward grant — NOT DONE (deferred, blocks Phase 4 completion).** The
-  attribution foundation (code + who-referred-whom + abuse guards) is built; what remains is
-  the actual reward. The reward model is still an open product decision — one of: (a) bonus
-  daily generations (an internal entitlement change, no Polar), (b) a temporary plan
-  credit/upgrade, or (c) a Polar-issued discount code (needs Polar SDK/config verification
-  first, since nothing touches Polar yet). Pick the model, then wire the grant into the
-  entitlement/billing layer, add its own abuse guards (e.g. reward only on a *genuine* new
-  signup, not a churned/self account) and tests. **Phase 4 is NOT fully closed until this
-  ships.** Then Phase 5 (Business/Teams B2B).
+- **Referral reward grant — DONE (Phase 4 now fully closed)** (2026-07-20; see WORKLOG
+  "Referral reward grant"). Chosen reward model (a): every genuine referral grants the
+  referrer **bonus daily generations** (`BONUS_PER_REFERRAL = 5`). The bonus is **DERIVED**
+  from the existing attribution count — `bonus = count_referrals * 5` — so it needs **no new
+  table and no Polar**, and inherits the attribution layer's existing abuse guards for free
+  (self-referral blocked, one attribution per referee via a DB unique constraint, no
+  referrer-switching). `billing.service.effective_generations_per_day` is the single source
+  of truth for the raised cap; `ensure_can_generate` enforces it and `GET /billing/plan`
+  surfaces it, so the enforced and displayed caps never disagree. Business (unlimited/`None`
+  cap) stays unlimited — a bonus on `None` is meaningless. `GET /referral` gained
+  `bonus_generations_per_day`; the `/billing` ReferralCard shows the earned reward once it's
+  non-zero (i18n `Referral.bonusEarned`, mirrored into uz/ko/ru). **Phase 4 fully closed.**
+  Then Phase 5 (Business/Teams B2B).
 - **Phase 5 (Business/Teams B2B) — Increment 1 (org foundation) DONE** (see WORKLOG
   "Teams: org foundation via Clerk Organizations" entry; ADR #9). Orgs/members/roles/invites
   are backed by **Clerk Organizations** (no custom DB tables). Backend: `app/core/org.py`

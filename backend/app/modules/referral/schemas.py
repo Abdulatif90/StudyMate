@@ -7,10 +7,14 @@ from pydantic import BaseModel, Field
 
 
 class ReferralRead(BaseModel):
-    """The caller's own referral code plus how many people they've referred."""
+    """The caller's own referral code, how many people they've referred, and the reward
+    those referrals have earned."""
 
     code: str
     referred_count: int
+    #: Bonus daily quiz/flashcard generations earned from referrals
+    #: (= referred_count * billing BONUS_PER_REFERRAL). Derived, not stored.
+    bonus_generations_per_day: int
 
 
 class ReferralRedeemRequest(BaseModel):

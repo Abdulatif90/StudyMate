@@ -333,6 +333,7 @@
     "copiedToast": "Share link copied to clipboard.",
     "copyError": "Couldn't copy the link. Please copy it manually.",
     "referredCount": "{count, plural, =0 {No one referred yet} one {# person referred} other {# people referred}}",
+    "bonusEarned": "You've earned {count, plural, one {+# generation} other {+# generations}} per day",
     "loadError": "Couldn't load your referral link.",
     "redeemedToast": "Thanks for joining through a friend's link!"
   },

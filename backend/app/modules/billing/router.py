@@ -51,7 +51,9 @@ def get_plan(
         limits=PlanLimitsRead(
             max_subjects=limits.max_subjects,
             max_documents_per_subject=limits.max_documents_per_subject,
-            max_generations_per_day=limits.max_generations_per_day,
+            # Effective cap = plan cap + referral bonus, so the client's usage meter matches
+            # exactly what `ensure_can_generate` enforces (not the raw plan cap).
+            max_generations_per_day=service.effective_generations_per_day(session, owner_id),
         ),
         usage=PlanUsageRead(
             subjects=service.count_subjects(session, owner_id),

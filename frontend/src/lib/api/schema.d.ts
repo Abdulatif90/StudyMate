@@ -974,13 +974,16 @@ export interface components {
         };
         /**
          * ReferralRead
-         * @description The caller's own referral code plus how many people they've referred.
+         * @description The caller's own referral code, how many people they've referred, and the reward
+         *     those referrals have earned.
          */
         ReferralRead: {
             /** Code */
             code: string;
             /** Referred Count */
             referred_count: number;
+            /** Bonus Generations Per Day */
+            bonus_generations_per_day: number;
         };
         /** ReferralRedeemRequest */
         ReferralRedeemRequest: {

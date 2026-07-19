@@ -12,8 +12,8 @@ import { buildReferralShareUrl } from "@/lib/referral";
 
 /**
  * "Refer a friend" card: shows the user's stable referral code and a copy-to-clipboard
- * share link (`/sign-up?ref=CODE`). Attribution only — no reward is granted yet (that's
- * a deferred increment), so the copy stays neutral about any bonus.
+ * share link (`/sign-up?ref=CODE`), plus the reward earned — each genuine referral grants
+ * bonus daily generations (`bonus_generations_per_day`), shown only once it's non-zero.
  */
 export function ReferralCard() {
   const t = useTranslations("Referral");
@@ -31,6 +31,7 @@ export function ReferralCard() {
 
   const code = referralQuery.data?.code;
   const referredCount = referralQuery.data?.referred_count ?? 0;
+  const bonusGenerations = referralQuery.data?.bonus_generations_per_day ?? 0;
   // window.location.origin is only available client-side; this whole component is a
   // client component, but guard anyway so it's safe under any render path.
   const shareUrl =
@@ -80,6 +81,11 @@ export function ReferralCard() {
             <p className="mt-3 text-xs text-muted-foreground">
               {t("referredCount", { count: referredCount })}
             </p>
+            {bonusGenerations > 0 && (
+              <p className="mt-1 text-xs font-medium text-primary">
+                {t("bonusEarned", { count: bonusGenerations })}
+              </p>
+            )}
           </>
         )}
       </CardContent>

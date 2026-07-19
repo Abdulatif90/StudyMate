@@ -333,6 +333,7 @@
     "copiedToast": "공유 링크를 클립보드에 복사했습니다.",
     "copyError": "링크를 복사하지 못했습니다. 직접 복사해 주세요.",
     "referredCount": "{count, plural, =0 {아직 추천한 사람이 없습니다} other {#명 추천됨}}",
+    "bonusEarned": "하루 {count, plural, other {+#회 생성}}을(를) 획득했습니다",
     "loadError": "추천 링크를 불러오지 못했습니다.",
     "redeemedToast": "친구의 링크로 가입해 주셔서 감사합니다!"
   },

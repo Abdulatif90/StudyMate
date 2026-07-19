@@ -22,9 +22,11 @@ from app.main import app
 from app.modules.billing import service as billing_service
 from app.modules.billing.models import GenerationKind, GenerationUsage, Plan, UserPlan
 from app.modules.billing.service import (
+    BONUS_PER_REFERRAL,
     LIMITS,
     LimitKind,
     PlanLimitExceededError,
+    effective_generations_per_day,
     ensure_can_create_subject,
     ensure_can_generate,
     ensure_can_upload_document,
@@ -32,6 +34,7 @@ from app.modules.billing.service import (
     record_generation,
 )
 from app.modules.documents.models import Document, DocumentStatus
+from app.modules.referral.models import ReferralAttribution
 from app.modules.subjects.models import Subject
 
 _TEST_USER = "user_test_123"
@@ -100,6 +103,21 @@ def _record_generations(owner_id: str, count: int, now: datetime = _NOW) -> None
         for _ in range(count):
             record_generation(session, owner_id, GenerationKind.QUIZ, now)
             session.commit()
+
+
+def _make_referrals(referrer_owner_id: str, count: int) -> None:
+    """Create `count` genuine attributions crediting `referrer_owner_id` — each from a
+    distinct referred user, as the DB unique constraint on `referred_owner_id` requires."""
+    with Session(_engine) as session:
+        for i in range(count):
+            session.add(
+                ReferralAttribution(
+                    referrer_owner_id=referrer_owner_id,
+                    referred_owner_id=f"referred_{referrer_owner_id}_{i}",
+                    code="ABCD2345",
+                )
+            )
+        session.commit()
 
 
 # --- get_plan ----------------------------------------------------------------
@@ -277,6 +295,74 @@ def test_business_plan_is_unlimited_for_generations():
 
     with Session(_engine) as session:
         ensure_can_generate(session, _TEST_USER, _NOW)
+
+
+# --- Referral reward: bonus daily generations --------------------------------
+
+
+def test_zero_referrals_effective_cap_equals_plan_cap():
+    # Pins the pre-reward behavior: no referrals -> effective cap is exactly the plan cap.
+    plan_cap = LIMITS[Plan.FREE].max_generations_per_day
+    with Session(_engine) as session:
+        assert effective_generations_per_day(session, _TEST_USER) == plan_cap
+
+    _record_generations(_TEST_USER, plan_cap)
+    with Session(_engine) as session, pytest.raises(PlanLimitExceededError):
+        ensure_can_generate(session, _TEST_USER, _NOW)
+
+
+def test_referral_bonus_raises_the_effective_generation_cap():
+    referrals = 3
+    plan_cap = LIMITS[Plan.FREE].max_generations_per_day
+    bonused = plan_cap + referrals * BONUS_PER_REFERRAL
+    _make_referrals(_TEST_USER, referrals)
+
+    with Session(_engine) as session:
+        assert effective_generations_per_day(session, _TEST_USER) == bonused
+
+    # Past the base plan cap but under the bonused cap -> still allowed.
+    _record_generations(_TEST_USER, bonused - 1)
+    with Session(_engine) as session:
+        ensure_can_generate(session, _TEST_USER, _NOW)
+
+    # At the bonused cap -> blocked, and the error names the raised cap.
+    _record_generations(_TEST_USER, 1)
+    with Session(_engine) as session, pytest.raises(PlanLimitExceededError) as exc:
+        ensure_can_generate(session, _TEST_USER, _NOW)
+    assert exc.value.cap == bonused
+
+
+def test_referral_bonus_does_not_apply_to_business_unlimited():
+    _set_plan(_TEST_USER, Plan.BUSINESS)
+    _make_referrals(_TEST_USER, 5)
+
+    with Session(_engine) as session:
+        # Unlimited stays unlimited — a bonus on None is meaningless.
+        assert effective_generations_per_day(session, _TEST_USER) is None
+        ensure_can_generate(session, _TEST_USER, _NOW)
+
+
+def test_referral_bonus_is_tenant_isolated():
+    # Another owner's attributions must not inflate this owner's cap.
+    _make_referrals(_OTHER_USER, 10)
+    plan_cap = LIMITS[Plan.FREE].max_generations_per_day
+
+    with Session(_engine) as session:
+        assert effective_generations_per_day(session, _TEST_USER) == plan_cap
+
+    _record_generations(_TEST_USER, plan_cap)
+    with Session(_engine) as session, pytest.raises(PlanLimitExceededError):
+        ensure_can_generate(session, _TEST_USER, _NOW)
+
+
+def test_get_plan_endpoint_surfaces_the_bonused_cap():
+    referrals = 2
+    _make_referrals(_TEST_USER, referrals)
+
+    body = client.get("/billing/plan").json()
+
+    expected = LIMITS[Plan.FREE].max_generations_per_day + referrals * BONUS_PER_REFERRAL
+    assert body["limits"]["max_generations_per_day"] == expected
 
 
 # --- record_generation -------------------------------------------------------

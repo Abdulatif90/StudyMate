@@ -34,9 +34,23 @@ from app.core import polar_client
 from app.core.config import get_settings
 from app.modules.billing.models import GenerationKind, GenerationUsage, Plan, UserPlan
 from app.modules.documents.models import Document
+from app.modules.referral.service import count_referrals
 from app.modules.subjects.models import Subject
 
 logger = logging.getLogger(__name__)
+
+#: Bonus daily generations granted per genuine referral. The reward for the referral
+#: program (see docs/PROGRESS.md "Referral reward grant") is DERIVED from the existing
+#: attribution rows — `bonus = count_referrals * BONUS_PER_REFERRAL` — so it needs no new
+#: table and inherits the attribution layer's abuse guards (self-referral blocked, one
+#: attribution per referee via a DB unique constraint, no referrer-switching). There is
+#: therefore no NEW abuse guard here: the reward is a pure function of guarded rows.
+#:
+#: Import note: this module depends on `referral.service` (billing needs the referral
+#: count). `referral.service` reads BONUS_PER_REFERRAL back only via a *deferred*
+#: (function-level) import, so the top-level dependency stays one-directional
+#: (billing -> referral) and there is no import cycle.
+BONUS_PER_REFERRAL = 5
 
 
 @dataclass(frozen=True)
@@ -180,8 +194,23 @@ def ensure_can_upload_document(session: Session, owner_id: str, subject_id: uuid
         )
 
 
+def effective_generations_per_day(session: Session, owner_id: str) -> int | None:
+    """The owner's daily-generation cap INCLUDING the referral reward.
+
+    `None` (Business) stays `None`: a bonus on an already-unlimited plan is meaningless.
+    Otherwise the plan cap is raised by `count_referrals * BONUS_PER_REFERRAL`. This is the
+    single source of truth for the effective cap — both `ensure_can_generate` (enforcement)
+    and the billing `GET /plan` surface (what the client's usage meter shows) go through
+    it, so the enforced cap and the displayed cap can never disagree.
+    """
+    plan_cap = get_limits(session, owner_id).max_generations_per_day
+    if plan_cap is None:
+        return None
+    return plan_cap + count_referrals(session, owner_id) * BONUS_PER_REFERRAL
+
+
 def ensure_can_generate(session: Session, owner_id: str, now: datetime | None = None) -> None:
-    cap = get_limits(session, owner_id).max_generations_per_day
+    cap = effective_generations_per_day(session, owner_id)
     if cap is None:
         return
     if count_generations_today(session, owner_id, now) >= cap:

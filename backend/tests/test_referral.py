@@ -16,6 +16,7 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from app.core.auth import get_current_user_id
 from app.core.db import get_session
 from app.main import app
+from app.modules.billing.service import BONUS_PER_REFERRAL
 from app.modules.referral import service as referral_service
 from app.modules.referral.models import ReferralAttribution, ReferralCode
 
@@ -120,6 +121,28 @@ def test_referred_count_reflects_attributions():
 
     _as_user(_USER_A)
     assert client.get("/referral").json()["referred_count"] == 2
+
+
+# --- reward: bonus_generations_per_day -------------------------------------------
+
+
+def test_bonus_generations_per_day_is_zero_with_no_referrals():
+    body = client.get("/referral").json()
+    assert body["referred_count"] == 0
+    assert body["bonus_generations_per_day"] == 0
+
+
+def test_bonus_generations_per_day_scales_with_referral_count():
+    code = client.get("/referral").json()["code"]  # A's code
+
+    for referred in ("user_c", "user_d"):
+        _as_user(referred)
+        assert client.post("/referral/redeem", json={"code": code}).status_code == 204
+
+    _as_user(_USER_A)
+    body = client.get("/referral").json()
+    assert body["referred_count"] == 2
+    assert body["bonus_generations_per_day"] == 2 * BONUS_PER_REFERRAL
 
 
 # --- abuse guards ----------------------------------------------------------------
