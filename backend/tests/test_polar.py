@@ -29,12 +29,13 @@ from sqlmodel import Session, SQLModel, create_engine
 from standardwebhooks.webhooks import Webhook
 
 from app.core import polar_client
-from app.core.auth import get_current_user_id
+from app.core.auth import get_current_user_id, get_org_context
 from app.core.config import get_settings
 from app.core.db import get_session
+from app.core.org import OrgContext
 from app.main import app
 from app.modules.billing import service as billing_service
-from app.modules.billing.models import Plan, UserPlan
+from app.modules.billing.models import OrgPlan, Plan, UserPlan
 
 _TEST_USER = "user_test_123"
 _OTHER_USER = "someone_else"
@@ -42,6 +43,10 @@ _OTHER_USER = "someone_else"
 _SECRET = "whsec_test_secret_value"
 _PRO_PRODUCT = "prod_pro_id"
 _BUSINESS_PRODUCT = "prod_business_id"
+_TEAM_PRODUCT = "prod_team_id"
+
+_TEST_ORG = "org_test_abc"
+_OTHER_ORG = "org_other_xyz"
 
 _NOW = datetime(2026, 7, 17, 12, 0, tzinfo=UTC)
 
@@ -72,6 +77,7 @@ def _fake_settings(**overrides):
         "polar_server": "sandbox",
         "polar_product_id_pro": _PRO_PRODUCT,
         "polar_product_id_business": _BUSINESS_PRODUCT,
+        "polar_product_id_team": _TEAM_PRODUCT,
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -207,6 +213,16 @@ def _post_webhook(event: dict, *, secret: str = _SECRET, msg_id: str = "msg_1"):
 def _plan_row(owner_id: str) -> UserPlan | None:
     with Session(_engine) as session:
         return session.get(UserPlan, owner_id)
+
+
+def _org_plan_row(org_id: str) -> OrgPlan | None:
+    with Session(_engine) as session:
+        return session.get(OrgPlan, org_id)
+
+
+def _org_external(org_id: str) -> str:
+    """The namespaced external_id create_team_checkout plants for an org subscription."""
+    return f"org:{org_id}"
 
 
 # --- polar_client: config + loud failures -------------------------------------
@@ -609,6 +625,178 @@ def test_plan_endpoint_reflects_a_webhook_upgrade():
     body = client.get("/billing/plan").json()
     assert body["plan"] == "pro"
     assert body["limits"]["max_subjects"] == 50
+
+
+# --- Team checkout (org/seat tier) -------------------------------------------
+
+
+def test_team_checkout_plants_namespaced_org_external_id(monkeypatch):
+    """The org-linkage crux: the org id must reach Polar as `org:<id>` so the webhook can
+    route it to OrgPlan (never UserPlan) and know which org to lift."""
+    capture: dict = {}
+    monkeypatch.setattr(polar_client, "get_client", lambda: _fake_polar(capture))
+
+    url = billing_service.create_team_checkout(_TEST_ORG)
+
+    assert url == "https://polar.sh/checkout/abc"
+    request = capture["request"]
+    assert request.external_customer_id == _org_external(_TEST_ORG)
+    assert request.products == [_TEAM_PRODUCT]
+
+
+def test_team_checkout_forwards_success_url_when_given(monkeypatch):
+    capture: dict = {}
+    monkeypatch.setattr(polar_client, "get_client", lambda: _fake_polar(capture))
+    billing_service.create_team_checkout(_TEST_ORG, "https://app.example.com/team-done")
+    assert capture["request"].success_url == "https://app.example.com/team-done"
+
+
+def test_team_checkout_raises_config_error_when_team_product_unset(monkeypatch):
+    monkeypatch.setattr(
+        billing_service, "get_settings", lambda: _fake_settings(polar_product_id_team=None)
+    )
+    with pytest.raises(polar_client.PolarConfigError, match="POLAR_PRODUCT_ID_TEAM"):
+        billing_service.create_team_checkout(_TEST_ORG)
+
+
+def test_team_checkout_wraps_polar_failure(monkeypatch):
+    monkeypatch.setattr(polar_client, "get_client", lambda: _fake_polar({}, error=_polar_error()))
+    with pytest.raises(billing_service.PolarCheckoutError):
+        billing_service.create_team_checkout(_TEST_ORG)
+
+
+def _override_org(role: str | None, org_id: str | None = _TEST_ORG) -> None:
+    app.dependency_overrides[get_org_context] = lambda: OrgContext(org_id=org_id, org_role=role)
+
+
+def test_team_checkout_endpoint_requires_teacher(monkeypatch):
+    """Subscribing the whole org is an admin action — a teacher/admin gets a checkout URL,
+    the org taken from their token, never the request body."""
+    capture: dict = {}
+    monkeypatch.setattr(polar_client, "get_client", lambda: _fake_polar(capture))
+    _override_org("admin")
+    try:
+        response = client.post("/billing/team-checkout", json={})
+        assert response.status_code == 200
+        assert response.json() == {"checkout_url": "https://polar.sh/checkout/abc"}
+        assert capture["request"].external_customer_id == _org_external(_TEST_ORG)
+    finally:
+        del app.dependency_overrides[get_org_context]
+
+
+def test_team_checkout_endpoint_rejects_plain_member(monkeypatch):
+    """A plain member (student) must not be able to subscribe the org."""
+    monkeypatch.setattr(polar_client, "get_client", lambda: _fake_polar({}))
+    _override_org("member")
+    try:
+        assert client.post("/billing/team-checkout", json={}).status_code == 403
+    finally:
+        del app.dependency_overrides[get_org_context]
+
+
+def test_team_checkout_endpoint_rejects_no_active_org(monkeypatch):
+    """No active org → no role → 403 (require_teacher)."""
+    monkeypatch.setattr(polar_client, "get_client", lambda: _fake_polar({}))
+    _override_org(None, org_id=None)
+    try:
+        assert client.post("/billing/team-checkout", json={}).status_code == 403
+    finally:
+        del app.dependency_overrides[get_org_context]
+
+
+# --- Webhook: org subscription routing ---------------------------------------
+
+
+def test_org_team_subscription_upserts_org_plan_not_user_plan():
+    """A team-product active event with `external_id="org:X"` writes OrgPlan(X)=Team and
+    never touches any UserPlan."""
+    response = _post_webhook(
+        _subscription_event(external_id=_org_external(_TEST_ORG), product_id=_TEAM_PRODUCT)
+    )
+    assert response.json() == {"status": "applied"}
+    assert _org_plan_row(_TEST_ORG).plan is Plan.TEAM
+    # the org id must NOT have leaked into a UserPlan under either the raw or prefixed key
+    assert _plan_row(_TEST_ORG) is None
+    assert _plan_row(_org_external(_TEST_ORG)) is None
+
+
+def test_org_revoke_sets_org_back_to_free():
+    _post_webhook(
+        _subscription_event(
+            external_id=_org_external(_TEST_ORG), product_id=_TEAM_PRODUCT, timestamp=_NOW
+        )
+    )
+    assert _org_plan_row(_TEST_ORG).plan is Plan.TEAM
+
+    response = _post_webhook(
+        _subscription_event(
+            "subscription.revoked",
+            external_id=_org_external(_TEST_ORG),
+            product_id=_TEAM_PRODUCT,
+            status="canceled",
+            timestamp=_NOW + timedelta(hours=1),
+        ),
+        msg_id="msg_2",
+    )
+    assert response.json() == {"status": "applied"}
+    assert _org_plan_row(_TEST_ORG).plan is Plan.FREE
+
+
+def test_org_event_idempotency_and_stale_ordering_are_per_org():
+    """Duplicate delivery is a no-op; a stale (older) event can't overwrite a newer one —
+    the same ordering guard as the user path, keyed on org_id."""
+    first = _post_webhook(
+        _subscription_event(
+            external_id=_org_external(_TEST_ORG), product_id=_TEAM_PRODUCT, timestamp=_NOW
+        )
+    )
+    dup = _post_webhook(
+        _subscription_event(
+            external_id=_org_external(_TEST_ORG), product_id=_TEAM_PRODUCT, timestamp=_NOW
+        ),
+        msg_id="msg_2",
+    )
+    assert first.json() == {"status": "applied"}
+    assert dup.json() == {"status": "ignored_stale"}
+
+    stale_revoke = _post_webhook(
+        _subscription_event(
+            "subscription.revoked",
+            external_id=_org_external(_TEST_ORG),
+            product_id=_TEAM_PRODUCT,
+            timestamp=_NOW - timedelta(hours=1),
+        ),
+        msg_id="msg_3",
+    )
+    assert stale_revoke.json() == {"status": "ignored_stale"}
+    assert _org_plan_row(_TEST_ORG).plan is Plan.TEAM
+
+
+def test_org_events_are_org_scoped():
+    """One org's plan can't touch another org's row."""
+    with Session(_engine) as session:
+        session.add(OrgPlan(org_id=_OTHER_ORG, plan=Plan.TEAM, updated_at=_NOW))
+        session.commit()
+
+    _post_webhook(
+        _subscription_event(
+            "subscription.revoked",
+            external_id=_org_external(_TEST_ORG),
+            product_id=_TEAM_PRODUCT,
+            timestamp=_NOW,
+        )
+    )
+    # _TEST_ORG revoked to Free; the bystander org is untouched
+    assert _org_plan_row(_TEST_ORG).plan is Plan.FREE
+    assert _org_plan_row(_OTHER_ORG).plan is Plan.TEAM
+
+
+def test_user_event_still_writes_user_plan_and_never_an_org_plan():
+    """A plain user-product event (no `org:` prefix) writes UserPlan and creates no
+    OrgPlan — the two scopes never cross."""
+    _post_webhook(_subscription_event(external_id=_TEST_USER, product_id=_PRO_PRODUCT))
+    assert _plan_row(_TEST_USER).plan is Plan.PRO
+    assert _org_plan_row(_TEST_USER) is None
 
 
 # --- Live (opt-in): real sandbox API ------------------------------------------

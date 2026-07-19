@@ -112,7 +112,7 @@ def create_document(
     # Plan-limit guard before ANY work — specifically before the R2 upload below, so a
     # quota-rejected upload never costs storage or leaves an orphaned object. Raises
     # PlanLimitExceededError (-> 402, handled app-wide in main.py). See billing.service.
-    ensure_can_upload_document(session, owner_id, subject_id)
+    ensure_can_upload_document(session, owner_id, subject_id, org_ctx)
 
     if content_type not in SUPPORTED_CONTENT_TYPES:
         raise UnsupportedFileTypeError(f"Unsupported content type: {content_type}")

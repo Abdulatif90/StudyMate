@@ -21,6 +21,12 @@ class Plan(StrEnum):
     FREE = "free"
     PRO = "pro"
     BUSINESS = "business"
+    # Team is the org/seat tier (Phase 5): an org admin subscribes the whole organization
+    # (Polar "Team Plan", a recurring per-seat product), and every member of that org is
+    # lifted to Team entitlements. It is never bought individually via /billing/checkout —
+    # only via the org flow (create_team_checkout) — but it is a first-class Plan so the
+    # same LIMITS table and webhook machinery apply to it unchanged.
+    TEAM = "team"
 
 
 class GenerationKind(StrEnum):
@@ -50,6 +56,29 @@ class UserPlan(SQLModel, table=True):
     __tablename__ = "user_plans"
 
     owner_id: str = Field(primary_key=True)
+    plan: Plan = Field(sa_column=Column(_plan_column_type, nullable=False))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class OrgPlan(SQLModel, table=True):
+    """One row per Clerk organization that is on a *non-default* plan — the org analogue
+    of `UserPlan`. **Absence of a row means Free** (an org that has never subscribed lifts
+    nobody), exactly like `UserPlan`. `org_id` (the Clerk organization id) is the primary
+    key, so it's inherently scoped: exactly one plan per org and no way to address another
+    org's row without its id.
+
+    Additive, never a replacement for `UserPlan`: a member's effective entitlement is the
+    HIGHER of their own `UserPlan` and their active org's `OrgPlan` (see
+    service.effective_plan). An org on `Plan.TEAM` therefore lifts every member to Team,
+    while a member with no active org behaves exactly as before.
+
+    This is the row the Polar webhook upserts for an org (`external_id = "org:<org_id>"`)
+    on subscribe/revoke — mirroring how it upserts `UserPlan` for an individual.
+    """
+
+    __tablename__ = "org_plans"
+
+    org_id: str = Field(primary_key=True)
     plan: Plan = Field(sa_column=Column(_plan_column_type, nullable=False))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

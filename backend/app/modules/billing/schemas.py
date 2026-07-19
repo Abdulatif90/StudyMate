@@ -49,6 +49,17 @@ class CheckoutCreateRequest(BaseModel):
     success_url: str | None = None
 
 
+class TeamCheckoutCreateRequest(BaseModel):
+    """Start a Team-Plan checkout for the caller's *active organization*. There is no
+    `plan` field — this endpoint always buys Team — and no `org_id`: the org comes from
+    the caller's verified token (and only a teacher/admin may reach the route), so a caller
+    can neither pick another product nor subscribe an org they don't administer."""
+
+    #: Where Polar sends the browser after paying. Optional (Polar's hosted confirmation
+    #: page is shown when omitted), same as the individual checkout.
+    success_url: str | None = None
+
+
 class CheckoutCreateResponse(BaseModel):
     #: Polar-hosted checkout page to redirect the browser to.
     checkout_url: str

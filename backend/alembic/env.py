@@ -31,7 +31,11 @@ from app.modules.assignments.models import (  # noqa: E402, F401
     Assignment,
     AssignmentSubmission,
 )
-from app.modules.billing.models import GenerationUsage, UserPlan  # noqa: E402, F401
+from app.modules.billing.models import (  # noqa: E402, F401
+    GenerationUsage,
+    OrgPlan,
+    UserPlan,
+)
 from app.modules.documents.models import Document, DocumentChunk  # noqa: E402, F401
 from app.modules.flashcards.models import Flashcard, FlashcardReviewState  # noqa: E402, F401
 from app.modules.quiz.models import (  # noqa: E402, F401

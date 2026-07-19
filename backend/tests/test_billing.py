@@ -18,15 +18,17 @@ from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.core.auth import get_current_user_id
 from app.core.db import get_session
+from app.core.org import OrgContext
 from app.main import app
 from app.modules.billing import service as billing_service
-from app.modules.billing.models import GenerationKind, GenerationUsage, Plan, UserPlan
+from app.modules.billing.models import GenerationKind, GenerationUsage, OrgPlan, Plan, UserPlan
 from app.modules.billing.service import (
     BONUS_PER_REFERRAL,
     LIMITS,
     LimitKind,
     PlanLimitExceededError,
     effective_generations_per_day,
+    effective_plan,
     ensure_can_create_subject,
     ensure_can_generate,
     ensure_can_upload_document,
@@ -487,3 +489,97 @@ def test_upgrading_the_plan_lifts_the_http_cap():
     _set_plan(_TEST_USER, Plan.PRO)  # what a future Polar webhook will do
 
     assert client.post("/subjects", json={"name": "Now allowed"}).status_code == 201
+
+
+# --- Org/team entitlements (effective_plan) ----------------------------------
+
+_TEST_ORG = "org_test_abc"
+_OTHER_ORG = "org_other_xyz"
+
+
+def _set_org_plan(org_id: str, plan: Plan) -> None:
+    with Session(_engine) as session:
+        session.add(OrgPlan(org_id=org_id, plan=plan))
+        session.commit()
+
+
+def _org(org_id: str | None, role: str = "member") -> OrgContext:
+    return OrgContext(org_id=org_id, org_role=role)
+
+
+def test_effective_plan_with_no_org_is_the_individual_plan():
+    _set_plan(_TEST_USER, Plan.PRO)
+    with Session(_engine) as session:
+        # no org_ctx, and an org_ctx with no active org, both resolve to the own plan
+        assert effective_plan(session, _TEST_USER) is Plan.PRO
+        assert effective_plan(session, _TEST_USER, _org(None)) is Plan.PRO
+
+
+def test_org_team_lifts_a_free_member_to_team():
+    """A member on a Free UserPlan whose active org is on Team gets Team."""
+    _set_org_plan(_TEST_ORG, Plan.TEAM)
+    with Session(_engine) as session:
+        assert effective_plan(session, _TEST_USER, _org(_TEST_ORG)) is Plan.TEAM
+
+
+def test_effective_plan_takes_the_higher_of_own_and_org():
+    """The max of the two, both directions: own Business beats an org still on Free; org
+    Team beats own Pro."""
+    _set_plan(_TEST_USER, Plan.BUSINESS)
+    with Session(_engine) as session:
+        assert effective_plan(session, _TEST_USER, _org(_TEST_ORG)) is Plan.BUSINESS
+
+    _set_org_plan(_TEST_ORG, Plan.TEAM)
+    with Session(_engine) as session:
+        # Team out-ranks Business -> the org lifts even a Business user to Team
+        assert effective_plan(session, _TEST_USER, _org(_TEST_ORG)) is Plan.TEAM
+
+
+def test_org_team_gives_a_member_unlimited_limits_over_the_free_cap():
+    """The whole point: a Free member of a Team org sails past the Free subject cap."""
+    _set_org_plan(_TEST_ORG, Plan.TEAM)
+    org = _org(_TEST_ORG)
+    _make_subjects(_TEST_USER, LIMITS[Plan.FREE].max_subjects)  # at the Free cap
+
+    with Session(_engine) as session:
+        # Free alone would raise here; the Team org lifts the cap to unlimited
+        ensure_can_create_subject(session, _TEST_USER, org)
+
+    # ...and the generation guard is unlimited too
+    _record_generations(_TEST_USER, LIMITS[Plan.FREE].max_generations_per_day)
+    with Session(_engine) as session:
+        assert effective_generations_per_day(session, _TEST_USER, org) is None
+        ensure_can_generate(session, _TEST_USER, _NOW, org)
+
+
+def test_org_plan_is_scoped_to_its_own_org():
+    """A member whose active org is Free is unaffected by *another* org being on Team."""
+    _set_org_plan(_OTHER_ORG, Plan.TEAM)
+    with Session(_engine) as session:
+        # the caller's active org (_TEST_ORG) has no plan -> still Free
+        assert effective_plan(session, _TEST_USER, _org(_TEST_ORG)) is Plan.FREE
+
+
+def test_referral_bonus_still_applies_under_an_org_where_cap_is_not_unlimited():
+    """A Free member of an org that is only on Pro (a finite cap) still gets their own
+    referral bonus on top of the effective Pro cap."""
+    _set_org_plan(_TEST_ORG, Plan.PRO)
+    referrals = 2
+    _make_referrals(_TEST_USER, referrals)
+    org = _org(_TEST_ORG)
+
+    expected = LIMITS[Plan.PRO].max_generations_per_day + referrals * BONUS_PER_REFERRAL
+    with Session(_engine) as session:
+        assert effective_generations_per_day(session, _TEST_USER, org) == expected
+
+
+def test_over_cap_error_names_the_effective_plan():
+    """When an org lifts the caller, a limit error (from a finite org tier) names the
+    effective plan, not the caller's own Free plan."""
+    _set_org_plan(_TEST_ORG, Plan.PRO)
+    org = _org(_TEST_ORG)
+    _make_subjects(_TEST_USER, LIMITS[Plan.PRO].max_subjects)  # at the Pro cap
+
+    with Session(_engine) as session, pytest.raises(PlanLimitExceededError) as exc:
+        ensure_can_create_subject(session, _TEST_USER, org)
+    assert exc.value.plan is Plan.PRO

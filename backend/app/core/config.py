@@ -64,6 +64,14 @@ class Settings(BaseSettings):
     # billing/models.UserPlan), so it is never sold and never checked out.
     polar_product_id_pro: str | None = None
     polar_product_id_business: str | None = None
+    # The org/seat tier (Phase 5): the Polar "Team Plan" product an org admin subscribes
+    # the whole organization to. A recurring per-seat subscription (min 1 seat, volume
+    # tiers) — but this integration does NOT enforce seat count vs member count (a
+    # deliberate simplification; TODO if seat overage ever needs blocking). An active Team
+    # subscription lifts every member of the org to Team entitlements. Optional/env-gated
+    # like the other product ids: unset means the team-checkout path raises a clear config
+    # error at point of use, and nothing else is affected.
+    polar_product_id_team: str | None = None
 
     # Error monitoring (Sentry). Optional so the app/tests boot without it —
     # app/core/sentry.py's init_sentry() is a no-op when unset, never a crash (a missing

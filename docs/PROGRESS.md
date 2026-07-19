@@ -2396,9 +2396,37 @@ frontends already shipped.
     - **Per-student targeting — TODO (NOT started).** Assignments target the **whole active
       org** only; assigning to specific members rather than broadcasting is future work.
     - **Frontend for assignments — DONE (increment 3c above).**
-  - **Admin / billing seats (Polar per-seat) — DEFERRED, revisit after the project is
-    finished (kept simple for the portfolio).** Org-level plan + per-seat billing (Polar), seat counts,
-    admin management. Ties into the existing entitlement layer.
+  - **Admin / billing seats (Polar Team Plan) — BACKEND DONE** (2026-07-20; see WORKLOG
+    "Teams: org/team billing seats"). An org admin subscribes the whole organization to the
+    Polar **Team Plan** (a real recurring monthly product, verified via `products.get` —
+    price is `ProductPriceSeatBased`, $10/seat/mo, volume tier, min 1 seat, no max) and
+    every member is lifted to Team (unlimited) entitlements. New `OrgPlan(org_id PK, plan,
+    updated_at)` — the org analogue of `UserPlan` — plus `Plan.TEAM` (migration
+    `6c9f0c767feb`: `ALTER TYPE plan ADD VALUE 'team'` + `org_plans` table, **APPLIED to
+    Neon** — verified `alembic current` == head `6c9f0c767feb`, `org_plans` exists, `plan`
+    enum now includes `team`). `POST /billing/team-checkout` (**teacher/admin only** via
+    `require_teacher`; plain member / no-active-org → 403) plants a namespaced
+    `external_customer_id = "org:<org_id>"` so the SAME signature-verified webhook routes an
+    org subscription to `OrgPlan` (never a `UserPlan`) and a user subscription to `UserPlan`
+    (never an `OrgPlan`) — reusing the identical grant/revoke event sets, entitled-status
+    check, and `event_at` idempotency/ordering guard (`apply_org_subscription_event` mirrors
+    the user one, keyed on `org_id`; revoke → `Plan.FREE`, members fall back to their
+    individual plans). Entitlement resolution is now **org-aware**: `effective_plan(session,
+    owner_id, org_ctx)` returns the HIGHER-ranked of the caller's own `UserPlan` and their
+    active org's `OrgPlan` (rank Free<Pro<Business<Team), and `get_limits`/
+    `ensure_can_create_subject`/`ensure_can_upload_document`/`ensure_can_generate`/
+    `effective_generations_per_day` all resolve from it — threaded through all four call
+    sites (subjects, documents, quiz, flashcards services, which already carry `org_ctx`).
+    The referral bonus still stacks on top of the effective cap where finite. `GET
+    /billing/plan` deliberately still shows the caller's INDIVIDUAL plan (wiring org context
+    into that surface is a frontend concern for the follow-up). Backend **460 passed** / 11
+    deselected (+19: team checkout + org webhook routing + org entitlements), ruff check +
+    format clean. **Deliberate simplification (TODO):** we do NOT enforce seat count vs
+    member count — an active Team subscription lifts every member regardless of how many
+    seats were purchased. **FOLLOW-UP: the team-upgrade UI** (a teacher-facing "subscribe
+    your org" button → `POST /billing/team-checkout`, and showing the effective/org plan on
+    `/billing`) is the remaining frontend increment. With this, **Phase 5 is essentially
+    complete on the backend.**
   - **Live Clerk-config confirmation + real-browser pass — mostly RESOLVED** (see WORKLOG
     "Live verification: Polar webhook, observability env, Clerk orgs" entry): the user
     enabled Organizations in Clerk, created an organization from the app, invited a

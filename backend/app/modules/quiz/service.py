@@ -88,7 +88,7 @@ def generate_quiz(
     # Daily-generation guard BEFORE the Claude call below, so a quota-rejected request
     # never spends a billable API call. Raises PlanLimitExceededError (-> 402, handled
     # app-wide in main.py). See billing.service for the check/record ordering contract.
-    ensure_can_generate(session, caller_id)
+    ensure_can_generate(session, caller_id, org_ctx=org_ctx)
 
     # generate_quiz_questions returns questions whose correct_index is already validated
     # to be within options range (see generation._parse_questions) — no out-of-range

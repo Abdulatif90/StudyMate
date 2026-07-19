@@ -32,7 +32,8 @@ from sqlmodel import Session, func, select
 
 from app.core import polar_client
 from app.core.config import get_settings
-from app.modules.billing.models import GenerationKind, GenerationUsage, Plan, UserPlan
+from app.core.org import OrgContext
+from app.modules.billing.models import GenerationKind, GenerationUsage, OrgPlan, Plan, UserPlan
 from app.modules.documents.models import Document
 from app.modules.referral.service import count_referrals
 from app.modules.subjects.models import Subject
@@ -83,6 +84,28 @@ LIMITS: dict[Plan, PlanLimits] = {
         max_documents_per_subject=None,
         max_generations_per_day=None,
     ),
+    # Team (the org/seat tier) mirrors Business: generous/unlimited on every dimension.
+    # An org paying for the Team Plan is a B2B customer buying capacity for its whole
+    # roster, so the same "effectively unlimited" shape Business gets is the right one —
+    # a team member should never hit a per-user cap the org has paid to remove.
+    Plan.TEAM: PlanLimits(
+        max_subjects=None,
+        max_documents_per_subject=None,
+        max_generations_per_day=None,
+    ),
+}
+
+#: Entitlement ordering. A caller's effective plan is the HIGHER-ranked of their own
+#: `UserPlan` and (when they have an active org) that org's `OrgPlan` — so an org on Team
+#: lifts every member to Team, while a member whose personal plan already out-ranks the
+#: org keeps their own. Team is the top tier (an org buys it deliberately for its whole
+#: roster); Business and Team both map to the same unlimited LIMITS, but Team ranks above
+#: Business so the org tier wins ties cleanly and the ordering is a total order.
+_PLAN_RANK: dict[Plan, int] = {
+    Plan.FREE: 0,
+    Plan.PRO: 1,
+    Plan.BUSINESS: 2,
+    Plan.TEAM: 3,
 }
 
 
@@ -127,14 +150,41 @@ def _utc_day(now: datetime | None) -> date:
 
 
 def get_plan(session: Session, owner_id: str) -> Plan:
-    """The owner's plan. **No row means Free** — never an error: a brand-new user who
-    has never touched billing still gets the Free entitlements."""
+    """The owner's *individual* plan. **No row means Free** — never an error: a brand-new
+    user who has never touched billing still gets the Free entitlements.
+
+    This is the personal `UserPlan` source of truth and ignores any org. Enforcement goes
+    through `effective_plan` (below), which layers the caller's active org on top."""
     user_plan = session.get(UserPlan, owner_id)
     return user_plan.plan if user_plan is not None else Plan.FREE
 
 
-def get_limits(session: Session, owner_id: str) -> PlanLimits:
-    return LIMITS[get_plan(session, owner_id)]
+def get_org_plan(session: Session, org_id: str) -> Plan:
+    """An org's plan. **No row means Free** — an org that has never subscribed lifts
+    nobody, exactly like `get_plan` for an individual."""
+    org_plan = session.get(OrgPlan, org_id)
+    return org_plan.plan if org_plan is not None else Plan.FREE
+
+
+def effective_plan(session: Session, owner_id: str, org_ctx: OrgContext | None = None) -> Plan:
+    """The caller's effective entitlement: the HIGHER-ranked of their own `UserPlan` and —
+    when they have an active org — that org's `OrgPlan` (see `_PLAN_RANK`).
+
+    An org on `Plan.TEAM` therefore lifts every member to Team, even a member whose
+    personal plan is Free. A member whose *own* plan out-ranks the org keeps their own. A
+    caller with no active org (`org_ctx` is `None` or has no `org_id`) resolves to exactly
+    their individual `UserPlan` — identical to the legacy behavior, so nothing changes for
+    users who aren't in an org. `OrgPlan` is purely additive; `UserPlan` is never lowered
+    by it."""
+    own = get_plan(session, owner_id)
+    if org_ctx is None or org_ctx.org_id is None:
+        return own
+    org_plan = get_org_plan(session, org_ctx.org_id)
+    return org_plan if _PLAN_RANK[org_plan] > _PLAN_RANK[own] else own
+
+
+def get_limits(session: Session, owner_id: str, org_ctx: OrgContext | None = None) -> PlanLimits:
+    return LIMITS[effective_plan(session, owner_id, org_ctx)]
 
 
 # --- Usage counts (all owner-scoped) ----------------------------------------
@@ -176,46 +226,65 @@ def count_generations_today(session: Session, owner_id: str, now: datetime | Non
 # nothing.
 
 
-def ensure_can_create_subject(session: Session, owner_id: str) -> None:
-    cap = get_limits(session, owner_id).max_subjects
+def ensure_can_create_subject(
+    session: Session, owner_id: str, org_ctx: OrgContext | None = None
+) -> None:
+    cap = get_limits(session, owner_id, org_ctx).max_subjects
     if cap is None:
         return
     if count_subjects(session, owner_id) >= cap:
-        raise PlanLimitExceededError(LimitKind.SUBJECTS, get_plan(session, owner_id), cap)
+        raise PlanLimitExceededError(
+            LimitKind.SUBJECTS, effective_plan(session, owner_id, org_ctx), cap
+        )
 
 
-def ensure_can_upload_document(session: Session, owner_id: str, subject_id: uuid.UUID) -> None:
-    cap = get_limits(session, owner_id).max_documents_per_subject
+def ensure_can_upload_document(
+    session: Session,
+    owner_id: str,
+    subject_id: uuid.UUID,
+    org_ctx: OrgContext | None = None,
+) -> None:
+    cap = get_limits(session, owner_id, org_ctx).max_documents_per_subject
     if cap is None:
         return
     if count_documents_in_subject(session, owner_id, subject_id) >= cap:
         raise PlanLimitExceededError(
-            LimitKind.DOCUMENTS_PER_SUBJECT, get_plan(session, owner_id), cap
+            LimitKind.DOCUMENTS_PER_SUBJECT, effective_plan(session, owner_id, org_ctx), cap
         )
 
 
-def effective_generations_per_day(session: Session, owner_id: str) -> int | None:
+def effective_generations_per_day(
+    session: Session, owner_id: str, org_ctx: OrgContext | None = None
+) -> int | None:
     """The owner's daily-generation cap INCLUDING the referral reward.
 
-    `None` (Business) stays `None`: a bonus on an already-unlimited plan is meaningless.
-    Otherwise the plan cap is raised by `count_referrals * BONUS_PER_REFERRAL`. This is the
-    single source of truth for the effective cap — both `ensure_can_generate` (enforcement)
-    and the billing `GET /plan` surface (what the client's usage meter shows) go through
-    it, so the enforced cap and the displayed cap can never disagree.
+    `None` (unlimited — Business or Team) stays `None`: a bonus on an already-unlimited
+    plan is meaningless. Otherwise the *effective* plan cap (own plan lifted by an active
+    org, see `effective_plan`) is raised by `count_referrals * BONUS_PER_REFERRAL`. The
+    referral bonus is always the caller's OWN — it is a personal reward, not shared by the
+    org. This is the single source of truth for the effective cap — both
+    `ensure_can_generate` (enforcement) and the billing `GET /plan` surface (what the
+    client's usage meter shows) go through it, so the enforced and displayed caps can
+    never disagree.
     """
-    plan_cap = get_limits(session, owner_id).max_generations_per_day
+    plan_cap = get_limits(session, owner_id, org_ctx).max_generations_per_day
     if plan_cap is None:
         return None
     return plan_cap + count_referrals(session, owner_id) * BONUS_PER_REFERRAL
 
 
-def ensure_can_generate(session: Session, owner_id: str, now: datetime | None = None) -> None:
-    cap = effective_generations_per_day(session, owner_id)
+def ensure_can_generate(
+    session: Session,
+    owner_id: str,
+    now: datetime | None = None,
+    org_ctx: OrgContext | None = None,
+) -> None:
+    cap = effective_generations_per_day(session, owner_id, org_ctx)
     if cap is None:
         return
     if count_generations_today(session, owner_id, now) >= cap:
         raise PlanLimitExceededError(
-            LimitKind.GENERATIONS_PER_DAY, get_plan(session, owner_id), cap
+            LimitKind.GENERATIONS_PER_DAY, effective_plan(session, owner_id, org_ctx), cap
         )
 
 
@@ -313,6 +382,7 @@ def plan_for_product_id(product_id: str) -> Plan | None:
     mapping = {
         settings.polar_product_id_pro: Plan.PRO,
         settings.polar_product_id_business: Plan.BUSINESS,
+        settings.polar_product_id_team: Plan.TEAM,
     }
     # A missing/unset id must never match an incoming product_id.
     mapping.pop(None, None)
@@ -352,6 +422,57 @@ def create_checkout(owner_id: str, plan: Plan, success_url: str | None = None) -
     return result.url
 
 
+#: External-id namespace for an ORG subscription. `create_team_checkout` plants
+#: `external_customer_id = f"{_ORG_EXTERNAL_ID_PREFIX}{org_id}"` so the webhook can tell an
+#: org subscription apart from an individual one purely from the verified payload. Clerk
+#: user ids and org ids both use `_` separators (`user_...`, `org_...`) and never contain a
+#: literal `":"`, so this colon-delimited prefix cannot collide with a real Clerk id.
+_ORG_EXTERNAL_ID_PREFIX = "org:"
+
+
+def _team_product_id() -> str:
+    settings = get_settings()
+    if not settings.polar_product_id_team:
+        raise polar_client.PolarConfigError(
+            "Polar is not configured for the Team plan — missing POLAR_PRODUCT_ID_TEAM. "
+            "Add it to backend/.env — see backend/.env.example."
+        )
+    return settings.polar_product_id_team
+
+
+def create_team_checkout(org_id: str, success_url: str | None = None) -> str:
+    """Create a Polar checkout that subscribes an *organization* to the Team Plan and
+    return its URL. The org analogue of `create_checkout`.
+
+    **Where org linkage is planted.** Just like the individual flow plants the Clerk
+    owner_id, this plants the Clerk org id on the Polar customer as
+    `external_customer_id = "org:<org_id>"`. The webhook reads it back out of a
+    signature-verified payload and routes it to `OrgPlan` (never `UserPlan`) precisely
+    because of the `"org:"` namespace. The org id is NOT taken from anything the client
+    sends — the router supplies the caller's active org from their verified token, and only
+    a teacher/admin of that org may reach this path (require_teacher), so a caller can
+    neither name another org nor subscribe one they don't administer.
+
+    The Team product is a recurring per-seat subscription. We deliberately do NOT enforce
+    seat count vs member count this increment (an active Team subscription lifts every
+    member regardless of how many seats were purchased) — a simplification, TODO if seat
+    overage ever needs blocking.
+    """
+    product_id = _team_product_id()
+    checkout = CheckoutCreate(
+        products=[product_id],
+        external_customer_id=f"{_ORG_EXTERNAL_ID_PREFIX}{org_id}",
+    )
+    if success_url is not None:
+        checkout.success_url = success_url
+
+    try:
+        result = polar_client.get_client().checkouts.create(request=checkout)
+    except PolarError as exc:
+        raise PolarCheckoutError(f"Polar rejected the checkout request: {exc}") from exc
+    return result.url
+
+
 def _as_utc(moment: datetime) -> datetime:
     """Normalize a datetime to UTC-aware.
 
@@ -385,9 +506,31 @@ _REVOKING_EVENTS = frozenset({"subscription.revoked"})
 _ENTITLED_STATUSES = frozenset({"active", "trialing"})
 
 
-def resolve_subscription_event(event: object) -> tuple[str, Plan, datetime] | None:
-    """Map a **verified** Polar webhook event to `(owner_id, plan, event_at)`, or `None`
+@dataclass(frozen=True)
+class ResolvedSubscriptionEvent:
+    """A verified Polar event distilled to who to change and how.
+
+    `is_org` routes the write: an org subscription (`external_id` began with `"org:"`)
+    upserts `OrgPlan`; otherwise `UserPlan`. `subject_id` is the target key with the
+    namespace prefix already stripped — a Clerk org id when `is_org`, else a Clerk owner
+    id. The two paths never cross: an org event can only reach `OrgPlan` and a user event
+    only `UserPlan` (see `handle_webhook_event`)."""
+
+    is_org: bool
+    subject_id: str
+    plan: Plan
+    event_at: datetime
+
+
+def resolve_subscription_event(event: object) -> ResolvedSubscriptionEvent | None:
+    """Map a **verified** Polar webhook event to a `ResolvedSubscriptionEvent`, or `None`
     if it's not an event that should change anybody's plan.
+
+    Routes by the shape of the customer's `external_id`: an `"org:"`-prefixed id is an
+    ORGANIZATION subscription (Team Plan, planted by `create_team_checkout`) and targets
+    `OrgPlan`; any other id is an individual subscription targeting `UserPlan`. The prefix
+    is the only thing distinguishing the two, and it's read from the signature-verified
+    payload, so it can't be spoofed.
 
     `None` covers every "understood but not actionable" case — an event type we don't act
     on, a subscription that isn't entitled, a product we don't sell, or a customer with no
@@ -403,16 +546,29 @@ def resolve_subscription_event(event: object) -> tuple[str, Plan, datetime] | No
 
     subscription = event.data  # type: ignore[attr-defined]
 
-    # **Owner linkage, read only from the verified payload.** `external_id` is the Clerk
-    # owner_id we planted server-side at checkout (see create_checkout). It is never read
-    # from a client-supplied field on this request — the request body's authenticity is
-    # exactly what the signature check established.
-    owner_id = subscription.customer.external_id
-    if not owner_id:
+    # **Subject linkage, read only from the verified payload.** `external_id` is what we
+    # planted server-side at checkout — a Clerk owner_id (create_checkout) or an
+    # `"org:<org_id>"` (create_team_checkout). It is never read from a client-supplied
+    # field on this request — the request body's authenticity is exactly what the
+    # signature check established.
+    external_id = subscription.customer.external_id
+    if not external_id:
         logger.warning(
             "Polar %s event for subscription %s has no customer external_id — cannot "
-            "resolve an owner, ignoring. (Was this subscription created outside our "
+            "resolve a subject, ignoring. (Was this subscription created outside our "
             "checkout?)",
+            event_type,
+            subscription.id,
+        )
+        return None
+
+    is_org = external_id.startswith(_ORG_EXTERNAL_ID_PREFIX)
+    subject_id = external_id[len(_ORG_EXTERNAL_ID_PREFIX) :] if is_org else external_id
+    if not subject_id:
+        # An `"org:"` with nothing after it — malformed, resolve nothing rather than
+        # writing an OrgPlan keyed on an empty org id.
+        logger.warning(
+            "Polar %s event for subscription %s has an empty org external_id, ignoring.",
             event_type,
             subscription.id,
         )
@@ -421,7 +577,9 @@ def resolve_subscription_event(event: object) -> tuple[str, Plan, datetime] | No
     event_at = event.timestamp  # type: ignore[attr-defined]
 
     if event_type in _REVOKING_EVENTS:
-        return owner_id, Plan.FREE, event_at
+        # Revoke → Free for whichever scope this is. For an org that means members fall
+        # back to their individual plans; for a user, the ordinary downgrade.
+        return ResolvedSubscriptionEvent(is_org, subject_id, Plan.FREE, event_at)
 
     status = getattr(subscription.status, "value", subscription.status)
     if status not in _ENTITLED_STATUSES:
@@ -444,19 +602,28 @@ def resolve_subscription_event(event: object) -> tuple[str, Plan, datetime] | No
         )
         return None
 
-    return owner_id, plan, event_at
+    return ResolvedSubscriptionEvent(is_org, subject_id, plan, event_at)
 
 
 def handle_webhook_event(session: Session, event: object) -> str:
     """Apply a **verified** Polar event. Returns a short outcome string for the response
     body/logs. The caller MUST have verified the signature first — this trusts `event`.
+
+    Dispatches strictly by scope: an org event only ever touches `OrgPlan`, a user event
+    only ever `UserPlan` — the two can never write each other's table.
     """
     resolved = resolve_subscription_event(event)
     if resolved is None:
         return "ignored"
 
-    owner_id, plan, event_at = resolved
-    written = apply_subscription_event(session, owner_id, plan, event_at)
+    if resolved.is_org:
+        written = apply_org_subscription_event(
+            session, resolved.subject_id, resolved.plan, resolved.event_at
+        )
+    else:
+        written = apply_subscription_event(
+            session, resolved.subject_id, resolved.plan, resolved.event_at
+        )
     return "applied" if written else "ignored_stale"
 
 
@@ -504,5 +671,45 @@ def apply_subscription_event(
     user_plan.plan = plan
     user_plan.updated_at = event_at
     session.add(user_plan)
+    session.commit()
+    return True
+
+
+def apply_org_subscription_event(
+    session: Session,
+    org_id: str,
+    plan: Plan,
+    event_at: datetime,
+) -> bool:
+    """Upsert exactly one org's `OrgPlan`. The org mirror of `apply_subscription_event` —
+    same idempotency/ordering guard, same "keep the row on downgrade" reasoning, keyed on
+    `org_id` instead of `owner_id`. Returns True if written, False if ignored as
+    stale/duplicate.
+
+    **Scoping**: `org_id` is the primary key and comes from the verified payload, so this
+    touches exactly one org's row and can reach neither another org's `OrgPlan` nor any
+    `UserPlan`. Revoke sets `Plan.FREE` (members then fall back to their individual plans),
+    and the row is kept rather than deleted for the same ordering-guard reason as the user
+    path — a stale `active` redelivered after a revoke must not silently re-grant Team.
+    """
+    event_at = _as_utc(event_at)
+    org_plan = session.get(OrgPlan, org_id)
+
+    if org_plan is None:
+        session.add(OrgPlan(org_id=org_id, plan=plan, updated_at=event_at))
+        session.commit()
+        return True
+
+    if _as_utc(org_plan.updated_at) >= event_at:
+        logger.info(
+            "Ignoring stale/duplicate Polar event for org (event_at=%s, updated_at=%s)",
+            event_at,
+            org_plan.updated_at,
+        )
+        return False
+
+    org_plan.plan = plan
+    org_plan.updated_at = event_at
+    session.add(org_plan)
     session.commit()
     return True

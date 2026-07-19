@@ -24,8 +24,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlmodel import Session
 
 from app.core import polar_client
-from app.core.auth import get_current_user_id
+from app.core.auth import get_current_user_id, require_teacher
 from app.core.db import get_session
+from app.core.org import OrgContext
 from app.modules.billing import service
 from app.modules.billing.schemas import (
     CheckoutCreateRequest,
@@ -33,6 +34,7 @@ from app.modules.billing.schemas import (
     PlanLimitsRead,
     PlanRead,
     PlanUsageRead,
+    TeamCheckoutCreateRequest,
     WebhookResponse,
 )
 
@@ -82,6 +84,32 @@ def create_checkout(
         ) from exc
     except service.PolarCheckoutError as exc:
         # Upstream failed. Surfaced as a real error status, never a 200 with no URL.
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Couldn't start checkout with our payment provider. Please try again.",
+        ) from exc
+    return CheckoutCreateResponse(checkout_url=url)
+
+
+@router.post("/team-checkout", response_model=CheckoutCreateResponse)
+def create_team_checkout(
+    payload: TeamCheckoutCreateRequest,
+    org: OrgContext = Depends(require_teacher),
+) -> CheckoutCreateResponse:
+    """Start a Polar checkout that subscribes the caller's active organization to the Team
+    Plan. **Teacher/admin only** (`require_teacher`): subscribing the whole org is an admin
+    action, so a plain member gets 403 and a caller with no active org gets 403 too (both
+    from the guard). The org id is the caller's active org from their verified token — never
+    client-supplied — so nobody can subscribe an org they don't administer."""
+    try:
+        url = service.create_team_checkout(org.org_id, payload.success_url)
+    except polar_client.PolarConfigError as exc:
+        # A deploy mistake (POLAR_PRODUCT_ID_TEAM unset), not the caller's fault — 500,
+        # naming the missing env var (never its value).
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
+        ) from exc
+    except service.PolarCheckoutError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Couldn't start checkout with our payment provider. Please try again.",

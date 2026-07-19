@@ -165,7 +165,7 @@ def create_subject(
     """
     # Plan-limit guard first, before any work — see billing.service. Raises
     # PlanLimitExceededError (-> 402, handled app-wide in main.py).
-    ensure_can_create_subject(session, owner_id)
+    ensure_can_create_subject(session, owner_id, org_ctx)
 
     org_id: str | None = None
     if org_ctx is not None and org_ctx.org_id is not None and is_teacher_role(org_ctx.org_role):

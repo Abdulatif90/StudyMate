@@ -2,6 +2,77 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-20 — Teams: org/team billing seats — Team Plan subscription + org-aware entitlements (Phase 5)
+An org admin can now subscribe the whole organization to the Polar **Team Plan**, lifting
+every member to Team (unlimited) entitlements. Backend only; the team-upgrade UI is a
+separate follow-up.
+Commit: `feat(teams): org/team billing seats — Team Plan subscription + org-aware entitlements (Phase 5)`.
+
+- **Step 0 verified against the REAL Polar API before writing code.** Re-introspected the
+  Team product's price via `products.get(POLAR_PRODUCT_ID_TEAM)`: `name="Team Plan"`,
+  `is_recurring=True`, `recurring_interval=MONTH`, not archived — a genuine recurring
+  monthly SUBSCRIPTION (so the existing `subscription.active/.updated` grant +
+  `subscription.revoked` revoke model applies unchanged, NOT a one-time `order.paid`
+  product). Its single price is `ProductPriceSeatBased`: `seat_tiers` = one volume tier
+  `{min_seats:1, price_per_seat:1000, max_seats:null}`, `minimum_seats:1`, currency `usd`
+  — i.e. **$10.00/seat/month, per-seat, no cap.** Per the task this does NOT change the
+  design (an active team subscription grants ALL members Team tier regardless of seat
+  count); recorded as a deliberate simplification + TODO (we do not enforce seat count vs
+  member count this increment).
+- **Model + migration.** New `OrgPlan(org_id PK, plan, updated_at)` — the org analogue of
+  `UserPlan`, absence-of-row = Free, additive (never lowers a `UserPlan`). Added
+  `Plan.TEAM = "team"` and a `Plan.TEAM` LIMITS entry mirroring Business (unlimited on
+  every dimension). Registered `OrgPlan` in `alembic/env.py`. Migration `6c9f0c767feb`
+  (down_revision = prior head `b2c3d4e5f6a7`): the tricky part is the shared Postgres
+  `plan` enum already existed (from `user_plans`) without `team`, so autogenerate's
+  implicit `CREATE TYPE` fails — hand-adjusted to `ALTER TYPE plan ADD VALUE IF NOT EXISTS
+  'team'` first, then `create_table('org_plans')` referencing the existing type via
+  `postgresql.ENUM(name='plan', create_type=False)` (the generic `sa.Enum(create_type=
+  False)` was tried first and ignored the flag inside `create_table`, re-emitting the
+  failing CREATE TYPE — switched to the dialect ENUM). **APPLIED to Neon and verified**:
+  `alembic current` == `6c9f0c767feb`, `org_plans` regclass present with columns
+  `org_id/plan/updated_at`, and the `plan` enum now lists `free,pro,business,team`.
+- **Org-vs-user routing by a NAMESPACED external_id (the security-relevant bit).**
+  `create_team_checkout(org_id)` plants `external_customer_id = "org:<org_id>"` (Clerk
+  user/org ids use `_` and never a literal `:`, so no collision). The webhook's
+  `resolve_subscription_event` now returns a `ResolvedSubscriptionEvent(is_org, subject_id,
+  plan, event_at)` — it routes by whether the verified `external_id` starts with `"org:"`:
+  org → `apply_org_subscription_event` (upserts `OrgPlan`), else the existing
+  `apply_subscription_event` (`UserPlan`). The two paths can NEVER touch each other's table.
+  `plan_for_product_id` also maps `POLAR_PRODUCT_ID_TEAM → Plan.TEAM`. Same grant/revoke
+  event sets, entitled-status check, and `event_at` idempotency/stale-ordering guard as the
+  user path; org revoke → `Plan.FREE` (members fall back to their individual plans), row
+  kept (not deleted) for the same ordering-guard reason. Existing webhook signature
+  verification untouched.
+- **Org-aware entitlement resolution (the wide change).** New `effective_plan(session,
+  owner_id, org_ctx)` = the HIGHER-ranked of the caller's own `UserPlan` and their active
+  org's `OrgPlan` (`_PLAN_RANK`: Free<Pro<Business<Team). `get_limits`,
+  `ensure_can_create_subject`, `ensure_can_upload_document`, `ensure_can_generate`, and
+  `effective_generations_per_day` now all resolve from `effective_plan` and take an optional
+  `org_ctx` (defaulting to None → exactly the legacy individual behavior). The referral
+  bonus still stacks on top of the effective cap where it's finite, and stays `None`
+  (unlimited) under Team. **Call sites threaded** (all already carried an `OrgContext`):
+  `subjects.service.create_subject`, `documents.service.create_document`,
+  `quiz.service.generate_quiz`, `flashcards.service.generate_flashcards`. Limit errors now
+  name the EFFECTIVE plan. `GET /billing/plan` deliberately still reports the individual
+  plan (adding org context there is a frontend-increment concern; leaving it avoids
+  changing the existing plan-endpoint tests / needing an org dependency they don't override).
+- **Checkout + router.** `Settings.polar_product_id_team` (documented in `.env.example`).
+  `POST /billing/team-checkout` (`require_teacher`; plain member / no active org → 403),
+  thin, `PolarConfigError`→500 / `PolarCheckoutError`→502 like the individual checkout, org
+  id taken from the caller's verified token (never client-supplied).
+- **Tests (offline, Polar client mocked, real HMAC signatures).** `test_polar.py` +12:
+  team checkout plants `org:<id>`/forwards success_url/config-error when product unset/wraps
+  failure; endpoint requires teacher (member→403, no-org→403); a team-product `active` with
+  `external_id="org:X"` upserts `OrgPlan(X)=Team` and NO `UserPlan`; org revoke→Free; per-org
+  idempotency + stale-ordering guard; org-scoped (one org can't touch another); a user event
+  still writes `UserPlan` and never an `OrgPlan`. `test_billing.py` +7: `effective_plan`
+  no-org = individual; org Team lifts a Free member; max-of-both both directions; Team gives
+  a Free member unlimited subject + generation limits; org plan scoped to its own org;
+  referral bonus still applies under a finite org tier; over-cap error names the effective
+  plan. Suite **460 passed / 11 deselected** (was 441), `ruff check .` + `ruff format
+  --check .` clean.
+
 ## 2026-07-20 — Teams: assignment roster UI — who has/hasn't submitted (Phase 5)
 Frontend follow-up to the roster-diff backend increment above: surfaces
 `GET /assignments/{id}/roster` in the teacher's existing `/assignments` submissions view.
