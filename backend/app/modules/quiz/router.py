@@ -8,8 +8,9 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session
 
-from app.core.auth import get_current_user_id
+from app.core.auth import get_current_user_id, get_org_context
 from app.core.db import get_session
+from app.core.org import OrgContext
 from app.modules.documents.service import SubjectNotFoundError
 from app.modules.quiz import service
 from app.modules.quiz.generation import QuizGenerationError
@@ -49,11 +50,13 @@ def generate_quiz(
     data: QuizGenerateRequest,
     session: Session = Depends(get_session),
     owner_id: str = Depends(get_current_user_id),
+    org_ctx: OrgContext = Depends(get_org_context),
 ) -> QuizWithQuestions:
     try:
         quiz = service.generate_quiz(
             session,
             owner_id,
+            org_ctx,
             subject_id,
             num_questions=data.num_questions,
             title=data.title,
@@ -80,9 +83,10 @@ def list_quizzes(
     subject_id: uuid.UUID,
     session: Session = Depends(get_session),
     owner_id: str = Depends(get_current_user_id),
+    org_ctx: OrgContext = Depends(get_org_context),
 ) -> list:
     try:
-        return service.list_quizzes(session, owner_id, subject_id)
+        return service.list_quizzes_for_reader(session, owner_id, org_ctx, subject_id)
     except SubjectNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Subject not found") from exc
 
@@ -93,11 +97,12 @@ def get_quiz(
     quiz_id: uuid.UUID,
     session: Session = Depends(get_session),
     owner_id: str = Depends(get_current_user_id),
+    org_ctx: OrgContext = Depends(get_org_context),
 ) -> QuizWithQuestions:
-    quiz = service.get_quiz(session, owner_id, subject_id, quiz_id)
+    quiz = service.get_quiz_for_reader(session, owner_id, org_ctx, subject_id, quiz_id)
     if quiz is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Quiz not found")
-    questions = service.list_questions(session, owner_id, quiz_id)
+    questions = service.list_questions_for_reader(session, owner_id, org_ctx, subject_id, quiz_id)
     return _to_with_questions(quiz, questions)
 
 

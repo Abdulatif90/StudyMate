@@ -2210,12 +2210,17 @@ frontends already shipped.
       schedule lives in a new `FlashcardReviewState` (migration `5ccf38a52dfb`,
       **NOT yet applied to Neon** — pending live step). Delete stays owner-only and now
       cascades the card's review-state rows.
-    - **Quiz half — STILL REMAINING**: `quiz.service` still uses `require_owned_subject` +
-      the owner-scoped `sample_subject_chunk_texts` (kept for exactly this reason), so a
-      member can't yet generate/read a quiz over a teacher's org subject. Switch it to
-      `require_readable_subject` / `sample_subject_chunk_texts_for_reader` and own
-      generated quizzes/attempts per-student, mirroring the flashcard half above.
-    - **Shared-subject DELETE cascade — STILL REMAINING**: `delete_subject` still
+    - **Quiz half — DONE** (2026-07-19; see WORKLOG "Teams: quiz org read-through").
+      Quiz generate/list/get/list-questions are now readability-scoped: `generate_quiz`
+      uses `sample_subject_chunk_texts_for_reader` and owns quizzes per-student; the
+      reader variants (`list_quizzes_for_reader`, `get_quiz_for_reader`,
+      `list_questions_for_reader`) enforce `quiz.owner_id in {caller, subject.owner}` so a
+      reader sees only the subject owner's shared quizzes + their own, never another
+      student's. Delete stays owner-only. No new table/migration (quizzes carry no
+      per-user state). Owner-scoped `list_quizzes`/`get_quiz`/`list_questions` kept for
+      the cascade.
+    - **Shared-subject DELETE cascade — STILL REMAINING** (the only piece left in 2b):
+      `delete_subject` still
       enumerates the subject OWNER's children only, so a co-teacher's uploads or other
       members' derived content over a shared subject aren't cleaned (a real FK on
       `subject_id` makes that fail loudly, not leak — but this should be handled properly).

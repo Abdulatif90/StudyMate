@@ -2,6 +2,57 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-19 — Teams: quiz org read-through (Phase 5, increment 2b — quiz half)
+Applies the same org-owned shared-subject read model to **quizzes** (mirrors the
+flashcard half in the entry below). A member can now generate, list, and read quizzes
+over a teacher's shared org subject. Quizzes have NO per-user state (no SM-2), so **no
+new table and no migration** — reading returns the same content to every reader. Scope
+this run = quizzes ONLY; the shared-subject DELETE cascade is now the **only** thing
+left in increment 2b. Commit: `feat(teams): quiz org read-through (Phase 5 increment 2b)`.
+
+- **Generation** (`generate_quiz`) switched from owner-only to readability-scoped and now
+  takes `org_ctx`: it samples via `sample_subject_chunk_texts_for_reader` (the reader
+  variant added in the flashcard half), so a student can build a quiz over a teacher's
+  org subject. The `Quiz` + `QuizQuestion` rows are **owned by the caller**
+  (`owner_id = caller_id`) — per-student, exactly like the flashcard side.
+- **Reading** — new reader variants the router now calls, each carrying the same
+  cross-student-leak guard the flashcard review fix taught: subject-readability alone is
+  NOT enough — the quiz must be owned by the caller OR by the subject's owner, never
+  another student's.
+  - `list_quizzes_for_reader` — `require_readable_subject`, then `Quiz.owner_id in
+    {caller, subject.owner}` via a `_reader_owner_filter` mirroring the flashcard one.
+  - `get_quiz_for_reader` — `get_readable_subject`, fetch the quiz by id+subject_id (no
+    owner filter), then reject unless `quiz.owner_id in {caller, subject.owner}` → None
+    (→ 404), so a caller can't probe for another student's quiz by id.
+  - `list_questions_for_reader` — resolves the quiz through `get_quiz_for_reader` FIRST,
+    then lists questions filtered by the QUIZ's owner_id (the quiz owner, not the caller
+    — on a shared quiz the questions belong to the subject owner, so a caller-scoped
+    filter would return nothing).
+  - The owner-scoped `list_quizzes` / `get_quiz` / `list_questions` are KEPT unchanged
+    for `subjects.service.delete_subject`'s cascade (same discipline as the kept
+    owner-scoped `list_flashcards`); that cascade needs no change.
+- **Delete** (`delete_quiz`) stays OWNER-only and unchanged — a student can't delete a
+  teacher's shared quiz (same 404-as-missing behavior). Router delete endpoint keeps no
+  `org_ctx`.
+- **Router**: read/generate endpoints (`generate_quiz`, `list_quizzes`, `get_quiz`) gain
+  `org_ctx: OrgContext = Depends(get_org_context)` and call the reader variants; routers
+  stay thin. Response shapes (`QuizRead` / `QuizQuestionRead` / `QuizWithQuestions`)
+  are unchanged, so the frontend keeps working.
+- **Tests**: new `tests/test_org_quizzes.py` (10, same isolated-SQLite +
+  dependency-override + `_act_as` pattern as `test_org_flashcards.py`): member generates
+  over a teacher's org subject → quiz owned by the member; loner/other-org generation
+  404s; member reads the teacher's shared quiz + its (teacher-owned) questions; listing
+  returns own + teacher quizzes and EXCLUDES another student's private quiz; owner sees
+  only their own; **the leak-regression test** `test_member_cannot_read_another_students_private_quiz`
+  (student B gets 404 on get + absence from list of student A's private quiz — verified
+  it fails without the owner-set restriction); cross-org member can't list/get; delete
+  owner-only. Updated the live `generate_quiz` call for the new `org_ctx` arg.
+  Verify: `pytest tests` → **369 passed, 11 deselected**; `ruff check .` → clean;
+  `ruff format --check .` → clean.
+- **Frontend OUT OF SCOPE this run** (follow-up): `QuizRead`/`QuizWithQuestions` are
+  unchanged so the existing owner UI keeps working; a student-facing "take shared quiz"
+  UI is a later increment.
+
 ## 2026-07-19 — Teams: flashcard org read-through (Phase 5, increment 2b — flashcard half)
 Extends the increment-2 org-read model (org-owned, read-shared subjects) from
 subjects/documents/Ask to **flashcards**: a member can now generate, list, and review

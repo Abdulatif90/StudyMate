@@ -21,6 +21,7 @@ from app.core import r2_client
 from app.core.auth import get_current_user_id
 from app.core.config import get_settings
 from app.core.db import get_session
+from app.core.org import OrgContext
 from app.main import app
 from app.modules.documents.embedding import EMBEDDING_DIM
 from app.modules.documents.models import Document, DocumentChunk, DocumentStatus
@@ -415,7 +416,9 @@ def test_generate_quiz_end_to_end_against_real_neon_cohere_and_claude():
 
         quiz = None
         try:
-            quiz = quiz_service.generate_quiz(session, owner_id, subject.id, num_questions=3)
+            quiz = quiz_service.generate_quiz(
+                session, owner_id, OrgContext(), subject.id, num_questions=3
+            )
             questions = quiz_service.list_questions(session, owner_id, quiz.id)
 
             assert len(questions) >= 1
