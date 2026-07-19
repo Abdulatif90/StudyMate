@@ -2137,7 +2137,29 @@ frontends already shipped.
   upload + auto-summary, cited Ask/RAG Q&A, quiz, flashcards + SM-2, progress) and the
   real Free/Pro/Business limits from `billing/service.LIMITS` — nothing invented (no
   mobile app, Telegram, OCR).
-- Remaining per `docs/plan.md` Phase 4: Referral. Then Phase 5 (Business/Teams B2B).
+- **Referral attribution foundation — DONE** (see WORKLOG "Referral — attribution
+  foundation" entry). New provider-agnostic module `backend/app/modules/referral/`
+  (`models`/`schemas`/`service`/`router`): a stable, unique, idempotent 8-char base32
+  `ReferralCode` per user, and a `ReferralAttribution` (who referred whom) with
+  `referred_owner_id` UNIQUE so a user is attributed at most once, ever. Abuse guards live
+  in the service (unknown code → 404, self-referral → 400, already-attributed → 409, no
+  duplicate row) and are covered by tests. Endpoints: `GET /referral` (my code + referred
+  count) and `POST /referral/redeem`. Frontend captures `?ref=CODE` client-side, persists
+  it across the Clerk redirect (localStorage), and redeems once on the first authenticated
+  load; the referral code + a copy-to-clipboard `${origin}/sign-up?ref=CODE` share link
+  surface on the `/billing` page. Migration `e30f18904b8f` (adds `referral_codes` +
+  `referral_attributions`) applied to Neon (verified via `information_schema`, unique
+  indexes confirmed). **Attribution ONLY — no reward is granted and nothing touches Polar
+  this increment** (deliberate; see the TODO immediately below).
+- **Referral reward grant — NOT DONE (deferred, blocks Phase 4 completion).** The
+  attribution foundation (code + who-referred-whom + abuse guards) is built; what remains is
+  the actual reward. The reward model is still an open product decision — one of: (a) bonus
+  daily generations (an internal entitlement change, no Polar), (b) a temporary plan
+  credit/upgrade, or (c) a Polar-issued discount code (needs Polar SDK/config verification
+  first, since nothing touches Polar yet). Pick the model, then wire the grant into the
+  entitlement/billing layer, add its own abuse guards (e.g. reward only on a *genuine* new
+  signup, not a churned/self account) and tests. **Phase 4 is NOT fully closed until this
+  ships.** Then Phase 5 (Business/Teams B2B).
 - Still owed from earlier: a real-browser click-through of the async upload/poll/delete,
   quiz, hybrid-Ask, flashcards, progress-dashboard, app-shell nav (mobile sheet,
   active-item highlighting, theme toggle), and the confirm-dialog/toast/subject-delete

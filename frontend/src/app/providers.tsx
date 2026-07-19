@@ -5,6 +5,7 @@ import { PostHogProvider } from "posthog-js/react";
 import { useState } from "react";
 import { ConfirmProvider } from "@/components/confirm-provider";
 import { ObservabilityIdentity } from "@/components/observability-identity";
+import { ReferralCapture } from "@/components/referral-capture";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster, ToastProvider, toastManager } from "@/components/ui/toast";
 
@@ -44,6 +45,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           <ToastProvider toastManager={toastManager}>
             <ConfirmProvider>
               <ObservabilityIdentity />
+              <ReferralCapture />
               {children}
               <Toaster />
             </ConfirmProvider>

@@ -356,6 +356,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/referral": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Referral */
+        get: operations["get_referral_referral_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/referral/redeem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Redeem Referral */
+        post: operations["redeem_referral_referral_redeem_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/inngest": {
         parameters: {
             query?: never;
@@ -737,6 +771,21 @@ export interface components {
             created_at: string;
             /** Questions */
             questions: components["schemas"]["QuizQuestionRead"][];
+        };
+        /**
+         * ReferralRead
+         * @description The caller's own referral code plus how many people they've referred.
+         */
+        ReferralRead: {
+            /** Code */
+            code: string;
+            /** Referred Count */
+            referred_count: number;
+        };
+        /** ReferralRedeemRequest */
+        ReferralRedeemRequest: {
+            /** Code */
+            code: string;
         };
         /** ReviewRequest */
         ReviewRequest: {
@@ -1623,6 +1672,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WebhookResponse"];
+                };
+            };
+        };
+    };
+    get_referral_referral_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferralRead"];
+                };
+            };
+        };
+    };
+    redeem_referral_referral_redeem_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReferralRedeemRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

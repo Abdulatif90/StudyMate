@@ -320,5 +320,17 @@
       "howToUpgrade": "Open Plan & billing from the sidebar and choose a plan. You'll be redirected to a secure checkout page to complete the upgrade.",
       "whatHappensAtLimit": "StudyMate tells you which limit you've reached and offers to upgrade. You won't lose any existing data; you just can't create more of that item (or run more generations) until you upgrade or the daily limit resets."
     }
+  },
+  "Referral": {
+    "heading": "Refer a friend",
+    "description": "Share your link with classmates. When someone signs up through it, the referral is tracked automatically.",
+    "shareLinkAriaLabel": "Your referral share link",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copiedToast": "Share link copied to clipboard.",
+    "copyError": "Couldn't copy the link. Please copy it manually.",
+    "referredCount": "{count, plural, =0 {No one referred yet} one {# person referred} other {# people referred}}",
+    "loadError": "Couldn't load your referral link.",
+    "redeemedToast": "Thanks for joining through a friend's link!"
   }
 }

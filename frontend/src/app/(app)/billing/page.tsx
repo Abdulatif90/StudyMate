@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { ErrorState } from "@/components/error-state";
 import { PlanCard } from "@/components/plan-card";
+import { ReferralCard } from "@/components/referral-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UsageMeters } from "@/components/usage-meters";
@@ -189,6 +190,10 @@ export default function BillingPage() {
           )}
         </div>
       )}
+
+      <div className="mt-8">
+        <ReferralCard />
+      </div>
     </div>
   );
 }

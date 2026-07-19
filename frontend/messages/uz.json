@@ -320,5 +320,17 @@
       "howToUpgrade": "Yon paneldagi «Tarif va to‘lov» bo‘limini oching va tarifni tanlang — xavfsiz to‘lov sahifasiga yo‘naltirilib, yangilashni yakunlaysiz.",
       "whatHappensAtLimit": "StudyMate qaysi chegaraga yetganingizni aytadi va tarifni yangilashni taklif qiladi. Mavjud ma’lumotlaringiz yo‘qolmaydi — faqat tarifni yangilamaguningizcha yoki kunlik chegara yangilanmaguncha o‘sha turdagi elementni ko‘proq yarata olmaysiz (yoki ko‘proq yaratish ishlarini bajara olmaysiz)."
     }
+  },
+  "Referral": {
+    "heading": "Do‘stingizni taklif qiling",
+    "description": "Havolangizni sinfdoshlaringiz bilan ulashing. Kimdir u orqali ro‘yxatdan o‘tsa, taklif avtomatik ravishda hisobga olinadi.",
+    "shareLinkAriaLabel": "Sizning taklif havolangiz",
+    "copy": "Nusxalash",
+    "copied": "Nusxalandi",
+    "copiedToast": "Ulashish havolasi vaqtinchalik xotiraga nusxalandi.",
+    "copyError": "Havolani nusxalab bo‘lmadi. Iltimos, uni qo‘lda nusxalang.",
+    "referredCount": "{count, plural, =0 {Hali hech kim taklif qilinmagan} other {# kishi taklif qilingan}}",
+    "loadError": "Taklif havolangizni yuklab bo‘lmadi.",
+    "redeemedToast": "Do‘stingiz havolasi orqali qo‘shilganingiz uchun rahmat!"
   }
 }

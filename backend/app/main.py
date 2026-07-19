@@ -28,6 +28,7 @@ from app.modules.flashcards.router import router as flashcards_subject_router
 from app.modules.progress.router import overall_router as progress_overall_router
 from app.modules.progress.router import router as progress_router
 from app.modules.quiz.router import router as quiz_router
+from app.modules.referral.router import router as referral_router
 from app.modules.subjects.router import router as subjects_router
 
 settings = get_settings()
@@ -77,6 +78,7 @@ app.include_router(flashcards_router)
 app.include_router(progress_router)
 app.include_router(progress_overall_router)
 app.include_router(billing_router)
+app.include_router(referral_router)
 
 
 @app.exception_handler(PlanLimitExceededError)
