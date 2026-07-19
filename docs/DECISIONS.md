@@ -111,10 +111,9 @@ hand-roll auth" reasoning as ADR #2 (Clerk over hand-rolled JWT).
   against `org:admin` only, which silently misclassified real admins as `student` —
   fixed once the bare form was observed.) We map **admin → `teacher`, member →
   `student`**. Mirrored client-side in `frontend/src/lib/orgRole.ts` so UI and API
-  authorize on the same role keys and can't drift — that mirror still assumes the
-  `org:`-prefixed form only and should be updated to the same normalization if a bare
-  role claim is ever observed reaching the frontend. `student` is the safe default
-  (teacher is the privileged capability).
+  authorize on the same role keys and can't drift — that mirror applies the same
+  normalize-then-compare fix, so a bare-slug admin sees the correct teacher-tier UI
+  too. `student` is the safe default (teacher is the privileged capability).
 - **Scope of increment 1 = foundation only**: create org / add-invite members / roles /
   see membership, via Clerk's UI + the backend org-context deps. **No content is
   org-scoped yet** — existing subjects/documents/quiz/flashcards stay `owner_id`-scoped
