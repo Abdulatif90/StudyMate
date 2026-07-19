@@ -2,6 +2,30 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-19 — Fix real off-by-one in conversation date bucketing
+The prior "timezone-independent" test fix (below) had made the suite pass by matching the
+impl's actual behavior instead of the correct behavior — it never caught that the bucketing
+itself was off by one day.
+
+- Root cause: `groupConversationsByDate.ts` computed `daysAgo` from `startOfToday` (local
+  midnight of NOW) minus the RAW `created_at` timestamp. Since `created_at` wasn't floored
+  to its own local day-start, any time-of-day component shifted the diff, moving every
+  conversation one bucket earlier than its true calendar-day distance — e.g. "yesterday
+  20:00" fell under 24h from `startOfToday` and landed in Today instead of Yesterday.
+- Fix: floor `created_at` to its own local day-start (`startOfCreated`) before diffing
+  against `startOfToday`, and use `Math.round` instead of `Math.floor` on the whole-day
+  difference so a 23h/25h DST day can't push a boundary off by one. Added a comment on the
+  bucketing loop explaining why, so it doesn't regress again.
+- Rewrote `groupConversationsByDate.test.ts`'s fixtures to be honest: `fixtureDaysAgo(n)`
+  now places a conversation exactly `n` calendar days before NOW (at local noon), and
+  assertions match the TRUE bucket, not the buggy one. Added an explicit regression test —
+  a conversation created yesterday evening must land in "Yesterday", not "Today" — which
+  would have caught the original bug.
+- Verified tz-independence and correctness together: `TZ=UTC`, `TZ=America/New_York`,
+  `TZ=Asia/Tokyo` — all **201 passed (49 files)**. `npx tsc --noEmit` and `npm run lint`
+  both clean.
+- Commit: `fix(frontend): correct off-by-one in conversation date bucketing`.
+
 ## 2026-07-19 — Fix timezone-fragile frontend test (CI red on UTC)
 The new `frontend-ci` workflow (Ubuntu/UTC) was red while the suite passed on the
 developer's UTC+09:00 machine. Reproduced locally with `TZ=UTC npm run test`.

@@ -7,16 +7,13 @@ import { groupConversationsByDate } from "./groupConversationsByDate";
 const NOW = new Date(2026, 6, 16, 12, 0, 0);
 
 /**
- * Builds an ISO timestamp that the impl will bucket at exactly `daysAgo`.
- *
- * The impl computes `daysAgo = floor((startOfToday - createdAt) / DAY)`,
- * where `startOfToday` is local midnight of NOW's calendar day. To land
- * exactly on a given `daysAgo`, the timestamp needs to sit at local noon on
- * the calendar day that is `daysAgo + 1` days before NOW's calendar day —
- * noon keeps it comfortably clear of any midnight boundary, in any timezone.
+ * Builds an ISO timestamp for a conversation created exactly `n` local
+ * calendar days before NOW's calendar day, at local noon (comfortably clear
+ * of any midnight boundary, in any timezone). This is a straight, honest
+ * "n days ago" — no off-by-one shifting baked in.
  */
-function fixtureAtDaysAgo(daysAgo: number): string {
-  const d = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() - (daysAgo + 1), 12, 0, 0);
+function fixtureDaysAgo(n: number): string {
+  const d = new Date(NOW.getFullYear(), NOW.getMonth(), NOW.getDate() - n, 12, 0, 0);
   return d.toISOString();
 }
 
@@ -27,11 +24,11 @@ function conversation(id: string, createdAt: string) {
 describe("groupConversationsByDate", () => {
   it("buckets conversations into Today/Yesterday/Previous 7/Previous 30/Older", () => {
     const conversations = [
-      conversation("today", fixtureAtDaysAgo(0)),
-      conversation("yesterday", fixtureAtDaysAgo(1)),
-      conversation("this-week", fixtureAtDaysAgo(4)),
-      conversation("this-month", fixtureAtDaysAgo(20)),
-      conversation("old", fixtureAtDaysAgo(200)),
+      conversation("today", fixtureDaysAgo(0)),
+      conversation("yesterday", fixtureDaysAgo(1)),
+      conversation("this-week", fixtureDaysAgo(3)),
+      conversation("this-month", fixtureDaysAgo(15)),
+      conversation("old", fixtureDaysAgo(200)),
     ];
 
     const groups = groupConversationsByDate(conversations, NOW);
@@ -44,12 +41,39 @@ describe("groupConversationsByDate", () => {
       "Older",
     ]);
     expect(groups[0].conversations.map((c) => c.id)).toEqual(["today"]);
+    expect(groups[1].conversations.map((c) => c.id)).toEqual(["yesterday"]);
+    expect(groups[2].conversations.map((c) => c.id)).toEqual(["this-week"]);
+    expect(groups[3].conversations.map((c) => c.id)).toEqual(["this-month"]);
     expect(groups[4].conversations.map((c) => c.id)).toEqual(["old"]);
+  });
+
+  it("buckets a conversation created yesterday evening as Yesterday, not Today (regression)", () => {
+    // This is the exact off-by-one the impl used to get wrong: comparing
+    // today's local midnight to the raw created_at timestamp instead of to
+    // created_at's own local day-start shifted every bucket by one day, so
+    // "yesterday evening" would incorrectly fall inside "Today".
+    const yesterdayEvening = new Date(
+      NOW.getFullYear(),
+      NOW.getMonth(),
+      NOW.getDate() - 1,
+      20,
+      0,
+      0
+    ).toISOString();
+
+    const groups = groupConversationsByDate(
+      [conversation("yesterday-evening", yesterdayEvening)],
+      NOW
+    );
+
+    expect(groups).toEqual([
+      { label: "Yesterday", conversations: [expect.objectContaining({ id: "yesterday-evening" })] },
+    ]);
   });
 
   it("omits groups with no conversations", () => {
     const groups = groupConversationsByDate(
-      [conversation("today", fixtureAtDaysAgo(0))],
+      [conversation("today", fixtureDaysAgo(0))],
       NOW
     );
     expect(groups).toEqual([{ label: "Today", conversations: [expect.objectContaining({ id: "today" })] }]);

@@ -27,9 +27,20 @@ export function groupConversationsByDate(
   };
 
   for (const conversation of conversations) {
-    const daysAgo = Math.floor(
-      (startOfToday - new Date(conversation.created_at).getTime()) / DAY
-    );
+    // Floor created_at to its OWN local day-start before diffing against
+    // startOfToday. Comparing startOfToday to the raw created_at timestamp
+    // (instead of created_at's own midnight) shifts every bucket by one day,
+    // e.g. "yesterday 20:00" would diff to less than a full DAY and land in
+    // "Today" instead of "Yesterday". Using Math.round (not floor) on the
+    // whole-day difference also guards against DST days that are 23h/25h
+    // long pushing a boundary off by one.
+    const created = new Date(conversation.created_at);
+    const startOfCreated = new Date(
+      created.getFullYear(),
+      created.getMonth(),
+      created.getDate()
+    ).getTime();
+    const daysAgo = Math.round((startOfToday - startOfCreated) / DAY);
 
     if (daysAgo <= 0) buckets.Today.push(conversation);
     else if (daysAgo === 1) buckets.Yesterday.push(conversation);
