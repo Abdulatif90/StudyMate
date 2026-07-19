@@ -15,8 +15,9 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session
 
-from app.core.auth import get_current_user_id
+from app.core.auth import get_current_user_id, get_org_context
 from app.core.db import get_session
+from app.core.org import OrgContext
 from app.modules.documents.service import SubjectNotFoundError
 from app.modules.flashcards import service
 from app.modules.flashcards.generation import FlashcardGenerationError
@@ -27,6 +28,9 @@ flashcards_router = APIRouter(prefix="/flashcards", tags=["flashcards"])
 
 
 def _to_read(flashcard) -> FlashcardRead:
+    # Works for both a `Flashcard` (own, inline schedule) and a service
+    # `ScheduledFlashcard` (a reader's effective schedule) — same attribute names, and
+    # `.id` is always the CARD's id so review/delete-by-id keep working.
     return FlashcardRead(
         id=flashcard.id,
         subject_id=flashcard.subject_id,
@@ -47,10 +51,11 @@ def generate_flashcards(
     data: FlashcardGenerateRequest,
     session: Session = Depends(get_session),
     owner_id: str = Depends(get_current_user_id),
+    org_ctx: OrgContext = Depends(get_org_context),
 ) -> list[FlashcardRead]:
     try:
         flashcards = service.generate_flashcards(
-            session, owner_id, subject_id, num_cards=data.num_cards, language=data.language
+            session, owner_id, org_ctx, subject_id, num_cards=data.num_cards, language=data.language
         )
     except SubjectNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Subject not found") from exc
@@ -73,9 +78,10 @@ def list_flashcards(
     subject_id: uuid.UUID,
     session: Session = Depends(get_session),
     owner_id: str = Depends(get_current_user_id),
+    org_ctx: OrgContext = Depends(get_org_context),
 ) -> list[FlashcardRead]:
     try:
-        flashcards = service.list_flashcards(session, owner_id, subject_id)
+        flashcards = service.list_flashcards_for_reader(session, owner_id, org_ctx, subject_id)
     except SubjectNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Subject not found") from exc
     return [_to_read(flashcard) for flashcard in flashcards]
@@ -86,9 +92,10 @@ def list_due_flashcards(
     subject_id: uuid.UUID,
     session: Session = Depends(get_session),
     owner_id: str = Depends(get_current_user_id),
+    org_ctx: OrgContext = Depends(get_org_context),
 ) -> list[FlashcardRead]:
     try:
-        flashcards = service.list_due_flashcards(session, owner_id, subject_id)
+        flashcards = service.list_due_flashcards_for_reader(session, owner_id, org_ctx, subject_id)
     except SubjectNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Subject not found") from exc
     return [_to_read(flashcard) for flashcard in flashcards]
@@ -100,9 +107,12 @@ def review_flashcard(
     data: ReviewRequest,
     session: Session = Depends(get_session),
     owner_id: str = Depends(get_current_user_id),
+    org_ctx: OrgContext = Depends(get_org_context),
 ) -> FlashcardRead:
     try:
-        flashcard = service.review_flashcard(session, owner_id, flashcard_id, grade=data.grade)
+        flashcard = service.review_flashcard(
+            session, owner_id, org_ctx, flashcard_id, grade=data.grade
+        )
     except service.InvalidGradeError as exc:
         # Defense-in-depth only — ReviewRequest.grade's ge/le already rejects an
         # out-of-range grade before this line, so this path shouldn't be reachable

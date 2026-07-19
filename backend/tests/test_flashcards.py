@@ -23,6 +23,7 @@ from app.core import r2_client
 from app.core.auth import get_current_user_id
 from app.core.config import get_settings
 from app.core.db import get_session
+from app.core.org import OrgContext
 from app.main import app
 from app.modules.documents.embedding import EMBEDDING_DIM
 from app.modules.documents.models import Document, DocumentChunk, DocumentStatus
@@ -451,7 +452,7 @@ def test_generate_and_review_flashcard_end_to_end_against_real_neon_cohere_and_c
         flashcards: list[Flashcard] = []
         try:
             flashcards = flashcards_service.generate_flashcards(
-                session, owner_id, subject.id, num_cards=3
+                session, owner_id, OrgContext(), subject.id, num_cards=3
             )
             assert len(flashcards) >= 1
             for card in flashcards:
@@ -467,7 +468,7 @@ def test_generate_and_review_flashcard_end_to_end_against_real_neon_cohere_and_c
             original_due_at = flashcards[0].due_at
 
             reviewed = flashcards_service.review_flashcard(
-                session, owner_id, flashcards[0].id, grade=5
+                session, owner_id, OrgContext(), flashcards[0].id, grade=5
             )
             assert reviewed is not None
             assert reviewed.repetitions == 1

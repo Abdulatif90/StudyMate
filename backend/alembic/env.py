@@ -29,7 +29,7 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 from app.modules.ask.models import Conversation, ConversationTurn  # noqa: E402, F401
 from app.modules.billing.models import GenerationUsage, UserPlan  # noqa: E402, F401
 from app.modules.documents.models import Document, DocumentChunk  # noqa: E402, F401
-from app.modules.flashcards.models import Flashcard  # noqa: E402, F401
+from app.modules.flashcards.models import Flashcard, FlashcardReviewState  # noqa: E402, F401
 from app.modules.quiz.models import Quiz, QuizQuestion  # noqa: E402, F401
 from app.modules.referral.models import ReferralAttribution, ReferralCode  # noqa: E402, F401
 from app.modules.subjects.models import Subject  # noqa: E402, F401

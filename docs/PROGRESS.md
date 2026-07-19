@@ -2202,15 +2202,23 @@ frontends already shipped.
   206 passed, tsc + eslint clean. All cross-tenant isolation exhaustively covered.
   **REMAINING Phase 5 increments (explicit TODOs, not started):**
   - **Increment 2b — quiz/flashcard org read-through** — extend the same org-read model to
-    quiz + flashcard *generation/reading* over an org subject (still owner-scoped this
-    increment: a member can't yet generate a quiz/flashcards over a teacher's org subject).
-    `sample_subject_chunk_texts` and the quiz/flashcard services still use
-    `require_owned_subject`; switch them to `require_readable_subject` and decide how
-    generated quizzes/flashcards over shared material are owned (per-student, like
-    conversations, is the likely answer). Also finish the shared-subject DELETE cascade:
-    it currently enumerates the subject OWNER's children only, so a co-teacher's uploads
-    or other members' derived content over a shared subject aren't cleaned (a real FK on
-    `subject_id` makes that fail loudly, not leak — but 2b should handle it properly).
+    quiz + flashcard *generation/reading* over an org subject.
+    - **Flashcard half — DONE** (2026-07-19; see WORKLOG "Teams: flashcard org
+      read-through"). Flashcard generate/list/due/review are now readability-scoped:
+      `generate_flashcards` uses `sample_subject_chunk_texts_for_reader`, cards over a
+      shared subject are owned per-student (like conversations), and a non-owner's SM-2
+      schedule lives in a new `FlashcardReviewState` (migration `5ccf38a52dfb`,
+      **NOT yet applied to Neon** — pending live step). Delete stays owner-only and now
+      cascades the card's review-state rows.
+    - **Quiz half — STILL REMAINING**: `quiz.service` still uses `require_owned_subject` +
+      the owner-scoped `sample_subject_chunk_texts` (kept for exactly this reason), so a
+      member can't yet generate/read a quiz over a teacher's org subject. Switch it to
+      `require_readable_subject` / `sample_subject_chunk_texts_for_reader` and own
+      generated quizzes/attempts per-student, mirroring the flashcard half above.
+    - **Shared-subject DELETE cascade — STILL REMAINING**: `delete_subject` still
+      enumerates the subject OWNER's children only, so a co-teacher's uploads or other
+      members' derived content over a shared subject aren't cleaned (a real FK on
+      `subject_id` makes that fail loudly, not leak — but this should be handled properly).
   - **Teacher assigns + tracks** — teacher-only actions (guarded by `require_teacher`):
     assign material/quizzes to students, view student progress across the org.
   - **Admin / billing seats** — org-level plan + per-seat billing (Polar), seat counts,

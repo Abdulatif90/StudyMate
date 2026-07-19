@@ -330,6 +330,17 @@ def list_chunks(session: Session, owner_id: str, document_id: uuid.UUID) -> list
     )
 
 
+def _stride_sample(texts: list[str], limit: int) -> list[str]:
+    """Down-sample `texts` to at most `limit` items by an evenly-spaced stride across the
+    whole list — so a sample of an already-ordered corpus (document then chunk position)
+    spans multiple documents and sections rather than just the opening of the first one.
+    Shared by the owner- and reader-scoped samplers below (DRY — one sampling rule)."""
+    if len(texts) <= limit:
+        return texts
+    step = len(texts) / limit
+    return [texts[int(i * step)] for i in range(limit)]
+
+
 def sample_subject_chunk_texts(
     session: Session, owner_id: str, subject_id: uuid.UUID, limit: int = 30
 ) -> list[str]:
@@ -338,6 +349,10 @@ def sample_subject_chunk_texts(
     material rather than relevance to a specific query (so, unlike `search_chunks`, no
     query and no embedding: this selects only the `text` column, never loading the
     1024-dim vectors, and makes no Cohere call).
+
+    **Owner-scoped** — kept for callers that specifically want the caller's OWN chunks
+    (e.g. quiz generation, still owner-only). The READ path (a member generating over a
+    teacher's org subject) uses `sample_subject_chunk_texts_for_reader` instead.
 
     When there are more chunks than `limit`, takes an evenly-spaced stride sample across
     the material (ordered by document then chunk position) so the sample spans multiple
@@ -354,10 +369,36 @@ def sample_subject_chunk_texts(
             .order_by(DocumentChunk.document_id, DocumentChunk.chunk_index)
         )
     )
-    if len(texts) <= limit:
-        return texts
-    step = len(texts) / limit
-    return [texts[int(i * step)] for i in range(limit)]
+    return _stride_sample(texts, limit)
+
+
+def sample_subject_chunk_texts_for_reader(
+    session: Session,
+    caller_id: str,
+    org_ctx: OrgContext,
+    subject_id: uuid.UUID,
+    limit: int = 30,
+) -> list[str]:
+    """Reader-scoped counterpart to `sample_subject_chunk_texts`, for whole-subject
+    generation (flashcards) over a subject the caller may READ — including a member
+    generating over a teacher's org subject.
+
+    Verifies subject-readability first (`SubjectNotFoundError` → 404 if denied, so
+    existence never leaks), then samples chunk texts filtered by `subject_id` ALONE —
+    deliberately NOT by `owner_id`, exactly like `search_chunks`: on an org subject the
+    chunks belong to the teacher who uploaded the material, so an owner-scoped filter
+    would return nothing for a student and break generation entirely. Same evenly-spaced
+    stride sample as the owner-scoped variant.
+    """
+    require_readable_subject(session, caller_id, org_ctx, subject_id)
+    texts = list(
+        session.exec(
+            select(DocumentChunk.text)
+            .where(DocumentChunk.subject_id == subject_id)
+            .order_by(DocumentChunk.document_id, DocumentChunk.chunk_index)
+        )
+    )
+    return _stride_sample(texts, limit)
 
 
 def list_documents(session: Session, owner_id: str, subject_id: uuid.UUID) -> list[Document]:

@@ -2,6 +2,86 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-19 — Teams: flashcard org read-through (Phase 5, increment 2b — flashcard half)
+Extends the increment-2 org-read model (org-owned, read-shared subjects) from
+subjects/documents/Ask to **flashcards**: a member can now generate, list, and review
+flashcards over a teacher's shared org subject. Scope this run = flashcards ONLY;
+**quiz org read-through and the shared-subject DELETE cascade remain out of scope**
+(still owner-scoped, unchanged from PROGRESS's TODO list). Commit:
+`feat(teams): flashcard org read-through (Phase 5 increment 2b)`.
+
+- **New model wired up**: `FlashcardReviewState` (added uncommitted earlier this pass —
+  a NON-owner reviewer's private SM-2 schedule; unique on `(flashcard_id, owner_id)`
+  where `owner_id` is the REVIEWER). The `Flashcard` inline columns stay the OWNER's own
+  schedule; a non-owner reviewer's schedule lives in a `FlashcardReviewState` row, so the
+  owner and every student keep an independent schedule over the same shared card.
+- **Access model = the single source of truth in `subjects.service`** (no logic
+  duplicated): read/generate paths go through `require_readable_subject` (→
+  `SubjectNotFoundError` → 404 when not readable); delete stays OWNER-only.
+- **Generation** (`generate_flashcards`) switched from owner-only to readability-scoped
+  and now takes `org_ctx`. A student generating over a teacher's org subject creates
+  cards **owned by the caller** (`owner_id = caller`) — per-student ownership, exactly
+  like conversations. CRITICAL companion change: added
+  `documents.service.sample_subject_chunk_texts_for_reader` — verifies readability then
+  samples chunk texts by `subject_id` ALONE (no `owner_id` filter), mirroring how
+  increment 2 made `search_chunks` subject-scoped-with-access-check; the old owner-scoped
+  `sample_subject_chunk_texts` is kept (quiz still uses it). Extracted a shared
+  `_stride_sample` helper so both samplers share one down-sampling rule (DRY).
+- **Listing** (`list_flashcards_for_reader` / `list_due_flashcards_for_reader`, new
+  reader-scoped functions the router now calls): for caller C on subject S owned by T,
+  returns C's own cards (inline schedule) plus — when C ≠ T — T's cards (schedule from
+  C's `FlashcardReviewState`, or a brand-new default: due at the card's creation → due
+  now, repetitions 0, default ease, when C has no state row). Another student's private
+  cards are NEVER surfaced; the owner sees only their own inline-scheduled cards. `/due`
+  applies the cutoff to the EFFECTIVE per-caller schedule (computed in Python because the
+  effective `due_at` comes from three sources a single SQL predicate can't express; a
+  `_as_naive_utc` helper reconciles naive DB datetimes with the tz-aware `now`). The
+  owner-scoped `list_flashcards` is KEPT (unchanged signature) because
+  `subjects.service.delete_subject`'s cascade enumerates the OWNER's cards — same pattern
+  as documents' `list_documents` vs. `list_documents_for_reader`.
+- **Review** (`review_flashcard`, now takes `org_ctx`, keyed by flashcard_id alone):
+  fetch the card by id (no owner filter); own card → update inline columns (unchanged);
+  else verify the caller can READ the card's subject (`get_readable_subject` → None → 404
+  if not) then **upsert** the caller's `FlashcardReviewState` and advance THAT schedule
+  via `sm2.review`, never the owner's inline columns. The unique constraint guarantees
+  one row per (card, reviewer), so two students stay independent.
+- **Delete** (`delete_flashcard`): still OWNER-only (`get_flashcard` is owner-scoped, so
+  a student deleting a teacher's card gets a 404). Now deletes the card's
+  `FlashcardReviewState` rows (all reviewers') and flushes BEFORE deleting the parent
+  card — the flush-before-parent FK ordering the models.py docstring promised. The
+  `commit=False` path used by `delete_subject` is preserved; that cascade needs no change
+  (it still calls the owner-scoped `list_flashcards` + `delete_flashcard`).
+- **Response shape unchanged**: `FlashcardRead` fields are identical, but the schedule
+  fields now reflect the CALLER's effective schedule; `id` is always the CARD's id (so
+  review/delete-by-id keep working). The service returns a small frozen `ScheduledFlashcard`
+  view (card content + effective schedule); the router's `_to_read` duck-types over both
+  it and a plain `Flashcard`. Routers stay thin (all logic in the service).
+- **Migration**: `alembic revision --autogenerate` → `5ccf38a52dfb_add_flashcard_review_states_table`
+  (down_revision `3441b9fb9f25`, single head). Registered `FlashcardReviewState` in
+  `alembic/env.py` so autogenerate saw it; the test SQLite `create_all` sees it via the
+  models-module import. Verified the generated table/columns, the
+  `uq_flashcard_review_state_card_owner` UniqueConstraint, the FK to `flashcards.id`, the
+  three indexes, and the `import sqlmodel`/`pgvector` lines; reformatted to the repo's
+  ruff style. **NOT applied to the live Neon DB** — left as a pending live step (run
+  `alembic upgrade head` against Neon when doing the next live pass). Tests use in-memory
+  SQLite via `create_all`, so they don't need the migration applied.
+- **Tests**: new `tests/test_org_flashcards.py` (16, same isolated-SQLite +
+  dependency-override + `_act_as` pattern as `test_org_subjects.py`): member generates
+  over a teacher's org subject → cards owned by the member + reader sampling returns the
+  teacher's chunks; loner/other-org generation 404s; listing returns own + teacher cards
+  with correct per-caller schedules and excludes another student's private cards; owner
+  sees only their own; non-owner review upserts a review-state without touching the
+  teacher's inline schedule; two students keep independent schedules; owner review uses
+  inline columns (no review-state row); `/due` honors the caller's effective schedule
+  (pinned-clock service-level case too); non-owner can't delete (404) and owner delete
+  removes all reviewer states; cross-org isolation on every path. Updated the live test's
+  `generate_flashcards`/`review_flashcard` calls for the new `org_ctx` arg.
+  Verify: `pytest tests` → **358 passed, 11 deselected**; `ruff check .` → clean;
+  `ruff format --check .` → clean.
+- **Frontend OUT OF SCOPE this run** (follow-up): `FlashcardRead` is unchanged so the
+  existing owner UI keeps working; a student-facing "review shared cards" UI is a later
+  increment.
+
 ## 2026-07-19 — Teams: fix bare Clerk org role slug misclassifying admins as students
 The Step 0 runtime check deferred in the entry below came back: the user hit `GET /org`
 in a real signed-in session with an active org and got `org_role: "admin"` — the BARE
