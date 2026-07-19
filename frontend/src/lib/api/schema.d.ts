@@ -483,6 +483,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/assignments/{assignment_id}/roster": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Submission Roster */
+        get: operations["get_submission_roster_assignments__assignment_id__roster_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/assignments/{assignment_id}/my-submission": {
         parameters: {
             query?: never;
@@ -638,6 +655,32 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * AssignmentRoster
+         * @description The teacher's roster-diff view: every org member cross-referenced against existing
+         *     submissions, split into who HAS and who HASN'T submitted. Counts are precomputed so a
+         *     client needn't re-derive them. `submitted` may include an ex-member who submitted then
+         *     left the org (they no longer appear in Clerk's member list) — surfaced so their result
+         *     isn't silently dropped; such rows are counted in `submitted_count` but never in
+         *     `total_members` (which reflects current Clerk membership only).
+         */
+        AssignmentRoster: {
+            /**
+             * Assignment Id
+             * Format: uuid
+             */
+            assignment_id: string;
+            /** Total Members */
+            total_members: number;
+            /** Submitted Count */
+            submitted_count: number;
+            /** Not Submitted Count */
+            not_submitted_count: number;
+            /** Submitted */
+            submitted: components["schemas"]["RosterMember"][];
+            /** Not Submitted */
+            not_submitted: components["schemas"]["RosterMember"][];
         };
         /**
          * AssignmentSubmissionCreate
@@ -1042,6 +1085,22 @@ export interface components {
         ReviewRequest: {
             /** Grade */
             grade: number;
+        };
+        /**
+         * RosterMember
+         * @description One person on an assignment's roster — a Clerk org member, plus whether they've
+         *     submitted and (if so) their score/timestamp. `submitted=False` rows carry no
+         *     score/completed_at; `submitted=True` rows carry the values from their submission.
+         */
+        RosterMember: {
+            /** User Id */
+            user_id: string;
+            /** Submitted */
+            submitted: boolean;
+            /** Score */
+            score?: number | null;
+            /** Completed At */
+            completed_at?: string | null;
         };
         /** SourceChunk */
         SourceChunk: {
@@ -2182,6 +2241,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssignmentSubmissionRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_submission_roster_assignments__assignment_id__roster_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assignment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentRoster"];
                 };
             };
             /** @description Validation Error */

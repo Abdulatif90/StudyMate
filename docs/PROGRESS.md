@@ -2312,9 +2312,35 @@ frontends already shipped.
       time (Clerk members diffed against existing `AssignmentSubmission` rows), not stored.
       **Blocker (flagged for the end-of-project pass, `blockers_deferred_to_end.md`):**
       going live needs the user's real Clerk **Secret Key** in `backend/.env`
-      (`CLERK_SECRET_KEY=sk_...`). **Frontend is a follow-up increment** — this is
-      backend-only; 3c's teacher view still shows only existing submissions until the UI is
-      wired to `/roster`.
+      (`CLERK_SECRET_KEY=sk_...`).
+    - **Roster diff frontend — DONE** (2026-07-20). Wires `GET /assignments/{id}/roster`
+      into the teacher's existing submissions section on `/assignments`: expanding an
+      assignment now fetches the roster (`useQuery`, `enabled: isTeacher && !!expandedId`,
+      same pattern as `submissionsQuery`) alongside the existing submissions list, in a
+      second bordered section showing a "N of M submitted" summary plus a **Not submitted**
+      list and a **Submitted** list (with score). Opaque Clerk `user_id`s are resolved to
+      display names client-side via `useOrganization({ memberships: { pageSize: 100 } })`
+      (already available, no new backend call) — `lib/rosterMemberName.ts`
+      (`resolveMemberName`, unit-tested) matches a roster member's `user_id` against
+      `publicUserData.userId` and prefers full name → identifier → a shortened id, so an
+      unresolvable id (membership list not yet loaded, or an ex-member who submitted then
+      left the org, per the roster's own documented contract) never blocks the UI.
+      **Graceful states**, matching FRONTEND.md's toast-vs-inline rule (this is a standing
+      capability gap, not a transient failure): a thrown `RosterFetchError` carries the real
+      HTTP status through React Query; `lib/rosterStatus.ts` (`classifyRosterError`,
+      unit-tested) maps 503 (Clerk not configured) to a quiet "Roster unavailable" note and
+      502 (upstream Clerk failure) — plus anything else — to a brief "Couldn't load roster"
+      note, always inline, never a toast; the submissions list above renders regardless.
+      Typed client regenerated against the live backend (`AssignmentRoster`/`RosterMember`
+      + the `/roster` path now in `schema.d.ts`). i18n: 7 new `Assignments.roster*`/
+      `notSubmittedLabel`/`submittedLabel` keys added to all 4 locales via targeted anchored
+      edits (`scoreLabel`/`noSubmissionsYet`/`Common.loading` reused where the copy already
+      fit), `messages.test.ts` parity green. Student view, the create form, delete, and the
+      graded-quiz flow are untouched. Frontend: **233 passed** (55 files, +2 new:
+      `rosterMemberName.test.ts`, `rosterStatus.test.ts`), `tsc --noEmit` clean, `eslint`
+      clean. **Phase 5's roster feature is now fully done end-to-end** (backend + teacher
+      UI) — not yet browser-verified (standing no-browser gap, batched to the user's
+      project-end pass per `blockers_deferred_to_end.md`).
     - **Increment 4a — server-graded quiz attempts + auto-complete linked assignments
       (backend) — DONE** (2026-07-20; see WORKLOG "Teams: server-graded quiz attempts").
       Closes the "Auto-grading / quiz-attempt linkage" TODO: 3b's self-reported `score` is
@@ -2392,7 +2418,9 @@ frontends already shipped.
   active-item highlighting, theme toggle), and the confirm-dialog/toast/subject-delete
   flows (noted across several increments, never yet done — no browser available in this
   environment). Now also includes the new `/assignments` page (increment 3c): teacher
-  create/delete/view-submissions, student mark-complete, and the no-active-org empty state.
+  create/delete/view-submissions, student mark-complete, and the no-active-org empty state
+  — plus the roster section (increment above): "N of M submitted", the Not
+  submitted/Submitted name lists, and the 503/502 graceful inline notes.
 
 ## Blockers / needs from user
 - ~~Confirm Clerk Organizations config (Phase 5 org foundation)~~ **RESOLVED —

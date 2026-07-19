@@ -21,10 +21,24 @@ import { canCreateAssignment, canDeleteAssignment } from "@/lib/assignmentPermis
 import { assignmentQuizStatus } from "@/lib/assignmentQuizStatus";
 import { dueStatus } from "@/lib/assignmentDueDate";
 import { orgCapability } from "@/lib/orgRole";
+import { resolveMemberName, type RosterMembershipLike } from "@/lib/rosterMemberName";
+import { classifyRosterError } from "@/lib/rosterStatus";
 
 type Assignment = components["schemas"]["AssignmentRead"];
 type Submission = components["schemas"]["AssignmentSubmissionRead"];
+type Roster = components["schemas"]["AssignmentRoster"];
 type Translate = ReturnType<typeof useTranslations>;
+
+/** Thrown by the roster query so the render layer can classify 503 (Clerk unconfigured)
+ * vs. 502 (upstream Clerk failure) vs. any other failure without a toast — see
+ * `classifyRosterError` / FRONTEND.md's toast-vs-inline rule. */
+class RosterFetchError extends Error {
+  status: number;
+  constructor(status: number) {
+    super(`Roster fetch failed with status ${status}`);
+    this.status = status;
+  }
+}
 
 const selectClassName =
   "h-10 rounded-lg border border-border bg-background px-2.5 text-sm text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50";
@@ -58,6 +72,8 @@ function TeacherAssignmentCard({
   expanded,
   onToggleSubmissions,
   submissionsQuery,
+  rosterQuery,
+  getMemberName,
   t,
 }: {
   assignment: Assignment;
@@ -72,6 +88,12 @@ function TeacherAssignmentCard({
     isError: boolean;
     data: Submission[] | undefined;
   } | null;
+  rosterQuery: {
+    isLoading: boolean;
+    data: Roster | undefined;
+    errorStatus: number | undefined;
+  } | null;
+  getMemberName: (userId: string) => string;
   t: Translate;
 }) {
   return (
@@ -135,6 +157,82 @@ function TeacherAssignmentCard({
                 </li>
               ))}
             </ul>
+          </div>
+        )}
+
+        {expanded && rosterQuery && (
+          <div className="rounded-lg border border-border p-3">
+            <p className="mb-2 text-xs font-medium text-muted-foreground">
+              {t("Assignments.rosterLabel")}
+            </p>
+            {rosterQuery.isLoading && (
+              <p className="text-sm text-muted-foreground">{t("Common.loading")}</p>
+            )}
+            {!rosterQuery.isLoading && rosterQuery.errorStatus != null && (
+              <p className="text-sm text-muted-foreground">
+                {classifyRosterError(rosterQuery.errorStatus) === "unavailable"
+                  ? t("Assignments.rosterUnavailable")
+                  : t("Assignments.rosterLoadError")}
+              </p>
+            )}
+            {rosterQuery.data && (
+              <div className="flex flex-col gap-3">
+                <p className="text-sm text-foreground">
+                  {t("Assignments.rosterSummary", {
+                    submitted: rosterQuery.data.submitted_count,
+                    total: rosterQuery.data.total_members,
+                  })}
+                </p>
+                <div className="flex flex-col gap-3 sm:flex-row sm:gap-4">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      {t("Assignments.notSubmittedLabel")}
+                    </p>
+                    {rosterQuery.data.not_submitted.length === 0 ? (
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {t("Assignments.rosterAllSubmitted")}
+                      </p>
+                    ) : (
+                      <ul className="mt-1 flex flex-col gap-1">
+                        {rosterQuery.data.not_submitted.map((member) => (
+                          <li key={member.user_id} className="truncate text-sm text-foreground">
+                            {getMemberName(member.user_id)}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      {t("Assignments.submittedLabel")}
+                    </p>
+                    {rosterQuery.data.submitted.length === 0 ? (
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {t("Assignments.noSubmissionsYet")}
+                      </p>
+                    ) : (
+                      <ul className="mt-1 flex flex-col gap-1">
+                        {rosterQuery.data.submitted.map((member) => (
+                          <li
+                            key={member.user_id}
+                            className="flex items-center justify-between gap-2 text-sm"
+                          >
+                            <span className="truncate text-foreground">
+                              {getMemberName(member.user_id)}
+                            </span>
+                            {member.score != null && (
+                              <span className="shrink-0 text-xs text-muted-foreground">
+                                {t("Assignments.scoreLabel", { score: member.score })}
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </CardContent>
@@ -226,9 +324,13 @@ export default function AssignmentsPage() {
   const confirm = useConfirm();
   const t = useTranslations();
   const { user } = useUser();
-  const { isLoaded, organization, membership } = useOrganization();
+  const { isLoaded, organization, membership, memberships } = useOrganization({
+    memberships: { pageSize: 100 },
+  });
   const capability = orgCapability(membership?.role);
   const isTeacher = capability === "teacher";
+  const membershipList: RosterMembershipLike[] = memberships?.data ?? [];
+  const getMemberName = (userId: string) => resolveMemberName(userId, membershipList);
 
   const [title, setTitle] = useState("");
   const [subjectId, setSubjectId] = useState("");
@@ -304,6 +406,23 @@ export default function AssignmentsPage() {
       return data;
     },
     enabled: isTeacher && !!expandedId,
+  });
+
+  // Who HAS vs HASN'T submitted, diffed server-side against the org's Clerk member list.
+  // Fetched alongside submissionsQuery when a teacher expands an assignment. A 503 (Clerk
+  // not configured) or 502 (upstream Clerk failure) is a graceful inline note, not a toast
+  // or crash — the submissions list above still renders regardless (see rosterQuery.error).
+  const rosterQuery = useQuery({
+    queryKey: ["assignments", expandedId, "roster"],
+    queryFn: async () => {
+      const { data, error, response } = await api.GET("/assignments/{assignment_id}/roster", {
+        params: { path: { assignment_id: expandedId as string } },
+      });
+      if (error) throw new RosterFetchError(response.status);
+      return data;
+    },
+    enabled: isTeacher && !!expandedId,
+    retry: false,
   });
 
   const createAssignment = useMutation({
@@ -566,6 +685,21 @@ export default function AssignmentsPage() {
                             }
                           : null
                       }
+                      rosterQuery={
+                        expanded
+                          ? {
+                              isLoading: rosterQuery.isLoading,
+                              data: rosterQuery.data,
+                              errorStatus:
+                                rosterQuery.error instanceof RosterFetchError
+                                  ? rosterQuery.error.status
+                                  : rosterQuery.isError
+                                    ? 0
+                                    : undefined,
+                            }
+                          : null
+                      }
+                      getMemberName={getMemberName}
                       t={t}
                     />
                   </li>

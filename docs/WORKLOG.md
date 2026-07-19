@@ -2,6 +2,70 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-20 — Teams: assignment roster UI — who has/hasn't submitted (Phase 5)
+Frontend follow-up to the roster-diff backend increment above: surfaces
+`GET /assignments/{id}/roster` in the teacher's existing `/assignments` submissions view.
+Commit: `feat(teams): assignment roster UI — who has/hasn't submitted (Phase 5)`.
+
+- **Step 0 verified before writing UI code.** Regenerated the typed client against the
+  live backend (`npm run generate-api-types`, backend already running on :8000) — confirmed
+  the real shape in `schema.d.ts`: `AssignmentRoster = { assignment_id, total_members,
+  submitted_count, not_submitted_count, submitted: RosterMember[], not_submitted:
+  RosterMember[] }`, `RosterMember = { user_id, submitted, score?, completed_at? }`. The
+  precomputed counts meant no client-side "N of M" derivation was needed at all.
+- **Name resolution — no new backend call.** The roster returns opaque Clerk `user_id`s;
+  confirmed `useOrganization({ memberships: { pageSize: 100 } })` (Clerk SDK,
+  `@clerk/shared`'s `OrganizationMembershipResource`) already exposes `publicUserData.{
+  userId, identifier, firstName, lastName}` for every org member, so no extra roundtrip was
+  needed. `src/lib/rosterMemberName.ts` (`resolveMemberName`) is a pure helper — matches a
+  `user_id` against the loaded membership list and prefers full name → identifier → a
+  shortened id (`user_2c9…`) — kept structurally typed (`RosterMembershipLike`, not a direct
+  Clerk SDK import) to stay dependency-free, matching this codebase's existing
+  `assignmentQuizStatus.ts`/`MinimalSubmission` pattern. `pageSize: 100` is a known,
+  accepted simplification (no infinite pagination) — fine for a portfolio project's org
+  sizes; falls back to the shortened id if a member isn't in the loaded page.
+- **`src/app/(app)/assignments/page.tsx`.** Added a `rosterQuery` (`useQuery`, `enabled:
+  isTeacher && !!expandedId`, `retry: false` — a 503/502 won't resolve by retrying) fetched
+  alongside the existing `submissionsQuery` when a teacher expands an assignment. Render:
+  a second bordered section (same visual weight as the existing submissions box) showing
+  "{submitted} of {total} submitted", then two stacked-on-mobile/side-by-side-on-`sm`+
+  groups — **Not submitted** (names only) and **Submitted** (name + score when present).
+  Existing submissions list, student view, create form, delete, and the graded-quiz flow
+  are all untouched.
+- **Graceful states, not a toast.** `RosterFetchError` (a small `Error` subclass carrying
+  the real HTTP status) is thrown from the query so the render layer can distinguish
+  outcomes without losing the status code openapi-fetch's parsed `error` body doesn't
+  carry. `src/lib/rosterStatus.ts` (`classifyRosterError`) is the pure classifier: 503 →
+  "Roster unavailable" (Clerk not configured — a standing capability gap), 502 or anything
+  else → "Couldn't load roster" — both a quiet inline note per FRONTEND.md's toast-vs-inline
+  rule (§3.2), never an error toast, never blocking the submissions list above it from
+  rendering.
+- **i18n.** 7 new keys (`Assignments.rosterLabel`, `rosterSummary`, `rosterUnavailable`,
+  `rosterLoadError`, `notSubmittedLabel`, `submittedLabel`, `rosterAllSubmitted`) added to
+  `messages/en.json` and mirrored into `uz`/`ko`/`ru` via targeted anchored edits (not a
+  full JSON round-trip); reused `Assignments.scoreLabel`/`noSubmissionsYet` and
+  `Common.loading` where existing copy already fit exactly. `messages.test.ts` parity green.
+- **Tests.** Two new pure-helper suites: `rosterMemberName.test.ts` (6: full name, first-name-
+  only, identifier fallback, shortened-id fallback for an unmatched/null/undefined
+  membership list, missing `publicUserData`) and `rosterStatus.test.ts` (4: 503, 502, other
+  statuses, undefined). The page itself follows this codebase's established
+  page-untested/helpers-tested convention (tsc/eslint, no browser here).
+- **Verified:** `npm run test` → **233 passed** (55 files, +2 new suites, +10 tests over the
+  prior 223/53). `npx tsc --noEmit` → clean. `npx eslint .` → clean (no output). `next build`
+  intentionally NOT run per this session's instructions (dev server was live on :3000).
+- **Deviation from the task's literal ask, flagged:** the task said "Show submitted members
+  with their score" as part of the SAME compact roster summary as "Not submitted" — rather
+  than folding this into the pre-existing raw submissions list (which shows unresolved
+  `owner_id`s), a distinct second bordered section was added below it, so the existing,
+  already-tested submissions block stays completely untouched. Net effect: the teacher now
+  sees submissions twice in different forms (raw list, then the resolved-name roster) when
+  expanded — accepted as the simpler, lower-risk option; a follow-up could fold the raw
+  list into the roster's own "Submitted" group if the duplication proves undesirable.
+- **Still owed:** no browser available in this environment — batched into the standing
+  no-browser gap (`docs/PROGRESS.md`, `blockers_deferred_to_end.md`). Also inherits the
+  backend's own blocker: a real `CLERK_SECRET_KEY` is needed in `backend/.env` before the
+  roster returns real data instead of a 503, in whichever environment goes live.
+
 ## 2026-07-20 — Teams: assignment submission roster via Clerk org members (Phase 5)
 The teacher's submissions view could only list submissions that EXIST — it couldn't show
 WHO HASN'T submitted, because our DB doesn't store org membership (Clerk owns it, ADR #9).
