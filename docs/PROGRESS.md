@@ -11,12 +11,12 @@ a per-subject page and an overall `/dashboard`. `app/modules/billing/` holds an 
 layer — Free/Pro/Business plans and enforced usage caps — plus the Polar wiring that feeds
 it: `POST /billing/checkout` (authenticated) and a public, signature-verified
 `POST /billing/webhook` whose *only* job is upserting one `UserPlan` row. The entitlement
-layer itself stays provider-agnostic. **Nothing is blocked on keys any more**; the one open
-item is confirming the webhook against a real Polar delivery (needs a `polar listen`
-tunnel — see Blockers), and Polar is sandbox-only so far. The **billing frontend** is now
+layer itself stays provider-agnostic. **Nothing is blocked on keys any more**; the Polar webhook has now been
+**live-verified against a real Polar delivery** (ngrok tunnel + a Polar sandbox dashboard
+endpoint + a real sandbox checkout that flipped the user's plan Free→Pro end-to-end — see
+WORKLOG), and Polar is sandbox-only so far. The **billing frontend** is now
 done too — a `/billing` page (plan + usage meters + upgrade→Polar-checkout) plus a 402
-upgrade prompt on subject-create — leaving only the browser click-through and the real
-webhook delivery open. Phase 1–3 recap: Subjects, documents
+upgrade prompt on subject-create — leaving only the browser click-through open. Phase 1–3 recap: Subjects, documents
 (R2 + Inngest ingest with auto-summary, deletable), hybrid Ask/RAG (Postgres FTS + vector
 + RRF + Cohere Rerank, streaming), Conversations, Quiz (tool-use generation + full UI),
 Flashcards + SM-2 (tool-use generation + full review-session UI) — all with their own
@@ -2072,16 +2072,22 @@ frontends already shipped.
   Do-Not-Track respected. Both identify by Clerk user id only, never email/name.
   **Real credentials already exist** (found live in `backend/.env`/`frontend/.env`
   during this work — not added by the builder): backend `SENTRY_DSN` is real and
-  correctly named; frontend has `NEXT_PUBLIC_POSTHOG_KEY` set (real) but
-  **`NEXT_PUBLIC_POSTHOG_HOST` is malformed** (a PostHog session-replay page URL, not
-  an API host — see Blockers) and frontend Sentry's var is named plain `SENTRY_DSN`
-  (server-only convention) rather than `NEXT_PUBLIC_SENTRY_DSN`, so frontend Sentry
-  currently stays off until renamed. **Live capture is UNVERIFIED** — no error was
-  deliberately sent to Sentry, no event deliberately sent to PostHog; verified only at
-  the code/test level (mocked SDKs, env-gating proven both set and unset, full
+  correctly named. The two frontend env issues found live — `NEXT_PUBLIC_POSTHOG_HOST`
+  malformed (a PostHog session-replay page URL, not an API host) and Sentry's var named
+  plain `SENTRY_DSN` instead of `NEXT_PUBLIC_SENTRY_DSN` — are now **RESOLVED, fixed by
+  the user**: `NEXT_PUBLIC_SENTRY_DSN` is correctly named (frontend Sentry can
+  initialize) and `NEXT_PUBLIC_POSTHOG_HOST` is now `https://us.i.posthog.com`, a real
+  API host. **Live capture is still unverified** (small remaining item, distinct from
+  the now-fixed env config) — no error was deliberately sent to Sentry, no event
+  deliberately sent to PostHog and confirmed in their dashboards; verified only at the
+  code/test level (mocked SDKs, env-gating proven both set and unset, full
   backend+frontend suites green, clean `next build`).
-- **Confirm the Polar webhook against real delivery** — the one gap in the payment path;
-  see "Blockers". Everything else in the payment path is live-verified.
+- **Polar webhook — RESOLVED, LIVE-VERIFIED against a real Polar delivery** (see WORKLOG
+  "Live verification: Polar webhook, observability env, Clerk orgs" entry). ngrok tunnel +
+  a Polar sandbox dashboard endpoint + real webhook deliveries from Polar's own servers,
+  signature-verified 200s; a real sandbox checkout (test card) drove a subscription event
+  that flipped the user's plan Free→Pro end-to-end. Still sandbox-only — see the separate
+  "Polar is SANDBOX-only so far" item below, unchanged.
 - **Browser pass on the billing frontend** — the `/billing` page, the checkout→Polar
   redirect, and the `?upgraded=1` return-and-refetch, plus the four 402 upgrade prompts
   (subjects/documents/quiz/flashcards) all still want a manual click-through with real
@@ -2178,8 +2184,14 @@ frontends already shipped.
     assign material/quizzes to students, view student progress across the org.
   - **Admin / billing seats** — org-level plan + per-seat billing (Polar), seat counts,
     admin management. Ties into the existing entitlement layer.
-  - **Live Clerk-config confirmation** (see Blockers) + a real-browser pass of the
-    create-org/invite/switch flow.
+  - **Live Clerk-config confirmation + real-browser pass — RESOLVED** (see WORKLOG
+    "Live verification: Polar webhook, observability env, Clerk orgs" entry): the user
+    enabled Organizations in Clerk, created an organization from the app, invited a
+    member, the member accepted, and the member showed up — org creation, roles,
+    invitations, and the `<OrganizationSwitcher/>`/`/team` UI are all confirmed live.
+    Remaining: the backend's `get_org_context` reading org claims from the JWT is still
+    only exercised by tests, not yet observed through a real org-scoped endpoint (there
+    is none until content org-scoping lands above) — confirm at runtime once that ships.
 - Still owed from earlier: a real-browser click-through of the async upload/poll/delete,
   quiz, hybrid-Ask, flashcards, progress-dashboard, app-shell nav (mobile sheet,
   active-item highlighting, theme toggle), and the confirm-dialog/toast/subject-delete
@@ -2187,43 +2199,30 @@ frontends already shipped.
   environment).
 
 ## Blockers / needs from user
-- **Confirm Clerk Organizations config (Phase 5 org foundation)** — the code is built and
-  defensively correct (no active org = a valid `None,None` state, so nothing breaks if orgs
-  are off), but these are live-instance settings that can't be verified from this offline
-  environment (no dashboard/token access; builder must not touch `.env`/Clerk config):
-  1. **Enable Organizations** in the Clerk dashboard if not already on — otherwise the
-     `<OrganizationSwitcher/>`/`/team` UI has nothing to create/switch and the token never
-     carries org claims.
-  2. **Confirm the session token carries org claims.** Clerk v5+ default sessions include
-     them automatically when an org is active (no custom JWT template needed). If a **custom**
-     JWT template is configured, add the org claims to it. Backend reads either shape:
-     v1 flat `org_id`/`org_role`, or v2 nested `o.id`/`o.rol`.
-  3. **Confirm the org roles** are the defaults `org:admin` / `org:member`. The chosen mapping
-     is `org:admin`→teacher, `org:member`→student (ADR #9). If custom roles were created,
-     revisit `TEACHER` role keys in `backend/app/core/org.py` + `frontend/src/lib/orgRole.ts`.
-- **Fix two observability env vars, from the user** (both discovered live in `.env`
-  during the Sentry/PostHog increment, neither touched by the builder):
-  1. `frontend/.env`'s `NEXT_PUBLIC_POSTHOG_HOST` is set to a PostHog *session-replay
-     page* URL (`https://us.posthog.com/project/.../replay/...`), not an API host.
-     posthog-js will POST events at that literal URL and fail. Should be
-     `https://us.i.posthog.com` (US cloud), `https://eu.i.posthog.com` (EU cloud), or
-     a self-hosted instance's own URL.
-  2. `frontend/.env` has a real Sentry DSN under the key `SENTRY_DSN` (no
-     `NEXT_PUBLIC_` prefix). The frontend code reads `NEXT_PUBLIC_SENTRY_DSN` (see
-     `src/instrumentation.ts`/`instrumentation-client.ts`) — rename the key (Sentry
-     DSNs aren't secret, so the public prefix is fine) to turn frontend Sentry on.
-  Backend `SENTRY_DSN` is already correctly named and will pick up real errors once a
-  real one occurs — untested end-to-end (no error was deliberately triggered against
-  the real DSN).
-- **Verify the webhook against real Polar delivery** — the only open item on billing.
-  Polar has never actually delivered an event to `/billing/webhook`; everything else in
-  the flow is live-verified (see the Polar increment above). Needs, from the user:
-  1. `polar listen http://localhost:8000/billing/webhook` (Polar's own CLI tunnel — not
-     installed in this environment), then a real sandbox checkout paid with a test card.
-  2. **Confirm which webhook secret is in play**: `polar listen` prints its own secret,
-     which may DIFFER from the dashboard endpoint's. `POLAR_WEBHOOK_SECRET` in `.env`
-     must match whichever is actually delivering, or every event 403s.
-  A dashboard webhook endpoint pointing at a public URL would work equally well.
+- ~~Confirm Clerk Organizations config (Phase 5 org foundation)~~ **RESOLVED —
+  LIVE-VERIFIED in the browser** (see WORKLOG "Live verification: Polar webhook,
+  observability env, Clerk orgs" entry). The user enabled Organizations in Clerk,
+  created an organization from the app, invited a member, the member accepted, and the
+  member showed up — org creation, roles, invitations, and the
+  `<OrganizationSwitcher/>`/`/team` UI are all confirmed live with the default
+  `org:admin`/`org:member` roles (matches ADR #9's chosen mapping, no revisit needed).
+  Small remaining item: the backend's `get_org_context` reading org claims from the JWT
+  is still only exercised by tests, not yet observed through a real org-scoped endpoint
+  (there is none until Phase 5's content-org-scoping increment lands) — confirm at
+  runtime once that ships.
+- ~~Fix two observability env vars~~ **RESOLVED, fixed by the user** (both were
+  discovered live in `.env` during the Sentry/PostHog increment, neither touched by the
+  builder):
+  1. `frontend/.env`'s `NEXT_PUBLIC_POSTHOG_HOST` is now `https://us.i.posthog.com`, a
+     real API host (was a PostHog *session-replay page* URL that posthog-js would have
+     POSTed events at and failed).
+  2. `frontend/.env`'s Sentry DSN is now under the correctly-named
+     `NEXT_PUBLIC_SENTRY_DSN` key (was the server-only `SENTRY_DSN`, so frontend Sentry
+     couldn't initialize) — frontend Sentry can now turn on.
+  Backend `SENTRY_DSN` was already correctly named. Small remaining item: live capture
+  itself hasn't been deliberately exercised end-to-end — no error was intentionally sent
+  to Sentry, no event to PostHog and confirmed in their dashboards; this is distinct from
+  the (now-fixed) env config.
 - **Clean up the old one-time Polar products** (FREE $0 / PRO $20 / Business $100, all
   `recurring_interval: None`). They're superseded by the new recurring monthly Pro/Business
   and were deliberately left untouched. They are not wired to anything, so they're inert —

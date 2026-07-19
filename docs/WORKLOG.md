@@ -2,6 +2,38 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-19 — Live verification: Polar webhook, observability env, Clerk orgs
+Docs-only housekeeping: three previously-open blockers were confirmed live by the user in
+a real session and are now recorded as resolved in `docs/PROGRESS.md`. No code, tests, or
+`.env` files changed — see `git diff --stat` on this commit.
+
+- **Polar webhook — now LIVE-VERIFIED via real Polar delivery.** Previously the only open
+  billing item: an ngrok tunnel exposed the local backend, a webhook endpoint was
+  registered in the Polar SANDBOX dashboard, and real webhook deliveries arrived from
+  Polar's own servers (external IP) to `POST /billing/webhook`, returning **200 OK**
+  (signature verified — not 403). A real sandbox checkout (test card) drove a subscription
+  event that flipped the user's plan from Free to Pro end-to-end — the entitlement
+  actually changed, not just a 200. Moved out of the open Blockers list. Still
+  SANDBOX-only — going to production still needs a prod token/products/secret + payout
+  setup, unchanged.
+- **Observability env vars — both resolved.** `frontend/.env`'s `NEXT_PUBLIC_SENTRY_DSN`
+  is now correctly named (frontend Sentry can initialize) and `NEXT_PUBLIC_POSTHOG_HOST`
+  is now a real API host (`https://us.i.posthog.com`), not the old session-replay URL.
+  Small remaining item, kept open: live capture itself hasn't been deliberately exercised
+  end-to-end (no error intentionally sent to Sentry, no event to PostHog and confirmed in
+  their dashboards) — distinct from the now-fixed env config.
+- **Clerk Organizations — verified working in the browser.** The user enabled
+  Organizations in Clerk, created an organization from the app, invited a member, the
+  member accepted, and the member showed up — org creation, roles, invitations, and the
+  `<OrganizationSwitcher/>`/`/team` UI are all confirmed live. Small remaining item, kept
+  open: the backend's `get_org_context` reading org claims from the JWT is still only
+  exercised by tests, not yet observed through a real org-scoped endpoint (there isn't one
+  until Phase 5's content-org-scoping increment lands).
+- Everything else in `docs/PROGRESS.md`'s Blockers list is unchanged: cleaning up the old
+  one-time Polar products, confirming/adjusting `billing/service.LIMITS`, and the Polar
+  production migration all stay open.
+- Verified nothing broke: backend `pytest` and `ruff check` both green (no source changed).
+
 ## 2026-07-19 — Teams: org foundation via Clerk Organizations (Phase 5, increment 1)
 Phase 5 (Business/Teams B2B), **increment 1 of several: org foundation ONLY**. Two fixed
 product decisions: (1) orgs/members/roles/invites are backed by **Clerk Organizations**,
