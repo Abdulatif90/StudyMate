@@ -24,6 +24,7 @@ from sqlmodel import Session, SQLModel, create_engine
 
 from app.core import r2_client
 from app.core.config import get_settings
+from app.core.org import OrgContext
 from app.modules.documents import service as documents_service
 from app.modules.documents.embedding import EMBEDDING_DIM
 from app.modules.documents.models import Document, DocumentChunk, DocumentStatus
@@ -142,7 +143,9 @@ def test_search_chunks_only_returns_matching_owner_and_subject():
             text="wrong owner",
         )
 
-        results = documents_service.search_chunks(session, _OWNER, subject_id, "anything")
+        results = documents_service.search_chunks(
+            session, _OWNER, OrgContext(), subject_id, "anything"
+        )
 
         assert [chunk.text for chunk, _score in results] == ["mine"]
 
@@ -160,7 +163,9 @@ def test_search_chunks_excludes_chunks_without_embeddings():
             embedding=None,
         )
 
-        results = documents_service.search_chunks(session, _OWNER, subject_id, "anything")
+        results = documents_service.search_chunks(
+            session, _OWNER, OrgContext(), subject_id, "anything"
+        )
 
         assert results == []
 
@@ -178,7 +183,9 @@ def test_search_chunks_respects_top_k():
                 text=f"chunk {i}",
             )
 
-        results = documents_service.search_chunks(session, _OWNER, subject_id, "anything", top_k=2)
+        results = documents_service.search_chunks(
+            session, _OWNER, OrgContext(), subject_id, "anything", top_k=2
+        )
 
         assert len(results) == 2
 
@@ -186,7 +193,7 @@ def test_search_chunks_respects_top_k():
 def test_search_chunks_raises_for_missing_subject():
     with Session(_engine) as session:
         with pytest.raises(documents_service.SubjectNotFoundError):
-            documents_service.search_chunks(session, _OWNER, uuid.uuid4(), "anything")
+            documents_service.search_chunks(session, _OWNER, OrgContext(), uuid.uuid4(), "anything")
 
 
 # --- _rerank_candidates (pure logic over an already-fetched list — no DB/dialect
@@ -295,6 +302,7 @@ def test_search_chunks_orders_by_relevance_via_real_rerank():
             results = documents_service.search_chunks(
                 session,
                 owner_id,
+                OrgContext(),
                 subject.id,
                 "How do plants use sunlight to make energy?",
                 top_k=3,
@@ -364,7 +372,7 @@ def test_hybrid_search_surfaces_exact_keyword_match():
 
         try:
             results = documents_service.search_chunks(
-                session, owner_id, subject.id, "ISO-9001 certification", top_k=2
+                session, owner_id, OrgContext(), subject.id, "ISO-9001 certification", top_k=2
             )
 
             assert results, "expected at least one result"

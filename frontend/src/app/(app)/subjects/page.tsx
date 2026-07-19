@@ -1,5 +1,6 @@
 "use client";
 
+import { useOrganization } from "@clerk/nextjs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
@@ -8,6 +9,7 @@ import { useConfirm } from "@/components/confirm-provider";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { SubjectCard } from "@/components/subject-card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,14 +20,20 @@ import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { UsageHint } from "@/components/usage-hint";
 import { captureEvent } from "@/lib/analytics";
 import { useApiClient } from "@/lib/api/useApiClient";
+import { orgCapability } from "@/lib/orgRole";
 import { parsePlanLimitError, type PlanLimitError } from "@/lib/planLimitError";
 import { usageMeters } from "@/lib/planLimits";
+import { canWriteSharedSubject, isOrgSubject } from "@/lib/subjectSharing";
 
 export default function SubjectsPage() {
   const api = useApiClient();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
   const t = useTranslations();
+  // The caller's role in their ACTIVE org decides whether they can write shared
+  // subjects — the backend 403/404 is the real guard, this just hides doomed actions.
+  const { membership } = useOrganization();
+  const capability = orgCapability(membership?.role);
   const [name, setName] = useState("");
   const [limitError, setLimitError] = useState<PlanLimitError | null>(null);
 
@@ -168,15 +176,28 @@ export default function SubjectsPage() {
         <EmptyState icon={BookOpen} title={t("Subjects.empty")} />
       )}
       <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {subjectsQuery.data?.map((subject) => (
+        {subjectsQuery.data?.map((subject) => {
+          const shared = isOrgSubject(subject);
+          const canWrite = canWriteSharedSubject(subject.org_id, capability);
+          return (
           <li key={subject.id}>
             <SubjectCard
               href={`/subjects/${subject.id}`}
               name={subject.name}
+              badge={
+                shared ? (
+                  <Badge variant="secondary" className="shrink-0">
+                    {t("Subjects.sharedBadge")}
+                  </Badge>
+                ) : undefined
+              }
               meta={t("Subjects.createdOn", {
                 date: new Date(subject.created_at).toLocaleDateString(),
               })}
               action={
+                // A member viewing a shared org subject they can't write gets no delete
+                // button — the backend still enforces it (403), this is UX only.
+                canWrite ? (
                 <Button
                   variant="destructive"
                   size="icon"
@@ -201,10 +222,12 @@ export default function SubjectsPage() {
                 >
                   <Trash2 className="size-3.5" />
                 </Button>
+                ) : undefined
               }
             />
           </li>
-        ))}
+          );
+        })}
       </ul>
     </div>
   );

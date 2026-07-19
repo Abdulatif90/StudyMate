@@ -13,8 +13,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 
-from app.core.auth import get_current_user_id
+from app.core.auth import get_current_user_id, get_org_context
 from app.core.db import get_session
+from app.core.org import OrgContext
 from app.modules.ask import service
 from app.modules.ask.schemas import (
     AskRequest,
@@ -35,10 +36,16 @@ def ask_question(
     data: AskRequest,
     session: Session = Depends(get_session),
     owner_id: str = Depends(get_current_user_id),
+    org_ctx: OrgContext = Depends(get_org_context),
 ) -> AskResponse:
     try:
         return service.ask_question(
-            session, owner_id, subject_id, data.question, conversation_id=data.conversation_id
+            session,
+            owner_id,
+            subject_id,
+            data.question,
+            conversation_id=data.conversation_id,
+            org_ctx=org_ctx,
         )
     except SubjectNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Subject not found") from exc
@@ -52,14 +59,20 @@ def ask_question_stream(
     data: AskRequest,
     session: Session = Depends(get_session),
     owner_id: str = Depends(get_current_user_id),
+    org_ctx: OrgContext = Depends(get_org_context),
 ) -> StreamingResponse:
-    # Ownership/conversation validation happens here, as an ordinary call — NOT
+    # Access/conversation validation happens here, as an ordinary call — NOT
     # inside the generator — because a StreamingResponse's status code is locked in
     # the moment its body starts iterating, so a 404 raised from inside the
     # generator would be too late to ever reach the client as a real 404.
     try:
         context = service.prepare_ask_stream(
-            session, owner_id, subject_id, data.question, conversation_id=data.conversation_id
+            session,
+            owner_id,
+            subject_id,
+            data.question,
+            conversation_id=data.conversation_id,
+            org_ctx=org_ctx,
         )
     except SubjectNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Subject not found") from exc

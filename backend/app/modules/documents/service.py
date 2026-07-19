@@ -15,6 +15,7 @@ from sqlmodel import Session, delete, select
 
 from app.core import r2_client
 from app.core.inngest_client import get_inngest_client, require_event_key
+from app.core.org import OrgContext
 from app.modules.billing.service import ensure_can_upload_document
 from app.modules.documents.chunking import chunk_text
 from app.modules.documents.embedding import EmbeddingError, embed_query, embed_texts
@@ -27,8 +28,19 @@ from app.modules.documents.parsing import (
 from app.modules.documents.rerank import RerankError, rerank
 from app.modules.documents.rrf import reciprocal_rank_fusion
 from app.modules.documents.summarization import SummarizationError, summarize_document
-from app.modules.subjects.service import get_subject
+from app.modules.subjects.service import (
+    SubjectNotFoundError,
+    SubjectWriteForbiddenError,  # noqa: F401 — re-exported for existing call sites
+    get_subject,
+    require_readable_subject,
+    require_writable_subject,
+)
 from app.shared.language import DEFAULT_LANGUAGE
+
+# `SubjectNotFoundError` / `SubjectWriteForbiddenError` live in subjects.service now
+# (their natural home) but are imported above and thus remain importable from here too,
+# so the many existing call sites (`from app.modules.documents.service import
+# SubjectNotFoundError`, `service.SubjectNotFoundError`) keep working unchanged.
 
 # The Postgres text-search config the FTS arm queries with — MUST match the config the
 # `text_search_vector` generated column was built with (`simple`, see migration
@@ -47,10 +59,6 @@ RERANK_CANDIDATE_POOL = 30
 
 # Emitted by create_document, consumed by the Inngest function in documents.jobs.
 DOCUMENT_UPLOADED_EVENT = "document/uploaded"
-
-
-class SubjectNotFoundError(Exception):
-    """Raised when the given subject doesn't exist or isn't owned by the caller."""
 
 
 class UnsupportedFileTypeError(Exception):
@@ -78,11 +86,19 @@ def create_document(
     content_type: str,
     raw: bytes,
     language: str = DEFAULT_LANGUAGE,
+    org_ctx: OrgContext | None = None,
 ) -> Document:
-    """Synchronous, on the request path: validate ownership + the file, upload the
+    """Synchronous, on the request path: validate write access + the file, upload the
     bytes to R2 under an owner-scoped key, insert a `pending` Document row pointing at
     that object, and return immediately. The heavy work (parse/chunk/embed) happens
     later in `process_document`, triggered by the `document/uploaded` event.
+
+    **Write authorization** is `require_writable_subject` (the single source of truth):
+    the owner of a private subject, or a teacher/admin of the org that owns an org
+    subject. A student member of the owning org gets `SubjectWriteForbiddenError` (→
+    403) — they can read the material but not add to it — and a caller who can't even
+    read the subject gets `SubjectNotFoundError` (→ 404). The new document is owned by
+    the uploading `owner_id`.
 
     `language` (a code from `app.shared.language.SUPPORTED_LANGUAGES`) is captured
     here — the uploader's UI locale at upload time — and stored on the row so the
@@ -91,7 +107,7 @@ def create_document(
 
     Size is validated (below) *before* the R2 upload — never upload then reject.
     """
-    require_owned_subject(session, owner_id, subject_id)
+    require_writable_subject(session, owner_id, org_ctx or OrgContext(), subject_id)
 
     # Plan-limit guard before ANY work — specifically before the R2 upload below, so a
     # quota-rejected upload never costs storage or leaves an orphaned object. Raises
@@ -345,6 +361,10 @@ def sample_subject_chunk_texts(
 
 
 def list_documents(session: Session, owner_id: str, subject_id: uuid.UUID) -> list[Document]:
+    """Owner-scoped list of a subject's documents. KEPT owner-scoped (not readability-
+    scoped): used by `subjects.service.delete_subject`'s cascade, which enumerates the
+    subject OWNER's own documents. The READ path (a member browsing an org subject) uses
+    `list_documents_for_reader` instead."""
     require_owned_subject(session, owner_id, subject_id)
     return list(
         session.exec(
@@ -353,9 +373,24 @@ def list_documents(session: Session, owner_id: str, subject_id: uuid.UUID) -> li
     )
 
 
+def list_documents_for_reader(
+    session: Session, caller_id: str, org_ctx: OrgContext, subject_id: uuid.UUID
+) -> list[Document]:
+    """A subject's documents for anyone who may READ the subject (owner, or a member of
+    the org that owns it). Verifies readability first (`SubjectNotFoundError` → 404 if
+    denied, so existence never leaks), then fetches ALL of the subject's documents by
+    `subject_id` — NOT filtered by owner, since on an org subject a member reads the
+    teacher-owned documents."""
+    require_readable_subject(session, caller_id, org_ctx, subject_id)
+    return list(session.exec(select(Document).where(Document.subject_id == subject_id)))
+
+
 def get_document(
     session: Session, owner_id: str, subject_id: uuid.UUID, document_id: uuid.UUID
 ) -> Document | None:
+    """Owner-scoped single-document lookup — unchanged. Used internally (e.g.
+    `delete_document`) and by callers that specifically want owner scoping. The read
+    path uses `get_document_for_reader`."""
     return session.exec(
         select(Document).where(
             Document.id == document_id,
@@ -365,17 +400,43 @@ def get_document(
     ).first()
 
 
+def get_document_for_reader(
+    session: Session,
+    caller_id: str,
+    org_ctx: OrgContext,
+    subject_id: uuid.UUID,
+    document_id: uuid.UUID,
+) -> Document | None:
+    """One document for anyone who may READ its subject. Verifies subject-readability
+    first (raising `SubjectNotFoundError` → 404 if the subject itself is denied), then
+    fetches the document by `subject_id`+`document_id` (NOT by owner), so a member reads
+    a teacher-owned document. Returns None (→ 404) if no such document is in the
+    subject."""
+    require_readable_subject(session, caller_id, org_ctx, subject_id)
+    return session.exec(
+        select(Document).where(
+            Document.id == document_id,
+            Document.subject_id == subject_id,
+        )
+    ).first()
+
+
 def get_documents_by_ids(
-    session: Session, owner_id: str, document_ids: list[uuid.UUID]
+    session: Session, subject_id: uuid.UUID, document_ids: list[uuid.UUID]
 ) -> dict[uuid.UUID, Document]:
     """Batched lookup for callers that already have a set of document ids (e.g. the
     Ask endpoint citing sources from search_chunks results) and just need each one's
     metadata (filename, ...) — one query instead of one per document.
+
+    Scoped by `subject_id` (NOT owner): the ids come from `search_chunks` over a subject
+    the caller was already authorized to read, whose chunks (and thus documents) may be
+    owner by a teacher on an org subject. Constraining to the subject keeps the lookup
+    from ever returning a document outside the authorized subject.
     """
     if not document_ids:
         return {}
     documents = session.exec(
-        select(Document).where(Document.owner_id == owner_id, Document.id.in_(document_ids))
+        select(Document).where(Document.subject_id == subject_id, Document.id.in_(document_ids))
     ).all()
     return {document.id: document for document in documents}
 
@@ -417,7 +478,8 @@ def _rerank_candidates(
 
 def search_chunks(
     session: Session,
-    owner_id: str,
+    caller_id: str,
+    org_ctx: OrgContext,
     subject_id: uuid.UUID,
     query: str,
     top_k: int = 8,
@@ -427,11 +489,20 @@ def search_chunks(
     Returns (chunk, score) pairs, most relevant first, at most `top_k` — see
     `_rerank_candidates` for what `score` means on the reranked vs. fallback path.
 
+    **Access is subject-READABILITY, not chunk ownership.** `require_readable_subject`
+    is the single gate (raising `SubjectNotFoundError` → 404 for a caller who may not
+    read the subject — including a member of a DIFFERENT org, or one with no active org).
+    Once past it, chunks are filtered by `subject_id` ONLY, deliberately NOT by
+    `owner_id`: on an org subject the chunks belong to the teacher who uploaded the
+    material, so an owner-scoped chunk filter would return nothing for a student and
+    break retrieval entirely. The subject gate is what enforces isolation; the chunk
+    filter just scopes to the (already-authorized) subject.
+
     Both `<=>` (pgvector cosine distance) and `@@`/tsvector (full-text) are Postgres-only;
-    off it (the SQLite test engine), every tenant filter below still applies — enough to
-    unit-test owner/subject scoping — but both ranking arms are skipped (there's nothing
-    to rank or fuse), so it returns the filtered-but-unranked chunks. Real hybrid ranking
-    is verified against live Neon instead (see tests/test_search.py).
+    off it (the SQLite test engine), every filter below still applies — enough to
+    unit-test scoping — but both ranking arms are skipped (there's nothing to rank or
+    fuse), so it returns the filtered-but-unranked chunks. Real hybrid ranking is
+    verified against live Neon instead (see tests/test_search.py).
 
     Why two arms + RRF (not just vector): the vector arm captures semantic similarity but
     can underweight an *exact* keyword/term match (rare jargon, codes, proper nouns); the
@@ -439,10 +510,9 @@ def search_chunks(
     `ts_rank`), so they're fused on rank position via RRF (see rrf.py), not added
     directly. Rerank stays the final, most-accurate stage over the fused pool.
     """
-    require_owned_subject(session, owner_id, subject_id)
+    require_readable_subject(session, caller_id, org_ctx, subject_id)
 
     filters = (
-        DocumentChunk.owner_id == owner_id,
         DocumentChunk.subject_id == subject_id,
         DocumentChunk.embedding.is_not(None),
     )
@@ -464,8 +534,9 @@ def search_chunks(
     vector_ranking = [chunk for chunk, _distance in vector_rows]
 
     # Arm 2 — lexical full-text search over the GIN-indexed `text_search_vector` column.
-    # Carries the SAME owner+subject scoping as the vector arm — the FTS arm is a new
-    # place a cross-tenant leak could hide, so the filter is not optional here.
+    # Carries the SAME subject scoping as the vector arm (`subject_id`, access already
+    # gated by require_readable_subject above) — the FTS arm is a place a cross-subject
+    # leak could hide, so the filter is not optional here.
     # `websearch_to_tsquery` tolerates arbitrary user input (quotes, "or", ...) without
     # raising on syntax. `_FTS_CONFIG` matches the generated column's config exactly.
     tsvector = sa.literal_column("document_chunks.text_search_vector")
@@ -474,7 +545,6 @@ def search_chunks(
     fts_rows = session.exec(
         select(DocumentChunk, fts_rank)
         .where(
-            DocumentChunk.owner_id == owner_id,
             DocumentChunk.subject_id == subject_id,
             tsvector.op("@@")(tsquery),
         )

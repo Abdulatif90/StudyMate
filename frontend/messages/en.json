@@ -99,7 +99,8 @@
     "deleteSuccess": "Subject deleted",
     "deleteErrorTitle": "Couldn't delete subject",
     "deleteNotFound": "This subject was already deleted or couldn't be found.",
-    "deleteGenericError": "Couldn't delete this subject. Please try again."
+    "deleteGenericError": "Couldn't delete this subject. Please try again.",
+    "sharedBadge": "Shared"
   },
   "Dashboard": {
     "loadError": "Couldn't load progress.",

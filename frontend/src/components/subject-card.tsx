@@ -11,6 +11,8 @@ interface SubjectCardProps {
   /** The meta line (e.g. "3 documents · 2 due · 1 quiz") — already-formatted/
    * translated by the caller, same reasoning as `EmptyState`/`ErrorState`. */
   meta: ReactNode;
+  /** Optional badge shown next to the title (e.g. "Shared" for an org subject). */
+  badge?: ReactNode;
   /** An optional trailing action (e.g. a delete button) — rendered as a SIBLING of
    * the `<Link>`, never nested inside it, so clicking it can't also navigate (the
    * same nesting hazard fixed for the plain subjects list in an earlier increment).
@@ -28,7 +30,7 @@ interface SubjectCardProps {
  * `interactive` variant (`hover:ring-primary/40`, and `--primary` IS the brand teal),
  * no separate treatment needed here.
  */
-export function SubjectCard({ href, name, meta, action }: SubjectCardProps) {
+export function SubjectCard({ href, name, meta, badge, action }: SubjectCardProps) {
   return (
     <Card interactive className="h-full">
       <CardContent className="flex items-center gap-3 py-3">
@@ -42,7 +44,10 @@ export function SubjectCard({ href, name, meta, action }: SubjectCardProps) {
             <BookOpen className="size-4" aria-hidden />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{name}</p>
+            <div className="flex min-w-0 items-center gap-2">
+              <p className="truncate text-sm font-medium">{name}</p>
+              {badge}
+            </div>
             <p className="truncate text-xs text-muted-foreground">{meta}</p>
           </div>
           {!action && (

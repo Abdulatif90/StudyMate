@@ -429,6 +429,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/org": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Whoami Org
+         * @description The caller's active-organization context as the backend actually sees it, read
+         *     from the verified Clerk session JWT (`get_org_context`).
+         *
+         *     Permanent, authenticated debug/verification endpoint (Phase 5 increment 2, Step 0):
+         *     org-scoped content sharing is built entirely on `org_id`/`org_role` arriving in the
+         *     real token. Increment 1 only exercised `get_org_context` in unit tests, never
+         *     against a live token — this endpoint lets the org sharing model be confirmed
+         *     end-to-end: signed in with an active org, `org_id`/`org_role` must be non-null here.
+         *     If they are null in a real session that HAS an active org, Clerk's session-token JWT
+         *     template is missing the org claims and must be configured (backend code is correct;
+         *     do NOT touch `.env`/Clerk config from here). Returns only the caller's own ids —
+         *     never anyone else's — so it's safe to keep enabled.
+         */
+        get: operations["whoami_org_org_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -834,6 +865,8 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            /** Org Id */
+            org_id?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -1804,6 +1837,28 @@ export interface operations {
                 content: {
                     "application/json": {
                         [key: string]: string;
+                    };
+                };
+            };
+        };
+    };
+    whoami_org_org_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string | null;
                     };
                 };
             };

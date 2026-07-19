@@ -99,7 +99,8 @@
     "deleteSuccess": "Fan o‘chirildi",
     "deleteErrorTitle": "Fanni o‘chirib bo‘lmadi",
     "deleteNotFound": "Bu fan allaqachon o‘chirilgan yoki topilmadi.",
-    "deleteGenericError": "Fanni o‘chirib bo‘lmadi. Qayta urinib ko‘ring."
+    "deleteGenericError": "Fanni o‘chirib bo‘lmadi. Qayta urinib ko‘ring.",
+    "sharedBadge": "Ulashilgan"
   },
   "Dashboard": {
     "loadError": "Ma’lumotlarni yuklab bo‘lmadi.",

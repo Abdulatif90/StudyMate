@@ -8,11 +8,13 @@ import uuid
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlmodel import Session
 
-from app.core.auth import get_current_user_id
+from app.core.auth import get_current_user_id, get_org_context
 from app.core.db import get_session
+from app.core.org import OrgContext
 from app.modules.documents import service
 from app.modules.documents.models import Document
 from app.modules.documents.schemas import DocumentRead
+from app.modules.subjects.service import SubjectWriteForbiddenError, require_writable_subject
 from app.shared.language import DEFAULT_LANGUAGE
 
 router = APIRouter(prefix="/subjects/{subject_id}/documents", tags=["documents"])
@@ -28,6 +30,7 @@ async def create_document(
     language: str = Form(DEFAULT_LANGUAGE),
     session: Session = Depends(get_session),
     owner_id: str = Depends(get_current_user_id),
+    org_ctx: OrgContext = Depends(get_org_context),
 ) -> Document:
     raw = await file.read()
     try:
@@ -39,9 +42,14 @@ async def create_document(
             content_type=file.content_type or "application/octet-stream",
             raw=raw,
             language=language,
+            org_ctx=org_ctx,
         )
     except service.SubjectNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Subject not found") from exc
+    except SubjectWriteForbiddenError as exc:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "You don't have permission to add to this subject"
+        ) from exc
     except service.UnsupportedFileTypeError as exc:
         raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, str(exc)) from exc
     except service.FileTooLargeError as exc:
@@ -59,9 +67,10 @@ def list_documents(
     subject_id: uuid.UUID,
     session: Session = Depends(get_session),
     owner_id: str = Depends(get_current_user_id),
+    org_ctx: OrgContext = Depends(get_org_context),
 ) -> list[Document]:
     try:
-        return service.list_documents(session, owner_id, subject_id)
+        return service.list_documents_for_reader(session, owner_id, org_ctx, subject_id)
     except service.SubjectNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Subject not found") from exc
 
@@ -72,8 +81,14 @@ def get_document(
     document_id: uuid.UUID,
     session: Session = Depends(get_session),
     owner_id: str = Depends(get_current_user_id),
+    org_ctx: OrgContext = Depends(get_org_context),
 ) -> Document:
-    document = service.get_document(session, owner_id, subject_id, document_id)
+    try:
+        document = service.get_document_for_reader(
+            session, owner_id, org_ctx, subject_id, document_id
+        )
+    except service.SubjectNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Subject not found") from exc
     if document is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")
     return document
@@ -85,6 +100,17 @@ def delete_document(
     document_id: uuid.UUID,
     session: Session = Depends(get_session),
     owner_id: str = Depends(get_current_user_id),
+    org_ctx: OrgContext = Depends(get_org_context),
 ) -> None:
+    # Write authorization first (single source of truth): 404 if the caller can't even
+    # read the subject (existence never leaks), 403 if they can read but not write it.
+    try:
+        require_writable_subject(session, owner_id, org_ctx, subject_id)
+    except service.SubjectNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Subject not found") from exc
+    except SubjectWriteForbiddenError as exc:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "You don't have permission to modify this subject"
+        ) from exc
     if not service.delete_document(session, owner_id, subject_id, document_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Document not found")

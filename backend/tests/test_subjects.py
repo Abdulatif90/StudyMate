@@ -24,6 +24,7 @@ from app.core import r2_client
 from app.core.auth import get_current_user_id
 from app.core.config import get_settings
 from app.core.db import get_session
+from app.core.org import OrgContext
 from app.main import app
 from app.modules.ask import service as ask_service
 from app.modules.ask.models import Conversation, ConversationTurn
@@ -214,7 +215,7 @@ def test_delete_subject_cascades_to_all_child_data_and_leaves_other_owners_untou
             session, other_owner, subject_b.id, _mock_r2, suffix="theirs"
         )
 
-        deleted = subjects_service.delete_subject(session, _TEST_USER, subject_a.id)
+        deleted = subjects_service.delete_subject(session, _TEST_USER, OrgContext(), subject_a.id)
         assert deleted is True
 
         # Every child row for the deleted subject is actually gone, not just
@@ -269,7 +270,7 @@ def test_delete_subject_with_no_content_still_cascades_cleanly():
         session.commit()
         session.refresh(subject)
 
-        deleted = subjects_service.delete_subject(session, _TEST_USER, subject.id)
+        deleted = subjects_service.delete_subject(session, _TEST_USER, OrgContext(), subject.id)
         assert deleted is True
         assert subjects_service.get_subject(session, _TEST_USER, subject.id) is None
 
@@ -310,7 +311,7 @@ def test_delete_subject_removes_all_content_and_the_real_r2_object():
         assert documents_service.list_chunks(session, owner_id, document.id)  # really chunked
 
         try:
-            deleted = subjects_service.delete_subject(session, owner_id, subject.id)
+            deleted = subjects_service.delete_subject(session, owner_id, OrgContext(), subject.id)
             assert deleted is True
 
             assert subjects_service.get_subject(session, owner_id, subject.id) is None

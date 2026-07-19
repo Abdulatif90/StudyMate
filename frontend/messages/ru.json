@@ -99,7 +99,8 @@
     "deleteSuccess": "Предмет удалён",
     "deleteErrorTitle": "Не удалось удалить предмет",
     "deleteNotFound": "Этот предмет уже удалён или не найден.",
-    "deleteGenericError": "Не удалось удалить предмет. Попробуйте ещё раз."
+    "deleteGenericError": "Не удалось удалить предмет. Попробуйте ещё раз.",
+    "sharedBadge": "Общий"
   },
   "Dashboard": {
     "loadError": "Не удалось загрузить прогресс.",

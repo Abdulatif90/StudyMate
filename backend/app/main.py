@@ -10,12 +10,14 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import inngest.fast_api
-from fastapi import FastAPI, Request, status
+from fastapi import Depends, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.core.auth import get_current_user_id, get_org_context
 from app.core.config import get_settings
 from app.core.inngest_client import get_inngest_client
+from app.core.org import OrgContext, org_capability
 from app.core.sentry import init_sentry
 from app.modules.ask.router import conversations_router
 from app.modules.ask.router import router as ask_router
@@ -117,3 +119,29 @@ inngest.fast_api.serve(app, get_inngest_client(), [process_document_fn])
 def health() -> dict[str, str]:
     """Liveness check — confirms the API process is up."""
     return {"status": "ok", "environment": settings.environment}
+
+
+@app.get("/org")
+def whoami_org(
+    user_id: str = Depends(get_current_user_id),
+    org_ctx: OrgContext = Depends(get_org_context),
+) -> dict[str, str | None]:
+    """The caller's active-organization context as the backend actually sees it, read
+    from the verified Clerk session JWT (`get_org_context`).
+
+    Permanent, authenticated debug/verification endpoint (Phase 5 increment 2, Step 0):
+    org-scoped content sharing is built entirely on `org_id`/`org_role` arriving in the
+    real token. Increment 1 only exercised `get_org_context` in unit tests, never
+    against a live token — this endpoint lets the org sharing model be confirmed
+    end-to-end: signed in with an active org, `org_id`/`org_role` must be non-null here.
+    If they are null in a real session that HAS an active org, Clerk's session-token JWT
+    template is missing the org claims and must be configured (backend code is correct;
+    do NOT touch `.env`/Clerk config from here). Returns only the caller's own ids —
+    never anyone else's — so it's safe to keep enabled.
+    """
+    return {
+        "user_id": user_id,
+        "org_id": org_ctx.org_id,
+        "org_role": org_ctx.org_role,
+        "capability": org_capability(org_ctx.org_role),
+    }

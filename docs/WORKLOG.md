@@ -2,6 +2,69 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-19 — Teams: org-owned shared subjects (Phase 5, increment 2)
+First content-sharing slice on the Clerk-Organizations foundation (increment 1 / ADR #9).
+Model = **org-owned, read-shared subjects**: a `Subject` gains a nullable `org_id`; NULL =
+private to `owner_id` (unchanged), set = readable by members whose *active* org matches
+and writable only by that org's teachers/admins (or the owner). Scope = subjects +
+documents + Ask/RAG read path (quiz/flashcard org read-through is increment 2b, deliberately
+not done). Commit: `feat(teams): org-owned shared subjects (Phase 5 increment 2)`.
+
+- **Step 0 — GET /org added; runtime confirmation deferred to the user.** The task's Step 0
+  wanted proof that org claims (`org_id`/`org_role`) actually reach the backend from a real
+  Clerk token — increment 1 only unit-tested `get_org_context`. This environment is offline
+  (no browser, no real signed-in token, and `.env`/Clerk config must not be touched), so a
+  real-token check can't be run here. Instead I added the permanent authenticated
+  `GET /org` endpoint (returns the caller's `OrgContext` + capability) so the user can
+  confirm it end-to-end in a real session. **Did NOT hard-stop the build**, because: (1)
+  per the user's standing preference, browser/Clerk-config checks are batched to the
+  end-of-project pass; (2) increment 1 already shipped with this exact item open; and (3)
+  the design fails SAFE — if claims are null at runtime, `can_read/can_write` collapse to
+  owner-only, creation stays private, and listing returns only own subjects, so absent
+  claims mean "sharing silently doesn't work," never a leak. Flagged clearly for the user.
+- **Backend model + migration**: `subjects.org_id: str | None` (indexed). Alembic
+  `3441b9fb9f25_add_org_id_to_subjects` — **applied to Neon** (`alembic upgrade head`),
+  verified via `information_schema` (nullable `org_id` column + `ix_subjects_org_id` index).
+- **Single source of truth in `subjects.service`** (pure, exhaustively unit-tested):
+  `can_read_subject(subject, caller_id, active_org_id)` and `can_write_subject(subject,
+  caller_id, org_ctx)`, plus `require_readable_subject`/`require_writable_subject`. A denied
+  reader gets `SubjectNotFoundError` (404 — never reveals an org subject exists); a
+  reader-but-not-writer gets `SubjectWriteForbiddenError` (403). `SubjectNotFoundError` moved
+  here from `documents.service` (re-exported there so every existing importer is unchanged).
+  The load-bearing `subject.org_id is not None` guard stops a `None == None` match for a
+  private subject vs. a caller with no active org.
+- **Creation rule**: teacher/admin with an active org → org subject (`org_id` = active org,
+  owner stays the creator); everyone else (no org, or a plain member) → private. A student
+  can't publish to the whole org.
+- **Read paths threaded through readability**, not ownership: `GET /subjects/{id}` (via
+  `get_readable_subject`), `list_documents_for_reader`/`get_document_for_reader` (fetch the
+  subject's docs by `subject_id`, not owner, so a member reads teacher-owned docs), and Ask
+  — `search_chunks` now gates on `require_readable_subject` then filters chunks by
+  `subject_id` ONLY (the critical change: an owner-scoped chunk filter would return nothing
+  for a student over a teacher's material). `get_documents_by_ids` re-scoped from owner to
+  subject. Student conversations over an org subject stay owned by the student.
+- **Write paths** guarded by `can_write_subject`: upload document, delete document, delete
+  subject (routers translate → 403/404). Listing = own + active org's subjects, deduped.
+- **Tests**: new `tests/test_org_subjects.py` (19: owner baseline, teacher-creates +
+  member-reads-subject/docs/Ask, cross-org member 404 + not-in-listing + can't-Ask,
+  no-active-org isolation, student write-denial 403 vs teacher 201/204, wrong-org 404-not-403
+  on write, owner's other private subject never exposed, member-creates-private, `GET /org`
+  shape, and the pure `can_read`/`can_write` predicate matrix). Added `tests/conftest.py`
+  with an autouse default `get_org_context` → no-org override so all pre-org router tests
+  keep the legacy private behavior; updated `test_search.py`/`test_subjects.py` for the new
+  `search_chunks`/`delete_subject` signatures. **Backend: 341 passed, 11 deselected (live);
+  `ruff check` clean.**
+- **Frontend**: regenerated the typed client offline (dumped `app.openapi()` → JSON →
+  `openapi-typescript`), so `SubjectRead.org_id` exists. New `lib/subjectSharing.ts`
+  (`isOrgSubject`, `canWriteSharedSubject`) unit-tested; subject list + detail show a
+  "Shared" badge on org subjects and hide upload/delete for a member who can't write
+  (backend 403 is the real guard). i18n `sharedBadge` added to en/uz/ko/ru (targeted, parity
+  green). **Frontend: 206 passed (50 files), `tsc --noEmit` clean, `eslint` clean.**
+- **Known limitation (flagged for 2b, not silently expanded)**: the delete-subject cascade
+  enumerates the subject OWNER's children only; a co-teacher's uploads or other members'
+  derived content over a shared subject aren't cleaned — the real `subject_id` FK makes that
+  fail loudly (not a leak). quiz/flashcard generation over an org subject stays owner-scoped.
+
 ## 2026-07-19 — Fix real off-by-one in conversation date bucketing
 The prior "timezone-independent" test fix (below) had made the suite pass by matching the
 impl's actual behavior instead of the correct behavior — it never caught that the bucketing

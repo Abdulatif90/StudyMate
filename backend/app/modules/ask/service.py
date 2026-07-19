@@ -17,10 +17,12 @@ from dataclasses import dataclass
 
 from sqlmodel import Session, select
 
+from app.core.org import OrgContext
 from app.modules.ask.llm import LLMError, ask_claude, ask_claude_stream
 from app.modules.ask.models import Conversation, ConversationTurn
 from app.modules.ask.schemas import AskResponse, SourceChunk
-from app.modules.documents.service import get_documents_by_ids, require_owned_subject, search_chunks
+from app.modules.documents.service import get_documents_by_ids, search_chunks
+from app.modules.subjects.service import require_readable_subject
 
 TOP_K = 8
 # How many of a conversation's most recent turns to feed Claude as history. list_turns
@@ -155,27 +157,32 @@ def ask_question(
     subject_id: uuid.UUID,
     question: str,
     conversation_id: uuid.UUID | None = None,
+    org_ctx: OrgContext | None = None,
 ) -> AskResponse:
-    require_owned_subject(session, owner_id, subject_id)
+    # Read access, not ownership: a student may Ask over a teacher's org subject.
+    # require_readable_subject 404s a caller who can't read it (different org / no org).
+    org_ctx = org_ctx or OrgContext()
+    require_readable_subject(session, owner_id, org_ctx, subject_id)
 
     if conversation_id is not None:
         conversation = get_conversation(session, owner_id, conversation_id)
         if conversation is None or conversation.subject_id != subject_id:
             raise ConversationNotFoundError(conversation_id)
     else:
+        # A conversation a student starts over an org subject is owned by that student.
         conversation = create_conversation(session, owner_id, subject_id)
 
     prior_turns = list_turns(session, owner_id, conversation.id)[-MAX_CONTEXT_TURNS:]
     prior_turns_context = [{"question": t.question, "answer": t.answer} for t in prior_turns]
 
-    results = search_chunks(session, owner_id, subject_id, question, top_k=TOP_K)
+    results = search_chunks(session, owner_id, org_ctx, subject_id, question, top_k=TOP_K)
 
     if not results:
         answer = _NO_MATERIAL_ANSWER
         sources: list[SourceChunk] = []
     else:
         document_ids = list({chunk.document_id for chunk, _score in results})
-        documents_by_id = get_documents_by_ids(session, owner_id, document_ids)
+        documents_by_id = get_documents_by_ids(session, subject_id, document_ids)
         context_chunks = [
             {
                 "filename": documents_by_id[chunk.document_id].filename,
@@ -244,12 +251,15 @@ def prepare_ask_stream(
     subject_id: uuid.UUID,
     question: str,
     conversation_id: uuid.UUID | None = None,
+    org_ctx: OrgContext | None = None,
 ) -> _StreamContext:
-    """Everything from `ask_question` up to (not including) calling Claude: ownership
+    """Everything from `ask_question` up to (not including) calling Claude: access
     checks, conversation lookup/creation, retrieval. Raises `SubjectNotFoundError` /
     `ConversationNotFoundError` synchronously, before any streaming has started.
     """
-    require_owned_subject(session, owner_id, subject_id)
+    # Read access, not ownership — see ask_question.
+    org_ctx = org_ctx or OrgContext()
+    require_readable_subject(session, owner_id, org_ctx, subject_id)
 
     if conversation_id is not None:
         conversation = get_conversation(session, owner_id, conversation_id)
@@ -261,7 +271,7 @@ def prepare_ask_stream(
     prior_turns = list_turns(session, owner_id, conversation.id)[-MAX_CONTEXT_TURNS:]
     prior_turns_context = [{"question": t.question, "answer": t.answer} for t in prior_turns]
 
-    results = search_chunks(session, owner_id, subject_id, question, top_k=TOP_K)
+    results = search_chunks(session, owner_id, org_ctx, subject_id, question, top_k=TOP_K)
 
     if not results:
         return _StreamContext(
@@ -274,7 +284,7 @@ def prepare_ask_stream(
         )
 
     document_ids = list({chunk.document_id for chunk, _score in results})
-    documents_by_id = get_documents_by_ids(session, owner_id, document_ids)
+    documents_by_id = get_documents_by_ids(session, subject_id, document_ids)
     context_chunks = [
         {
             "filename": documents_by_id[chunk.document_id].filename,

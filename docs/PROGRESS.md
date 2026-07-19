@@ -2176,22 +2176,59 @@ frontends already shipped.
   `<OrganizationSwitcher/>` in the AppShell + a `/team` page (`<OrganizationProfile/>` /
   `<CreateOrganization/>`) + a "Team" nav item; client role mirror `lib/orgRole.ts`. **No
   content org-scoping this increment** — existing `owner_id` scoping untouched.
+- **Phase 5 — Increment 2 (org-owned, read-shared SUBJECTS) DONE** (see WORKLOG
+  "Teams: org-owned shared subjects" entry). Model: `Subject` gained a nullable `org_id`
+  (migration `3441b9fb9f25`, applied to Neon). `org_id IS NULL` = private to `owner_id`
+  (unchanged); `org_id` set = an ORG subject, readable by members whose ACTIVE org
+  matches (from the verified JWT `get_org_context().org_id` — never "any org ever
+  joined"), writable only by that org's teachers/admins (or the owner).
+  `subjects.service` is the single source of truth: pure `can_read_subject` /
+  `can_write_subject` predicates + `require_readable_subject` / `require_writable_subject`
+  (a denied reader gets the same 404 as "doesn't exist"; a reader-but-not-writer gets
+  403). Creation: a teacher/admin with an active org publishes org subjects; everyone
+  else (no org, or a plain member) creates private ones. Listing returns own + active
+  org's subjects (deduped). **Read paths threaded through readability, not ownership**:
+  get subject, list/get documents (subject-scoped, so a member reads teacher-owned docs),
+  and Ask incl. `search_chunks` (chunk filter is now subject-scoped-with-access-check, so
+  a student can retrieve over a teacher's material). Write paths (upload/delete document,
+  delete subject) guarded by `can_write_subject`. Student conversations/progress/quiz/
+  flashcard state stay `owner_id`-scoped (only source content is shared). Permanent
+  authenticated `GET /org` endpoint added (Step 0: lets the real token's org claims be
+  confirmed end-to-end). Frontend: typed client regenerated (SubjectRead gains `org_id`),
+  a "Shared" badge on org subjects, write actions (upload/delete) hidden for a member on
+  a shared subject they can't write (`lib/subjectSharing.ts`, unit-tested). `test_org_subjects.py`
+  (19 tests: cross-org/no-org isolation + write-denial + pure predicates + `GET /org`)
+  plus updated existing tests — backend 341 passed / 11 deselected, ruff clean; frontend
+  206 passed, tsc + eslint clean. All cross-tenant isolation exhaustively covered.
   **REMAINING Phase 5 increments (explicit TODOs, not started):**
-  - **Content org-scoping** — let subjects/documents/quiz/flashcards belong to an org (not
-    just an individual `owner_id`), scoped by the active `org_id` from `get_org_context`;
-    decide the personal-vs-org ownership model and migrate the schema.
+  - **Increment 2b — quiz/flashcard org read-through** — extend the same org-read model to
+    quiz + flashcard *generation/reading* over an org subject (still owner-scoped this
+    increment: a member can't yet generate a quiz/flashcards over a teacher's org subject).
+    `sample_subject_chunk_texts` and the quiz/flashcard services still use
+    `require_owned_subject`; switch them to `require_readable_subject` and decide how
+    generated quizzes/flashcards over shared material are owned (per-student, like
+    conversations, is the likely answer). Also finish the shared-subject DELETE cascade:
+    it currently enumerates the subject OWNER's children only, so a co-teacher's uploads
+    or other members' derived content over a shared subject aren't cleaned (a real FK on
+    `subject_id` makes that fail loudly, not leak — but 2b should handle it properly).
   - **Teacher assigns + tracks** — teacher-only actions (guarded by `require_teacher`):
     assign material/quizzes to students, view student progress across the org.
   - **Admin / billing seats** — org-level plan + per-seat billing (Polar), seat counts,
     admin management. Ties into the existing entitlement layer.
-  - **Live Clerk-config confirmation + real-browser pass — RESOLVED** (see WORKLOG
+  - **Live Clerk-config confirmation + real-browser pass — mostly RESOLVED** (see WORKLOG
     "Live verification: Polar webhook, observability env, Clerk orgs" entry): the user
     enabled Organizations in Clerk, created an organization from the app, invited a
     member, the member accepted, and the member showed up — org creation, roles,
     invitations, and the `<OrganizationSwitcher/>`/`/team` UI are all confirmed live.
-    Remaining: the backend's `get_org_context` reading org claims from the JWT is still
-    only exercised by tests, not yet observed through a real org-scoped endpoint (there
-    is none until content org-scoping lands above) — confirm at runtime once that ships.
+    **OPEN (Step 0, deferred browser blocker):** the backend's `get_org_context` reading
+    org claims from the JWT was still only unit-tested. Increment 2 adds the permanent
+    `GET /org` endpoint so this CAN now be confirmed end-to-end — the user must, in a real
+    signed-in session with an active org, hit `GET /org` (or observe an org subject shared
+    to a member) and confirm `org_id`/`org_role` are NON-null. If they're null, Clerk's
+    session-token JWT template is missing the org claims and must be configured (backend
+    code is correct — do NOT edit `.env`/Clerk config to compensate). The sharing model
+    fails SAFE if claims are absent (null org → everything stays private, no leak), so
+    this is a "sharing silently won't work until configured" check, not a security risk.
 - Still owed from earlier: a real-browser click-through of the async upload/poll/delete,
   quiz, hybrid-Ask, flashcards, progress-dashboard, app-shell nav (mobile sheet,
   active-item highlighting, theme toggle), and the confirm-dialog/toast/subject-delete

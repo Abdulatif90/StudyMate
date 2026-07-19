@@ -1,5 +1,6 @@
 "use client";
 
+import { useOrganization } from "@clerk/nextjs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
@@ -18,7 +19,9 @@ import { useApiClient } from "@/lib/api/useApiClient";
 import { friendlyDeleteError } from "@/lib/deleteError";
 import { documentStatusVariant } from "@/lib/documentStatus";
 import { documentsRefetchInterval } from "@/lib/documentsPolling";
+import { orgCapability } from "@/lib/orgRole";
 import { parsePlanLimitError, type PlanLimitError } from "@/lib/planLimitError";
+import { canWriteSharedSubject, isOrgSubject } from "@/lib/subjectSharing";
 import { friendlyUploadError } from "@/lib/uploadError";
 
 export default function SubjectDetailPage() {
@@ -28,6 +31,8 @@ export default function SubjectDetailPage() {
   const api = useApiClient();
   const queryClient = useQueryClient();
   const confirm = useConfirm();
+  const { membership } = useOrganization();
+  const capability = orgCapability(membership?.role);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [limitError, setLimitError] = useState<PlanLimitError | null>(null);
 
@@ -121,6 +126,13 @@ export default function SubjectDetailPage() {
     },
   });
 
+  // Write actions (upload / delete) are hidden for a member viewing a shared org
+  // subject they can't write — the backend 403 is the real guard, this is UX only.
+  // Defaults to writable while the subject is still loading (nothing to hide yet).
+  const subject = subjectQuery.data;
+  const shared = subject ? isOrgSubject(subject) : false;
+  const canWrite = subject ? canWriteSharedSubject(subject.org_id, capability) : true;
+
   const backLink = (
     <Link
       href="/subjects"
@@ -145,8 +157,13 @@ export default function SubjectDetailPage() {
       {backLink}
 
       <div className="mb-8 flex flex-wrap items-center justify-between gap-2">
-        <h1 className="min-w-0 text-2xl font-semibold break-words">
+        <h1 className="flex min-w-0 items-center gap-2 text-2xl font-semibold break-words">
           {subjectQuery.isLoading ? t("Common.loading") : subjectQuery.data?.name}
+          {shared && (
+            <Badge variant="secondary" className="shrink-0">
+              {t("Subjects.sharedBadge")}
+            </Badge>
+          )}
         </h1>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <Button
@@ -179,6 +196,7 @@ export default function SubjectDetailPage() {
         </div>
       </div>
 
+      {canWrite && (
       <Card className="mb-8">
         <CardHeader>
           <CardTitle>{t("SubjectDetail.uploadTitle")}</CardTitle>
@@ -201,6 +219,7 @@ export default function SubjectDetailPage() {
           {limitError && <UpgradePrompt message={limitError.detail} />}
         </CardContent>
       </Card>
+      )}
 
       {documentsQuery.isLoading && <p>{t("Common.loading")}</p>}
       {documentsQuery.isError && (
@@ -219,24 +238,26 @@ export default function SubjectDetailPage() {
                   <Badge className="shrink-0" variant={documentStatusVariant(doc.status)}>
                     {t(`Progress.status.${doc.status}`)}
                   </Badge>
-                  <Button
-                    variant="destructive"
-                    size="icon-sm"
-                    className="shrink-0"
-                    aria-label={t("SubjectDetail.deleteAriaLabel", { filename: doc.filename })}
-                    disabled={deleteDocument.isPending && deleteDocument.variables === doc.id}
-                    onClick={async () => {
-                      const ok = await confirm({
-                        title: t("SubjectDetail.deleteConfirmTitle", { filename: doc.filename }),
-                        description: t("Common.cantUndo"),
-                        destructive: true,
-                      });
-                      if (!ok) return;
-                      deleteDocument.mutate(doc.id);
-                    }}
-                  >
-                    <Trash2 className="size-3.5" />
-                  </Button>
+                  {canWrite && (
+                    <Button
+                      variant="destructive"
+                      size="icon-sm"
+                      className="shrink-0"
+                      aria-label={t("SubjectDetail.deleteAriaLabel", { filename: doc.filename })}
+                      disabled={deleteDocument.isPending && deleteDocument.variables === doc.id}
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: t("SubjectDetail.deleteConfirmTitle", { filename: doc.filename }),
+                          description: t("Common.cantUndo"),
+                          destructive: true,
+                        });
+                        if (!ok) return;
+                        deleteDocument.mutate(doc.id);
+                      }}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  )}
                 </div>
                 {doc.status === "ready" && doc.summary && (
                   <p className="text-sm text-muted-foreground wrap-break-word">{doc.summary}</p>
