@@ -28,3 +28,17 @@ export function scoreQuiz(
   const correct = questions.reduce((count, q) => count + (isCorrect(q, answers) ? 1 : 0), 0);
   return { correct, total: questions.length };
 }
+
+export interface QuizAttemptRequestBody {
+  answers: QuizAnswers;
+}
+
+/**
+ * Builds the POST body for persisting a graded attempt (`.../quizzes/{quizId}/attempts`).
+ * The server re-grades from `answers` itself — a client-computed score is never sent, so
+ * this is a thin, explicit wire boundary between the client-side self-test (`scoreQuiz`)
+ * and the persisted attempt, kept separate so the two can evolve independently.
+ */
+export function toAttemptRequestBody(answers: QuizAnswers): QuizAttemptRequestBody {
+  return { answers };
+}

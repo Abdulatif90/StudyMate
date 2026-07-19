@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -8,16 +8,43 @@ import { useState } from "react";
 import { ArrowLeft, CheckCircle2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import { useApiClient } from "@/lib/api/useApiClient";
-import { allAnswered, scoreQuiz, type QuizAnswers } from "@/lib/quizScore";
+import { allAnswered, scoreQuiz, toAttemptRequestBody, type QuizAnswers } from "@/lib/quizScore";
 
 export default function TakeQuizPage() {
   const { subjectId, quizId } = useParams<{ subjectId: string; quizId: string }>();
   const t = useTranslations();
   const api = useApiClient();
+  const queryClient = useQueryClient();
   const [answers, setAnswers] = useState<QuizAnswers>({});
   const [revealed, setRevealed] = useState(false);
+
+  // Persists the attempt server-side (same grading the client just showed — the server
+  // re-derives it from `correct_index`, never trusts a client-computed score) and, as a
+  // side effect on the backend, auto-completes any assignment that links this quiz. The
+  // reveal above is instant and never blocked on this — a failed save only loses
+  // persistence/auto-completion, not the self-test itself.
+  const attemptMutation = useMutation({
+    mutationFn: async (body: ReturnType<typeof toAttemptRequestBody>) => {
+      const { data, error } = await api.POST("/subjects/{subject_id}/quizzes/{quiz_id}/attempts", {
+        params: { path: { subject_id: subjectId, quiz_id: quizId } },
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      // Covers both the assignments list and every "my-submission" query keyed under it
+      // (["assignments", id, "my-submission"]) so a linked assignment reflects the new
+      // score without a manual refresh.
+      queryClient.invalidateQueries({ queryKey: ["assignments"] });
+    },
+    onError: () => {
+      toast.error(t("QuizDetail.attemptSaveErrorTitle"), t("Common.tryAgain"));
+    },
+  });
 
   const quizQuery = useQuery({
     queryKey: ["subjects", subjectId, "quizzes", quizId],
@@ -144,7 +171,13 @@ export default function TakeQuizPage() {
 
       <div className="mt-6 flex items-center gap-3">
         {!revealed ? (
-          <Button disabled={!canSubmit} onClick={() => setRevealed(true)}>
+          <Button
+            disabled={!canSubmit}
+            onClick={() => {
+              setRevealed(true);
+              attemptMutation.mutate(toAttemptRequestBody(answers));
+            }}
+          >
             {t("QuizDetail.checkAnswers")}
           </Button>
         ) : (

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { allAnswered, isCorrect, scoreQuiz, type QuizAnswers } from "./quizScore";
+import {
+  allAnswered,
+  isCorrect,
+  scoreQuiz,
+  toAttemptRequestBody,
+  type QuizAnswers,
+} from "./quizScore";
 
 const questions = [
   { id: "a", correct_index: 1 },
@@ -55,5 +61,16 @@ describe("scoreQuiz", () => {
 
   it("counts unanswered questions as incorrect", () => {
     expect(scoreQuiz(questions, { a: 1 })).toEqual({ correct: 1, total: 3 });
+  });
+});
+
+describe("toAttemptRequestBody", () => {
+  it("wraps the answers map under an 'answers' key", () => {
+    const answers: QuizAnswers = { a: 1, b: 0 };
+    expect(toAttemptRequestBody(answers)).toEqual({ answers: { a: 1, b: 0 } });
+  });
+
+  it("wraps an empty answers map unchanged", () => {
+    expect(toAttemptRequestBody({})).toEqual({ answers: {} });
   });
 });

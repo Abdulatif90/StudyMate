@@ -178,7 +178,8 @@
     "score": "Siz {correct} / {total} to‘pladingiz",
     "checkAnswers": "Javoblarni tekshirish",
     "tryAgain": "Qayta urinish",
-    "answerAllHint": "Natijani ko‘rish uchun barcha savollarga javob bering."
+    "answerAllHint": "Natijani ko‘rish uchun barcha savollarga javob bering.",
+    "attemptSaveErrorTitle": "Natijangizni saqlab bo‘lmadi"
   },
   "Flashcards": {
     "heading": "Kartochkalar",
@@ -380,13 +381,14 @@
     "submissionsReceivedLabel": "Qabul qilingan topshirishlar (buni bajarilgan deb belgilagan o‘quvchilar — to‘liq ro‘yxat emas)",
     "submissionsLoadError": "Topshirishlarni yuklab bo‘lmadi.",
     "noSubmissionsYet": "Hali topshirishlar yo‘q.",
-    "scoreOptionalLabel": "Ball (ixtiyoriy)",
-    "noteOptionalLabel": "Izoh (ixtiyoriy)",
-    "markComplete": "Bajarildi deb belgilash",
     "submitting": "Yuborilmoqda…",
     "submitErrorTitle": "Yuborib bo‘lmadi",
     "submitSuccess": "Bajarildi deb belgilandi",
     "completedOn": "Bajarildi {date}",
-    "scoreLabel": "ball {score}"
+    "scoreLabel": "ball {score}",
+    "takeQuiz": "Testni boshlash",
+    "notStarted": "Boshlanmagan",
+    "completedLabel": "Bajarildi",
+    "markAsDone": "Bajarildi deb belgilash"
   }
 }

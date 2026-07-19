@@ -2322,9 +2322,37 @@ frontends already shipped.
       `quiz_attempts` (migration `b2c3d4e5f6a7`, hand-written) — **APPLIED to Neon** (verified:
       `alembic current` == head `b2c3d4e5f6a7`; table `quiz_attempts` exists on Neon with its
       unique constraint + indexes). 13 new tests in `test_quiz_attempts.py`; backend 422
-      passed / 11 deselected, ruff check + format clean. **Frontend half (increment 4b — a
-      "take the quiz" answer-hidden flow + submit + show the graded result / assignment
-      completion) is the NEXT increment (NOT started).**
+      passed / 11 deselected, ruff check + format clean.
+    - **Increment 4b — graded quiz flow UI (frontend) — DONE** (2026-07-20; see WORKLOG
+      "Teams: graded quiz flow UI"). Closes the loop: the quiz-taking page
+      (`subjects/[subjectId]/quizzes/[quizId]/page.tsx`) now POSTs the attempt to
+      `.../quizzes/{quizId}/attempts` the moment "Check answers" reveals the client-side
+      self-test (same `answers` map, wrapped by the new `toAttemptRequestBody` helper in
+      `lib/quizScore.ts`) — the visible score is unchanged (still client-computed for
+      instant feedback), the POST just persists it and, server-side, auto-completes any
+      linked assignment; a failed save never blocks the reveal, only toasts
+      `QuizDetail.attemptSaveErrorTitle`. On success it invalidates the `["assignments"]`
+      query prefix (covers the list + every per-assignment `my-submission` query) so
+      navigating back reflects the new score. The assignments student view
+      (`assignments/page.tsx`) dropped the manual score/note self-report entirely: a new
+      pure helper `lib/assignmentQuizStatus.ts` (unit-tested) classifies each card into
+      `quiz-not-started` / `quiz-completed` (with the real graded score) / `manual-not-done`
+      / `manual-done`. A quiz-linked assignment (`quiz_id != null`) shows a "Take quiz →"
+      link into the existing quiz page, or "Completed · score N" once the auto-completed
+      submission exists — no self-reported number anywhere in that path. A non-quiz
+      assignment keeps a plain "Mark as done" toggle (`POST /assignments/{id}/submit` with
+      `score`/`note` both null) — no numeric input. Teacher view and the quiz page's
+      per-question reveal styling are untouched. Typed client regenerated against the live
+      backend (`openapi-typescript` → `schema.d.ts`) to pick up `QuizAttemptRequest` /
+      `QuizAttemptResult` / the new attempts path. i18n: `QuizDetail.attemptSaveErrorTitle`
+      and `Assignments.{takeQuiz,notStarted,completedLabel,markAsDone}` added, the now-dead
+      `Assignments.{scoreOptionalLabel,noteOptionalLabel,markComplete}` removed, all four
+      locales (en/uz/ko/ru) kept in parity via targeted anchored edits. Frontend: 223/223
+      tests green (53 files, +2 new: `assignmentQuizStatus.test.ts`, plus cases added to
+      `quizScore.test.ts`), `tsc --noEmit` clean, `eslint` clean. **Phase 5 increment 4
+      (auto-grade quiz → auto-complete assignment) is now fully done end-to-end** — not yet
+      browser-verified (standing no-browser gap, batched to the user's project-end pass per
+      `blockers_deferred_to_end.md`).
     - **Per-student targeting — TODO (NOT started).** Assignments target the **whole active
       org** only; assigning to specific members rather than broadcasting is future work.
     - **Frontend for assignments — DONE (increment 3c above).**

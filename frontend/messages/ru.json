@@ -178,7 +178,8 @@
     "score": "Ваш результат: {correct} / {total}",
     "checkAnswers": "Проверить ответы",
     "tryAgain": "Попробовать снова",
-    "answerAllHint": "Ответьте на все вопросы, чтобы проверить результат."
+    "answerAllHint": "Ответьте на все вопросы, чтобы проверить результат.",
+    "attemptSaveErrorTitle": "Не удалось сохранить результат"
   },
   "Flashcards": {
     "heading": "Карточки",
@@ -380,13 +381,14 @@
     "submissionsReceivedLabel": "Полученные отправки (студенты, отметившие выполнение — не полный список группы)",
     "submissionsLoadError": "Не удалось загрузить отправленные работы.",
     "noSubmissionsYet": "Пока нет отправленных работ.",
-    "scoreOptionalLabel": "Балл (необязательно)",
-    "noteOptionalLabel": "Заметка (необязательно)",
-    "markComplete": "Отметить выполненным",
     "submitting": "Отправка…",
     "submitErrorTitle": "Не удалось отправить",
     "submitSuccess": "Отмечено как выполненное",
     "completedOn": "Выполнено {date}",
-    "scoreLabel": "балл {score}"
+    "scoreLabel": "балл {score}",
+    "takeQuiz": "Пройти тест",
+    "notStarted": "Не начато",
+    "completedLabel": "Выполнено",
+    "markAsDone": "Отметить выполненным"
   }
 }

@@ -181,6 +181,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/subjects/{subject_id}/quizzes/{quiz_id}/attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Attempt Quiz
+         * @description Grade a student's quiz attempt server-side, record the attempt, and auto-complete
+         *     any assignment that links this quiz. Router-level orchestration keeps the two services
+         *     decoupled (Step 0.3): quiz.service grades + stores the attempt, then assignments.service
+         *     syncs the submission — neither service imports the other (no module cycle).
+         */
+        post: operations["attempt_quiz_subjects__subject_id__quizzes__quiz_id__attempts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/subjects/{subject_id}/flashcards": {
         parameters: {
             query?: never;
@@ -894,6 +917,31 @@ export interface components {
             /** Generations Today */
             generations_today: number;
         };
+        /**
+         * QuizAttemptRequest
+         * @description A student's submitted answers for one quiz attempt: a mapping of question id →
+         *     chosen option index. The server grades these against each question's `correct_index`
+         *     (`service.grade_and_record_attempt`) — a client-computed score is NEVER accepted, so
+         *     no score field exists here. Unknown question ids are ignored, and a missing or
+         *     out-of-range index simply counts as wrong (graded leniently, never a 500).
+         */
+        QuizAttemptRequest: {
+            /** Answers */
+            answers?: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * QuizAttemptResult
+         * @description The server-authoritative grade for one attempt. `total` is the number of questions
+         *     in the quiz; `correct` is how many the student got right.
+         */
+        QuizAttemptResult: {
+            /** Correct */
+            correct: number;
+            /** Total */
+            total: number;
+        };
         /** QuizGenerateRequest */
         QuizGenerateRequest: {
             /**
@@ -1584,6 +1632,42 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    attempt_quiz_subjects__subject_id__quizzes__quiz_id__attempts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subject_id: string;
+                quiz_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuizAttemptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuizAttemptResult"];
+                };
             };
             /** @description Validation Error */
             422: {

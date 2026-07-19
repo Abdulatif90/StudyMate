@@ -178,7 +178,8 @@
     "score": "You scored {correct} / {total}",
     "checkAnswers": "Check answers",
     "tryAgain": "Try again",
-    "answerAllHint": "Answer every question to check your score."
+    "answerAllHint": "Answer every question to check your score.",
+    "attemptSaveErrorTitle": "Couldn't save your score"
   },
   "Flashcards": {
     "heading": "Flashcards",
@@ -380,13 +381,14 @@
     "submissionsReceivedLabel": "Submissions received (students who've marked this complete — not the full roster)",
     "submissionsLoadError": "Couldn't load submissions.",
     "noSubmissionsYet": "No submissions yet.",
-    "scoreOptionalLabel": "Score (optional)",
-    "noteOptionalLabel": "Note (optional)",
-    "markComplete": "Mark complete",
     "submitting": "Submitting…",
     "submitErrorTitle": "Couldn't submit",
     "submitSuccess": "Marked complete",
     "completedOn": "Completed {date}",
-    "scoreLabel": "score {score}"
+    "scoreLabel": "score {score}",
+    "takeQuiz": "Take quiz",
+    "notStarted": "Not started",
+    "completedLabel": "Completed",
+    "markAsDone": "Mark as done"
   }
 }

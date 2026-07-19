@@ -18,6 +18,7 @@ import { toast } from "@/components/ui/toast";
 import { useApiClient } from "@/lib/api/useApiClient";
 import type { components } from "@/lib/api/schema";
 import { canCreateAssignment, canDeleteAssignment } from "@/lib/assignmentPermissions";
+import { assignmentQuizStatus } from "@/lib/assignmentQuizStatus";
 import { dueStatus } from "@/lib/assignmentDueDate";
 import { orgCapability } from "@/lib/orgRole";
 
@@ -147,7 +148,7 @@ function StudentAssignmentCard({
   mySubmission,
   isLoading,
   isSubmitting,
-  onSubmit,
+  onMarkDone,
   t,
 }: {
   assignment: Assignment;
@@ -155,12 +156,10 @@ function StudentAssignmentCard({
   mySubmission: Submission | null | undefined;
   isLoading: boolean;
   isSubmitting: boolean;
-  onSubmit: (payload: { score: number | null; note: string | null }) => void;
+  onMarkDone: () => void;
   t: Translate;
 }) {
-  const [score, setScore] = useState("");
-  const [note, setNote] = useState("");
-  const submitted = mySubmission != null;
+  const status = assignmentQuizStatus(assignment.quiz_id, mySubmission);
 
   return (
     <Card>
@@ -178,60 +177,43 @@ function StudentAssignmentCard({
 
         {isLoading ? (
           <p className="text-sm text-muted-foreground">{t("Common.loading")}</p>
-        ) : submitted && mySubmission ? (
+        ) : status.kind === "quiz-completed" ? (
+          <div className="flex items-center gap-2 rounded-lg bg-success-bg px-3 py-2 text-sm text-success">
+            <CheckCircle2 className="size-4 shrink-0" aria-hidden />
+            <span>
+              {t("Assignments.completedLabel")}
+              {status.score != null
+                ? ` · ${t("Assignments.scoreLabel", { score: status.score })}`
+                : ""}
+            </span>
+          </div>
+        ) : status.kind === "quiz-not-started" ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm text-muted-foreground">{t("Assignments.notStarted")}</span>
+            <Button
+              size="sm"
+              className="w-fit"
+              nativeButton={false}
+              render={
+                <Link href={`/subjects/${assignment.subject_id}/quizzes/${assignment.quiz_id}`}>
+                  {t("Assignments.takeQuiz")}
+                </Link>
+              }
+            />
+          </div>
+        ) : status.kind === "manual-done" && mySubmission ? (
           <div className="flex items-center gap-2 rounded-lg bg-success-bg px-3 py-2 text-sm text-success">
             <CheckCircle2 className="size-4 shrink-0" aria-hidden />
             <span>
               {t("Assignments.completedOn", {
                 date: new Date(mySubmission.completed_at).toLocaleDateString(),
               })}
-              {mySubmission.score != null
-                ? ` · ${t("Assignments.scoreLabel", { score: mySubmission.score })}`
-                : ""}
             </span>
           </div>
         ) : (
-          <form
-            className="flex flex-wrap items-end gap-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              onSubmit({
-                score: score.trim() ? Number(score) : null,
-                note: note.trim() || null,
-              });
-            }}
-          >
-            <div className="flex flex-col gap-1">
-              <Label htmlFor={`score-${assignment.id}`} className="text-xs">
-                {t("Assignments.scoreOptionalLabel")}
-              </Label>
-              <Input
-                id={`score-${assignment.id}`}
-                type="number"
-                min={0}
-                max={100}
-                className="w-20"
-                value={score}
-                disabled={isSubmitting}
-                onChange={(event) => setScore(event.target.value)}
-              />
-            </div>
-            <div className="flex min-w-40 flex-1 flex-col gap-1">
-              <Label htmlFor={`note-${assignment.id}`} className="text-xs">
-                {t("Assignments.noteOptionalLabel")}
-              </Label>
-              <Input
-                id={`note-${assignment.id}`}
-                maxLength={2000}
-                value={note}
-                disabled={isSubmitting}
-                onChange={(event) => setNote(event.target.value)}
-              />
-            </div>
-            <Button type="submit" size="sm" disabled={isSubmitting}>
-              {isSubmitting ? t("Assignments.submitting") : t("Assignments.markComplete")}
-            </Button>
-          </form>
+          <Button size="sm" className="w-fit" disabled={isSubmitting} onClick={onMarkDone}>
+            {isSubmitting ? t("Assignments.submitting") : t("Assignments.markAsDone")}
+          </Button>
         )}
       </CardContent>
     </Card>
@@ -374,19 +356,15 @@ export default function AssignmentsPage() {
     },
   });
 
+  // Manual completion for assignments with no linked quiz — a plain done toggle, no
+  // self-reported score (the confusing part this increment removes). `score`/`note` stay
+  // null; a quiz-linked assignment never calls this at all (it auto-completes via the
+  // quiz attempt endpoint instead).
   const submitAssignment = useMutation({
-    mutationFn: async ({
-      assignmentId,
-      score,
-      note,
-    }: {
-      assignmentId: string;
-      score: number | null;
-      note: string | null;
-    }) => {
+    mutationFn: async (assignmentId: string) => {
       const { data, error } = await api.POST("/assignments/{assignment_id}/submit", {
         params: { path: { assignment_id: assignmentId } },
-        body: { score, note },
+        body: { score: null, note: null },
       });
       if (error) {
         toast.error(t("Assignments.submitErrorTitle"), t("Common.tryAgain"));
@@ -394,9 +372,9 @@ export default function AssignmentsPage() {
       }
       return data;
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: (_data, assignmentId) => {
       queryClient.invalidateQueries({
-        queryKey: ["assignments", variables.assignmentId, "my-submission"],
+        queryKey: ["assignments", assignmentId, "my-submission"],
       });
       toast.success(t("Assignments.submitSuccess"));
     },
@@ -603,12 +581,9 @@ export default function AssignmentsPage() {
                     mySubmission={submissionResult?.data}
                     isLoading={submissionResult?.isLoading ?? false}
                     isSubmitting={
-                      submitAssignment.isPending &&
-                      submitAssignment.variables?.assignmentId === assignment.id
+                      submitAssignment.isPending && submitAssignment.variables === assignment.id
                     }
-                    onSubmit={(payload) =>
-                      submitAssignment.mutate({ assignmentId: assignment.id, ...payload })
-                    }
+                    onMarkDone={() => submitAssignment.mutate(assignment.id)}
                     t={t}
                   />
                 </li>

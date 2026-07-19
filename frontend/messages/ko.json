@@ -178,7 +178,8 @@
     "score": "{correct} / {total}점을 획득했습니다",
     "checkAnswers": "답 확인",
     "tryAgain": "다시 시도",
-    "answerAllHint": "점수를 확인하려면 모든 문제에 답하세요."
+    "answerAllHint": "점수를 확인하려면 모든 문제에 답하세요.",
+    "attemptSaveErrorTitle": "점수를 저장할 수 없습니다"
   },
   "Flashcards": {
     "heading": "플래시카드",
@@ -380,13 +381,14 @@
     "submissionsReceivedLabel": "접수된 제출 (완료로 표시한 학생 — 전체 명단이 아닙니다)",
     "submissionsLoadError": "제출 현황을 불러올 수 없습니다.",
     "noSubmissionsYet": "아직 제출이 없습니다.",
-    "scoreOptionalLabel": "점수 (선택 사항)",
-    "noteOptionalLabel": "메모 (선택 사항)",
-    "markComplete": "완료로 표시",
     "submitting": "제출 중…",
     "submitErrorTitle": "제출할 수 없습니다",
     "submitSuccess": "완료로 표시되었습니다",
     "completedOn": "완료 {date}",
-    "scoreLabel": "점수 {score}"
+    "scoreLabel": "점수 {score}",
+    "takeQuiz": "퀴즈 풀기",
+    "notStarted": "시작 안 함",
+    "completedLabel": "완료됨",
+    "markAsDone": "완료로 표시"
   }
 }

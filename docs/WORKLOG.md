@@ -2,6 +2,48 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-20 — Teams: graded quiz flow UI (Phase 5 increment 4b)
+Frontend half of 4a — wires the quiz-taking page and the assignments student view to the
+new server-graded attempt endpoint, replacing the manual self-reported score/note. Commit:
+`feat(assignments): graded quiz flow UI — take quiz, auto-score, auto-complete (Phase 5
+increment 4b)`.
+
+- **Quiz page persists the attempt.** `subjects/[subjectId]/quizzes/[quizId]/page.tsx`'s
+  "Check answers" button now, alongside the existing instant client-side reveal, fires a
+  mutation that POSTs `{ answers }` to `.../quizzes/{quizId}/attempts` (body built by a new
+  pure helper `toAttemptRequestBody` in `lib/quizScore.ts`, unit-tested). The visible score
+  stays client-computed — the server grades identically off `correct_index`, so nothing
+  about the reveal UX or per-question styling changed. A failed save doesn't block the
+  reveal, it toasts `QuizDetail.attemptSaveErrorTitle`. On success it invalidates the
+  `["assignments"]` query-key prefix, which covers both the assignments list and every
+  per-assignment `["assignments", id, "my-submission"]` query, so a linked assignment shows
+  the new score on return without a manual refresh.
+- **Assignments student view drops the manual score/note form.** New pure helper
+  `lib/assignmentQuizStatus.ts` (unit-tested, 4 branches) classifies each card:
+  `quiz-not-started` / `quiz-completed` (carries the real graded score) for a quiz-linked
+  assignment (`quiz_id != null`), or `manual-not-done` / `manual-done` for a plain one. A
+  quiz-linked assignment now shows "Not started" + a "Take quiz →" link into the existing
+  quiz page, or "Completed · score N" once the auto-completed submission exists — the score
+  is never self-reported. A non-quiz assignment keeps a simple "Mark as done" button
+  (`POST /assignments/{id}/submit` with `score`/`note` both null) instead of the old numeric
+  input. Teacher view (create/list/submissions/delete) and the quiz page's per-question
+  reveal styling are both untouched, as scoped.
+- **Typed client regenerated** against the live backend (`npm run generate-api-types` →
+  `openapi-typescript` against `:8000/openapi.json`) to pick up `QuizAttemptRequest`,
+  `QuizAttemptResult`, and the new `/subjects/{subject_id}/quizzes/{quiz_id}/attempts` POST
+  path shipped in 4a — confirmed `answers` is `{[key: string]: number}`, matching the quiz
+  page's existing `QuizAnswers` state shape exactly (no transform needed beyond the wrapper).
+- **i18n**: added `QuizDetail.attemptSaveErrorTitle` and
+  `Assignments.{takeQuiz,notStarted,completedLabel,markAsDone}`; removed the now-dead
+  `Assignments.{scoreOptionalLabel,noteOptionalLabel,markComplete}`. All four locales
+  (en/uz/ko/ru) kept in parity via targeted anchored edits (no full-file JSON round-trip,
+  per the prior reflow-bug lesson).
+- **Tests**: frontend 223/223 passing (53 files — 2 new: `assignmentQuizStatus.test.ts`, plus
+  new cases in `quizScore.test.ts`), `tsc --noEmit` clean, `eslint` clean. No `next build`
+  run (dev server owns :3000). Not yet browser-verified — batched into the user's
+  project-end no-browser blocker pass (`blockers_deferred_to_end.md`), consistent with every
+  other frontend-only increment so far.
+
 ## 2026-07-20 — Teams: server-graded quiz attempts + auto-complete linked assignments (Phase 5 increment 4a)
 Backend half of the "auto-grading / quiz-attempt linkage" that 3b left as a TODO. Commit:
 `feat(quiz): server-graded quiz attempts + auto-complete linked assignments (Phase 5 increment 4a)`.
