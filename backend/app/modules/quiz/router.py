@@ -11,10 +11,13 @@ from sqlmodel import Session
 from app.core.auth import get_current_user_id, get_org_context
 from app.core.db import get_session
 from app.core.org import OrgContext
+from app.modules.assignments import service as assignments_service
 from app.modules.documents.service import SubjectNotFoundError
 from app.modules.quiz import service
 from app.modules.quiz.generation import QuizGenerationError
 from app.modules.quiz.schemas import (
+    QuizAttemptRequest,
+    QuizAttemptResult,
     QuizGenerateRequest,
     QuizQuestionRead,
     QuizRead,
@@ -104,6 +107,34 @@ def get_quiz(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Quiz not found")
     questions = service.list_questions_for_reader(session, owner_id, org_ctx, subject_id, quiz_id)
     return _to_with_questions(quiz, questions)
+
+
+@router.post("/{quiz_id}/attempts", response_model=QuizAttemptResult)
+def attempt_quiz(
+    subject_id: uuid.UUID,
+    quiz_id: uuid.UUID,
+    data: QuizAttemptRequest,
+    session: Session = Depends(get_session),
+    owner_id: str = Depends(get_current_user_id),
+    org_ctx: OrgContext = Depends(get_org_context),
+) -> QuizAttemptResult:
+    """Grade a student's quiz attempt server-side, record the attempt, and auto-complete
+    any assignment that links this quiz. Router-level orchestration keeps the two services
+    decoupled (Step 0.3): quiz.service grades + stores the attempt, then assignments.service
+    syncs the submission — neither service imports the other (no module cycle)."""
+    try:
+        result = service.grade_and_record_attempt(
+            session, owner_id, org_ctx, subject_id, quiz_id, data.answers
+        )
+    except service.QuizNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Quiz not found") from exc
+
+    # Auto-complete any linked assignment in the caller's active org with the graded score.
+    # A no-op if the quiz isn't assigned — the attempt is still recorded above.
+    assignments_service.record_quiz_completion(
+        session, owner_id, org_ctx, quiz_id, result.correct, result.total
+    )
+    return result
 
 
 @router.delete("/{quiz_id}", status_code=status.HTTP_204_NO_CONTENT)

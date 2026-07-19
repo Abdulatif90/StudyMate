@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import UTC, datetime
 
 from sqlmodel import Session, select
 
@@ -32,7 +33,8 @@ from app.modules.documents.service import (
     sample_subject_chunk_texts_for_reader,
 )
 from app.modules.quiz.generation import generate_quiz_questions
-from app.modules.quiz.models import Quiz, QuizQuestion
+from app.modules.quiz.models import Quiz, QuizAttempt, QuizQuestion
+from app.modules.quiz.schemas import QuizAttemptResult
 from app.modules.subjects.models import Subject
 from app.modules.subjects.service import get_readable_subject, require_readable_subject
 from app.shared.language import DEFAULT_LANGUAGE
@@ -47,6 +49,13 @@ class NoQuizMaterialError(Exception):
     """Raised when a subject has no chunks to build a quiz from (nothing uploaded yet,
     or nothing has finished processing) — a client-actionable condition, distinct from
     an upstream model failure."""
+
+
+class QuizNotFoundError(Exception):
+    """Raised when a quiz doesn't exist OR the caller can't read it (→ 404). Deliberately
+    the SAME error for both so a caller can't tell a quiz exists vs. not — the same
+    404-hides-existence discipline as `get_quiz_for_reader` (which returns None for both
+    "missing" and "not in the shared set")."""
 
 
 def generate_quiz(
@@ -277,3 +286,70 @@ def delete_quiz(
     else:
         session.flush()
     return True
+
+
+def grade_and_record_attempt(
+    session: Session,
+    caller_id: str,
+    org_ctx: OrgContext,
+    subject_id: uuid.UUID,
+    quiz_id: uuid.UUID,
+    answers: dict[uuid.UUID, int],
+) -> QuizAttemptResult:
+    """Grade a student's quiz attempt server-side and UPSERT their `QuizAttempt` row.
+
+    Authorization goes through the SAME reader path as reading the quiz
+    (`get_quiz_for_reader`): a student may attempt a teacher's quiz over a shared org
+    subject, but a quiz they can't read raises `QuizNotFoundError` (→ 404). We grade
+    against the quiz OWNER's questions (on a shared quiz the questions belong to the
+    subject owner, exactly like `list_questions_for_reader`).
+
+    Grading is **authoritative and server-side** — the client's `answers` (question id →
+    chosen option index) are the only input; a client-computed score is never trusted.
+    `total` = number of questions; a question is correct only when its answer equals the
+    question's `correct_index`. Defensive by design: unknown question ids in `answers` are
+    ignored, and a missing or out-of-range index counts as wrong (never a 500).
+
+    One attempt row per (quiz, student): the row is UPSERTED so the **latest attempt wins**
+    (no duplicate, no history this increment).
+    """
+    quiz = get_quiz_for_reader(session, caller_id, org_ctx, subject_id, quiz_id)
+    if quiz is None:
+        raise QuizNotFoundError(quiz_id)
+
+    # The quiz owner's questions (NOT caller-scoped — on a shared quiz they belong to the
+    # subject owner), same filter as list_questions_for_reader.
+    questions = list(
+        session.exec(
+            select(QuizQuestion).where(
+                QuizQuestion.quiz_id == quiz_id, QuizQuestion.owner_id == quiz.owner_id
+            )
+        )
+    )
+
+    total = len(questions)
+    correct = sum(1 for question in questions if answers.get(question.id) == question.correct_index)
+
+    attempt = session.exec(
+        select(QuizAttempt).where(QuizAttempt.quiz_id == quiz_id, QuizAttempt.owner_id == caller_id)
+    ).first()
+    if attempt is None:
+        attempt = QuizAttempt(
+            quiz_id=quiz_id,
+            subject_id=quiz.subject_id,
+            owner_id=caller_id,
+            correct=correct,
+            total=total,
+        )
+        session.add(attempt)
+    else:
+        # Latest attempt wins — overwrite the existing row rather than inserting a second.
+        attempt.correct = correct
+        attempt.total = total
+        attempt.submitted_at = datetime.now(UTC)
+
+    session.commit()
+    logging.getLogger(__name__).info(
+        "Graded quiz attempt: quiz=%s student=%s score=%d/%d", quiz_id, caller_id, correct, total
+    )
+    return QuizAttemptResult(correct=correct, total=total)

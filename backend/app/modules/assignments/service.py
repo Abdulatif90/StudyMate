@@ -201,29 +201,93 @@ def submit_assignment(
     if get_assignment(session, org_ctx, assignment_id) is None:
         raise AssignmentNotFoundError(assignment_id)
 
+    submission = _upsert_submission(
+        session, assignment_id, caller_id, score=data.score, note=data.note
+    )
+    session.commit()
+    session.refresh(submission)
+    return submission
+
+
+def _upsert_submission(
+    session: Session,
+    assignment_id: uuid.UUID,
+    owner_id: str,
+    *,
+    score: int | None,
+    note: str | None,
+) -> AssignmentSubmission:
+    """Insert-or-update the caller's completion row for one assignment (the single upsert
+    path shared by manual `submit_assignment` and quiz-driven `record_quiz_completion`).
+
+    Relies on the `(assignment_id, owner_id)` DB uniqueness: a re-submit updates the same
+    row (`completed_at`/`score`/`note`) rather than inserting a duplicate. Does NOT commit
+    — the caller controls the transaction boundary (so a caller can upsert several rows in
+    one commit). Presence of the row is the "completed" signal; `completed_at` is refreshed
+    to now on every update so a re-completion advances the timestamp.
+    """
     submission = session.exec(
         select(AssignmentSubmission).where(
             AssignmentSubmission.assignment_id == assignment_id,
-            AssignmentSubmission.owner_id == caller_id,
+            AssignmentSubmission.owner_id == owner_id,
         )
     ).first()
 
     if submission is None:
         submission = AssignmentSubmission(
             assignment_id=assignment_id,
-            owner_id=caller_id,
-            score=data.score,
-            note=data.note,
+            owner_id=owner_id,
+            score=score,
+            note=note,
         )
         session.add(submission)
     else:
         submission.completed_at = datetime.now(UTC)
-        submission.score = data.score
-        submission.note = data.note
-
-    session.commit()
-    session.refresh(submission)
+        submission.score = score
+        submission.note = note
     return submission
+
+
+def record_quiz_completion(
+    session: Session,
+    caller_id: str,
+    org_ctx: OrgContext,
+    quiz_id: uuid.UUID,
+    correct: int,
+    total: int,
+) -> list[AssignmentSubmission]:
+    """Auto-complete every assignment in the caller's active org that links `quiz_id`,
+    recording the server-graded quiz score (Phase 5 increment 4a).
+
+    Called by the quiz-attempt endpoint AFTER `quiz.service.grade_and_record_attempt` has
+    graded the attempt (router-level orchestration — neither service imports the other, so
+    no module cycle). For each assignment where `quiz_id == quiz_id` AND `org_id ==
+    org_ctx.org_id` (the same active-org scope assignment reads use), UPSERTS the caller's
+    `AssignmentSubmission` with `score = correct` and `completed_at = now` (mark complete);
+    `note` is set to None (a quiz-driven completion carries no free-text note).
+
+    No linked assignment (or no active org) → a no-op returning `[]`: taking a quiz that
+    isn't assigned still records the attempt, it just completes nothing. Fails closed on no
+    active org exactly like the assignment reads (an assignment's `org_id` is never NULL, so
+    a `None` active org can never match a row).
+    """
+    if org_ctx.org_id is None:
+        return []
+
+    assignments = session.exec(
+        select(Assignment).where(Assignment.quiz_id == quiz_id, Assignment.org_id == org_ctx.org_id)
+    ).all()
+    if not assignments:
+        return []
+
+    submissions = [
+        _upsert_submission(session, assignment.id, caller_id, score=correct, note=None)
+        for assignment in assignments
+    ]
+    session.commit()
+    for submission in submissions:
+        session.refresh(submission)
+    return submissions
 
 
 def list_submissions(

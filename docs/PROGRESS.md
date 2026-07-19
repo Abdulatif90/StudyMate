@@ -2301,9 +2301,30 @@ frontends already shipped.
       backend and 3c's frontend) therefore lists the submissions that EXIST (students who
       acted), NOT a full roster diff. Closing this needs a Clerk member-list API call, the
       same "Clerk owns membership" boundary the Assignment model already lives within.
-    - **Auto-grading / quiz-attempt linkage — TODO (NOT started).** 3b's `score` is
-      student self-reported; tying completion to a real quiz attempt + auto-scoring it is a
-      later increment (no quiz-attempt linkage exists yet).
+    - **Increment 4a — server-graded quiz attempts + auto-complete linked assignments
+      (backend) — DONE** (2026-07-20; see WORKLOG "Teams: server-graded quiz attempts").
+      Closes the "Auto-grading / quiz-attempt linkage" TODO: 3b's self-reported `score` is
+      now replaced, for quiz-linked assignments, by a real server-graded quiz attempt. New
+      `QuizAttempt` model (owner = the student, unique on `(quiz_id, owner_id)`, UPSERTED so
+      the latest attempt wins — no history this increment). `POST /subjects/{subject_id}/
+      quizzes/{quiz_id}/attempts` grades the submitted `answers` (question id → chosen
+      index) **server-side** against each `QuizQuestion.correct_index` — there is no client
+      score input at all, so a client can never inflate its score; unknown ids ignored,
+      missing/out-of-range index counts wrong (never a 500). Access reuses the quiz reader
+      path (`get_quiz_for_reader`): a student may attempt a teacher's SHARED org-subject
+      quiz, a non-readable/cross-org/other-student's-private quiz is a 404. After grading,
+      the router (not the service — neither service imports the other, no module cycle) calls
+      `assignments.service.record_quiz_completion`, which UPSERTS the student's
+      `AssignmentSubmission` (`score = correct count`, marked complete) for every assignment
+      in the caller's active org that links the quiz; an unlinked quiz records the attempt but
+      completes nothing, and completion never leaks across orgs. The manual
+      `POST /assignments/{id}/submit` path is untouched for non-quiz assignments. New table
+      `quiz_attempts` (migration `b2c3d4e5f6a7`, hand-written) — **APPLIED to Neon** (verified:
+      `alembic current` == head `b2c3d4e5f6a7`; table `quiz_attempts` exists on Neon with its
+      unique constraint + indexes). 13 new tests in `test_quiz_attempts.py`; backend 422
+      passed / 11 deselected, ruff check + format clean. **Frontend half (increment 4b — a
+      "take the quiz" answer-hidden flow + submit + show the graded result / assignment
+      completion) is the NEXT increment (NOT started).**
     - **Per-student targeting — TODO (NOT started).** Assignments target the **whole active
       org** only; assigning to specific members rather than broadcasting is future work.
     - **Frontend for assignments — DONE (increment 3c above).**

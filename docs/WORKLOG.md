@@ -2,6 +2,59 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-20 — Teams: server-graded quiz attempts + auto-complete linked assignments (Phase 5 increment 4a)
+Backend half of the "auto-grading / quiz-attempt linkage" that 3b left as a TODO. Commit:
+`feat(quiz): server-graded quiz attempts + auto-complete linked assignments (Phase 5 increment 4a)`.
+
+- **Server-authoritative grading — no trusted client score.** New endpoint
+  `POST /subjects/{subject_id}/quizzes/{quiz_id}/attempts` takes only `answers` (question id
+  → chosen option index); there is deliberately NO score field in `QuizAttemptRequest`. The
+  score is computed in `quiz.service.grade_and_record_attempt` against each
+  `QuizQuestion.correct_index` — a question is correct only when the submitted index equals
+  `correct_index`. Defensive by design: unknown question ids in `answers` are ignored, and a
+  missing or out-of-range index counts as wrong, never a 500. `total` is the number of
+  questions. A test posts bogus `correct`/`score`/`total` alongside wrong answers and proves
+  the server ignores them and grades 0/2.
+- **Access reuses the quiz reader path.** Authorization goes through the exact same
+  `get_quiz_for_reader` used to read a quiz: a student may attempt a teacher's SHARED
+  org-subject quiz (graded against the quiz OWNER's questions, like
+  `list_questions_for_reader`), but a non-readable quiz — cross-org, or another student's
+  private quiz on the same shared subject — raises `QuizNotFoundError` → 404, so a caller
+  can't even probe for it.
+- **One attempt row per (quiz, student), UPSERTED.** New `QuizAttempt` model (owner = the
+  student; `subject_id` denormalized from the quiz for tenant-scoping without a join), unique
+  on `(quiz_id, owner_id)` (`uq_quiz_attempt_quiz_owner`). A re-attempt overwrites the same
+  row (latest wins, `submitted_at` advanced) — no duplicate, no full history this increment.
+- **Quiz → assignment auto-completion, wired at the ROUTER (not service→service).** After
+  grading, the quiz router calls `assignments.service.record_quiz_completion(session,
+  owner_id, org_ctx, quiz_id, result.correct, result.total)`. This router-level
+  orchestration is the deliberate wiring choice: quiz.service does NOT import
+  assignments.service and vice-versa, so there is no module cycle — the router owns the
+  two-step flow (grade + store attempt, then sync submissions). `record_quiz_completion`
+  UPSERTS the student's `AssignmentSubmission` (via the shared `_upsert_submission` helper,
+  `score = correct count`, `note = None`, marked complete) for EVERY assignment where
+  `quiz_id` matches AND `org_id == caller's active org`. No linked assignment (or no active
+  org) → a no-op returning `[]`: the attempt is still recorded, it just completes nothing.
+  Fails closed on no active org (an assignment's `org_id` is never NULL, so a `None` active
+  org can't match).
+- **Manual submit untouched.** `POST /assignments/{id}/submit` (3b) still works for non-quiz
+  assignments — a test seeds a quiz-less assignment and marks it complete with a self-reported
+  score/note through the manual path, unchanged.
+- **Migration APPLIED to Neon.** New table `quiz_attempts` (hand-written migration
+  `b2c3d4e5f6a7`, `Revises: a1b2c3d4e5f6`). Single head; Neon was at `a1b2c3d4e5f6` and
+  brought to head — `alembic current` == `b2c3d4e5f6a7`. Verified via SQLAlchemy inspector
+  that `quiz_attempts` exists on Neon with its 7 columns, the `uq_quiz_attempt_quiz_owner`
+  unique constraint, and the quiz_id/subject_id/owner_id indexes. The live app needs the
+  table immediately (a missing table would be a live 500 on the first attempt).
+- **Tests (offline, isolated SQLite + dependency-overrides).** 13 new tests in
+  `test_quiz_attempts.py`: grading correctness (full/partial/unanswered/out-of-range),
+  client-can't-inflate, attempt upsert (single row, latest wins), access (student attempts
+  shared teacher quiz, nonexistent→404, cross-org→404, other student's private quiz→404), and
+  auto-completion (linked quiz completes with the graded score, unlinked records attempt but
+  no submission, manual submit still works, no cross-org completion leak). Backend **422
+  passed / 11 deselected**, `ruff check` + `ruff format --check` clean. (Fixed only the prior
+  builder's un-run `ruff format` on the 4 touched files — pure line-reflow, no logic change.)
+
 ## 2026-07-20 — Referral reward grant — bonus daily generations (Phase 4 completion)
 Closes the last open Phase 4 item (attribution existed since the referral increment; this
 adds the actual reward). Commit:

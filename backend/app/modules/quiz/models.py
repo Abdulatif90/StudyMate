@@ -20,7 +20,7 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import JSON, Column
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, SQLModel, UniqueConstraint
 
 
 class Quiz(SQLModel, table=True):
@@ -53,3 +53,39 @@ class QuizQuestion(SQLModel, table=True):
     # order Claude generated them rather than by row insertion order / PK.
     order: int
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class QuizAttempt(SQLModel, table=True):
+    """A single student's graded attempt at a quiz (Phase 5 increment 4a).
+
+    The score is authoritative and computed **server-side** in `service.grade_and_record_attempt`
+    against each `QuizQuestion.correct_index` — a client-reported score is never trusted.
+    `correct`/`total` are the graded result; `total` is the number of questions in the quiz
+    (any unanswered/invalid answer counts as wrong).
+
+    **One row per (quiz, student)** — enforced by the DB `UniqueConstraint`, UPSERTED on
+    each submit so the **latest attempt wins** (simplest, predictable; we deliberately do
+    NOT keep a full attempt history this increment). `owner_id` is the STUDENT who took it.
+    `subject_id` is denormalized (like `Quiz`) for tenant-scoping without a join.
+
+    Plain FK columns, no ORM `relationship()`/cascade — consistent with the rest of the
+    codebase. A future quiz-delete cascade must delete attempt rows before the quiz row,
+    the same flush-before-parent-delete FK rule the other tables follow.
+    """
+
+    __tablename__ = "quiz_attempts"
+    __table_args__ = (
+        # One attempt row per student per quiz — the upsert in
+        # service.grade_and_record_attempt relies on this to never create a second row.
+        UniqueConstraint("quiz_id", "owner_id", name="uq_quiz_attempt_quiz_owner"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    quiz_id: uuid.UUID = Field(foreign_key="quizzes.id", index=True)
+    # Denormalized subject scope (mirrors Quiz.subject_id), FK for referential integrity.
+    subject_id: uuid.UUID = Field(foreign_key="subjects.id", index=True)
+    # The STUDENT who took the quiz (Clerk user id) — the owner scope. Indexed.
+    owner_id: str = Field(index=True)
+    correct: int
+    total: int
+    submitted_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
