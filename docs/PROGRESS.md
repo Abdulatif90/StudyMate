@@ -2209,7 +2209,9 @@ frontends already shipped.
       `generate_flashcards` uses `sample_subject_chunk_texts_for_reader`, cards over a
       shared subject are owned per-student (like conversations), and a non-owner's SM-2
       schedule lives in a new `FlashcardReviewState` (migration `5ccf38a52dfb`,
-      **NOT yet applied to Neon** — pending live step). Delete stays owner-only and now
+      **APPLIED to Neon** — verified: `alembic current` == head `a1b2c3d4e5f6`; tables
+      `flashcard_review_states`, `assignments`, `assignment_submissions` exist on Neon).
+      Delete stays owner-only and now
       cascades the card's review-state rows.
     - **Quiz half — DONE** (2026-07-19; see WORKLOG "Teams: quiz org read-through").
       Quiz generate/list/get/list-questions are now readability-scoped: `generate_quiz`
@@ -2240,8 +2242,9 @@ frontends already shipped.
       never leaks). Create requires `require_writable_subject` (teacher/admin of the
       subject's org); delete is allowed for the creator OR any teacher/admin of the org, a
       plain member is 403, cross-org is 404. New table `assignments` (migration
-      `faccee6a0508`, hand-written because Neon isn't up to date) — **NOT yet applied to
-      Neon** (pending live step, batched with `5ccf38a52dfb`). 17 new tests in
+      `faccee6a0508`, hand-written) — **APPLIED to Neon** (verified: `alembic current` ==
+      head `a1b2c3d4e5f6`; tables `flashcard_review_states`, `assignments`,
+      `assignment_submissions` exist on Neon). 17 new tests in
       `test_assignments.py`.
     - **Increment 3b — completion/submission tracking (backend) — DONE** (2026-07-20; see
       WORKLOG "Teams: assignment completion tracking"). The "tracks" half. New
@@ -2253,9 +2256,10 @@ frontends already shipped.
       that EXIST — 403 for a plain member, 404 cross-org), `GET /assignments/{id}/my-submission`
       (the caller's own row only). Every read org-gated via the reused `get_assignment`;
       `delete_assignment` now cascades its submission rows first (flush-before-parent,
-      plain-FK). New table `assignment_submissions` (migration `a1b2c3d4e5f6`, hand-written
-      because Neon isn't up to date) — **NOT yet applied to Neon** (pending live step,
-      batched with `faccee6a0508` / `5ccf38a52dfb`). 16 new tests in `test_assignments.py`.
+      plain-FK). New table `assignment_submissions` (migration `a1b2c3d4e5f6`, hand-written)
+      — **APPLIED to Neon** (verified: `alembic current` == head `a1b2c3d4e5f6`; tables
+      `flashcard_review_states`, `assignments`, `assignment_submissions` exist on Neon).
+      16 new tests in `test_assignments.py`.
     - **Increment 3c — assignment UI (frontend) — DONE** (2026-07-20; see WORKLOG
       "Teams: assignment UI"). Closes the "Frontend for assignments" TODO below — the
       "teacher assigns + tracks" vertical slice is now demoable end-to-end. One
