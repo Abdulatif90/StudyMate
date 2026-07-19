@@ -125,6 +125,18 @@ def list_conversations_by_subject(
     )
 
 
+def list_all_conversations_for_subject(
+    session: Session, subject_id: uuid.UUID
+) -> list[Conversation]:
+    """ALL of a subject's conversations, EVERY owner, with NO ownership/access check —
+    **cascade-only**, same spirit as `subjects.service._get_subject_by_id`. Never expose
+    to a request path: used exclusively by `subjects.service.delete_subject` to enumerate
+    every member's conversations on a shared org subject (each then passed to the
+    owner-scoped `delete_conversation` with its own `owner_id`), so the subject delete
+    can't hit an FK violation from another member's conversations/turns."""
+    return list(session.exec(select(Conversation).where(Conversation.subject_id == subject_id)))
+
+
 def delete_conversation(
     session: Session, owner_id: str, conversation_id: uuid.UUID, *, commit: bool = True
 ) -> bool:

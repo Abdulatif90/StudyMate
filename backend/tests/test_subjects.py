@@ -31,7 +31,7 @@ from app.modules.ask.models import Conversation, ConversationTurn
 from app.modules.documents import service as documents_service
 from app.modules.documents.models import Document, DocumentChunk, DocumentStatus
 from app.modules.flashcards import service as flashcards_service
-from app.modules.flashcards.models import Flashcard
+from app.modules.flashcards.models import Flashcard, FlashcardReviewState
 from app.modules.quiz import service as quiz_service
 from app.modules.quiz.models import Quiz, QuizQuestion
 from app.modules.subjects import service as subjects_service
@@ -273,6 +273,100 @@ def test_delete_subject_with_no_content_still_cascades_cleanly():
         deleted = subjects_service.delete_subject(session, _TEST_USER, OrgContext(), subject.id)
         assert deleted is True
         assert subjects_service.get_subject(session, _TEST_USER, subject.id) is None
+
+
+def test_delete_shared_org_subject_cascades_across_all_members(_mock_r2):
+    """Phase 5 increment 2b — the shared-subject cascade. A teacher T owns an ORG subject;
+    a student member S has derived their OWN content on it (flashcards, quiz+questions,
+    conversation+turns) PLUS a `FlashcardReviewState` over one of T's shared cards. T
+    deletes the subject → EVERY member's rows are gone (no FK violation), and R2 delete
+    ran for BOTH owners' documents. Before 2b this raised an FK error, because the cascade
+    only enumerated T's children and left S's rows behind."""
+    teacher = "user_teacher"
+    student = "user_student"
+    org_id = "org_shared"
+    org_ctx = OrgContext(org_id=org_id, org_role="org:admin")  # T is a teacher/admin
+
+    with Session(_engine) as session:
+        subject = Subject(owner_id=teacher, name="Shared", org_id=org_id)
+        session.add(subject)
+        session.commit()
+        session.refresh(subject)
+
+        teacher_content = _seed_full_subject_content(
+            session, teacher, subject.id, _mock_r2, suffix="teacher"
+        )
+        student_content = _seed_full_subject_content(
+            session, student, subject.id, _mock_r2, suffix="student"
+        )
+
+        # The student also has a private SM-2 schedule over the TEACHER's shared card —
+        # a FlashcardReviewState row keyed by the teacher's flashcard_id but owned by the
+        # student. This is the row that would trip the FK on the teacher's card delete if
+        # the cascade didn't clear every reviewer's states.
+        review_state = FlashcardReviewState(
+            flashcard_id=teacher_content["flashcard_id"], owner_id=student
+        )
+        session.add(review_state)
+        session.commit()
+        review_state_id = review_state.id
+
+        deleted = subjects_service.delete_subject(session, teacher, org_ctx, subject.id)
+        assert deleted is True
+
+        # The subject and BOTH members' content are gone — no FK violation.
+        assert subjects_service.get_subject(session, teacher, subject.id) is None
+        for owner, content in ((teacher, teacher_content), (student, student_content)):
+            assert (
+                documents_service.get_document(session, owner, subject.id, content["document_id"])
+                is None
+            )
+            assert documents_service.list_chunks(session, owner, content["document_id"]) == []
+            assert quiz_service.get_quiz(session, owner, subject.id, content["quiz_id"]) is None
+            assert quiz_service.list_questions(session, owner, content["quiz_id"]) == []
+            assert flashcards_service.get_flashcard(session, owner, content["flashcard_id"]) is None
+            assert ask_service.get_conversation(session, owner, content["conversation_id"]) is None
+            assert ask_service.list_turns(session, owner, content["conversation_id"]) == []
+            assert content["r2_key"] not in _mock_r2  # R2 delete ran for BOTH owners
+
+        # The student's review-state over the teacher's card is gone too.
+        assert session.get(FlashcardReviewState, review_state_id) is None
+
+
+def test_member_cannot_delete_shared_org_subject_403():
+    """A plain member (student) of the owning org can READ a shared subject but not
+    delete it — `require_writable_subject` raises `SubjectWriteForbiddenError` (→ 403),
+    unchanged by the cascade rewrite."""
+    teacher = "user_teacher"
+    student = "user_student"
+    org_id = "org_shared"
+    with Session(_engine) as session:
+        subject = Subject(owner_id=teacher, name="Shared", org_id=org_id)
+        session.add(subject)
+        session.commit()
+        session.refresh(subject)
+
+        member_ctx = OrgContext(org_id=org_id, org_role="org:member")
+        with pytest.raises(subjects_service.SubjectWriteForbiddenError):
+            subjects_service.delete_subject(session, student, member_ctx, subject.id)
+        # Nothing was deleted.
+        assert subjects_service.get_subject(session, teacher, subject.id) is not None
+
+
+def test_delete_subject_not_readable_returns_false():
+    """A caller who can't even read the subject (different org, no membership) gets
+    `False` (→ router 404) — existence never leaks; unchanged by the cascade rewrite."""
+    teacher = "user_teacher"
+    outsider = "user_outsider"
+    with Session(_engine) as session:
+        subject = Subject(owner_id=teacher, name="Shared", org_id="org_A")
+        session.add(subject)
+        session.commit()
+        session.refresh(subject)
+
+        outsider_ctx = OrgContext(org_id="org_B", org_role="org:admin")
+        assert subjects_service.delete_subject(session, outsider, outsider_ctx, subject.id) is False
+        assert subjects_service.get_subject(session, teacher, subject.id) is not None
 
 
 _HAS_REAL_DB_AND_R2 = bool(get_settings().database_url) and bool(get_settings().r2_bucket_name)

@@ -414,6 +414,16 @@ def list_documents(session: Session, owner_id: str, subject_id: uuid.UUID) -> li
     )
 
 
+def list_all_documents_for_subject(session: Session, subject_id: uuid.UUID) -> list[Document]:
+    """ALL of a subject's documents, EVERY owner, with NO ownership/access check —
+    **cascade-only**, same spirit as `subjects.service._get_subject_by_id`. Never expose
+    this to a request path: it's used exclusively by `subjects.service.delete_subject` to
+    enumerate every member's derived documents on a shared org subject (each is then
+    passed to the owner-scoped `delete_document` with its own `owner_id`), so deleting the
+    subject can't hit an FK violation from another member's rows."""
+    return list(session.exec(select(Document).where(Document.subject_id == subject_id)))
+
+
 def list_documents_for_reader(
     session: Session, caller_id: str, org_ctx: OrgContext, subject_id: uuid.UUID
 ) -> list[Document]:

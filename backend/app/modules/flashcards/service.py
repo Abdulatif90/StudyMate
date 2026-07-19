@@ -256,6 +256,17 @@ def list_flashcards(session: Session, owner_id: str, subject_id: uuid.UUID) -> l
     )
 
 
+def list_all_flashcards_for_subject(session: Session, subject_id: uuid.UUID) -> list[Flashcard]:
+    """ALL of a subject's flashcards, EVERY owner, with NO ownership/access check —
+    **cascade-only**, same spirit as `subjects.service._get_subject_by_id`. Never expose
+    to a request path: used exclusively by `subjects.service.delete_subject` to enumerate
+    every member's cards on a shared org subject (each then passed to the owner-scoped
+    `delete_flashcard` with its own `owner_id`, which also clears that card's
+    `FlashcardReviewState` rows for ALL reviewers), so the subject delete can't hit an FK
+    violation from another member's cards or review-state rows."""
+    return list(session.exec(select(Flashcard).where(Flashcard.subject_id == subject_id)))
+
+
 def list_flashcards_for_reader(
     session: Session, caller_id: str, org_ctx: OrgContext, subject_id: uuid.UUID
 ) -> list[ScheduledFlashcard]:

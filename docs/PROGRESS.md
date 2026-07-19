@@ -2201,8 +2201,9 @@ frontends already shipped.
   plus updated existing tests — backend 341 passed / 11 deselected, ruff clean; frontend
   206 passed, tsc + eslint clean. All cross-tenant isolation exhaustively covered.
   **REMAINING Phase 5 increments (explicit TODOs, not started):**
-  - **Increment 2b — quiz/flashcard org read-through** — extend the same org-read model to
-    quiz + flashcard *generation/reading* over an org subject.
+  - **Increment 2b — quiz/flashcard org read-through — DONE** (2026-07-19; all three
+    sub-pieces below complete). Extended the org-read model to quiz + flashcard
+    generation/reading over a shared subject, and finished the all-members delete cascade.
     - **Flashcard half — DONE** (2026-07-19; see WORKLOG "Teams: flashcard org
       read-through"). Flashcard generate/list/due/review are now readability-scoped:
       `generate_flashcards` uses `sample_subject_chunk_texts_for_reader`, cards over a
@@ -2219,11 +2220,14 @@ frontends already shipped.
       student's. Delete stays owner-only. No new table/migration (quizzes carry no
       per-user state). Owner-scoped `list_quizzes`/`get_quiz`/`list_questions` kept for
       the cascade.
-    - **Shared-subject DELETE cascade — STILL REMAINING** (the only piece left in 2b):
-      `delete_subject` still
-      enumerates the subject OWNER's children only, so a co-teacher's uploads or other
-      members' derived content over a shared subject aren't cleaned (a real FK on
-      `subject_id` makes that fail loudly, not leak — but this should be handled properly).
+    - **Shared-subject DELETE cascade — DONE** (2026-07-19; see WORKLOG "Teams:
+      shared-subject delete cascade across all members"). `delete_subject` now enumerates
+      EVERY member's children (via cascade-only `list_all_*_for_subject` enumerators, one
+      per content module) and deletes each with its own `owner_id` through the existing
+      owner-scoped `delete_*` helpers — so a teacher can delete a shared subject other
+      members used without hitting an FK violation, and every member's documents/quizzes/
+      flashcards (+ all reviewers' `FlashcardReviewState` rows)/conversations are cleaned.
+      Authorization unchanged (`require_writable_subject`). No schema change.
   - **Teacher assigns + tracks** — teacher-only actions (guarded by `require_teacher`):
     assign material/quizzes to students, view student progress across the org.
   - **Admin / billing seats** — org-level plan + per-seat billing (Polar), seat counts,

@@ -2,6 +2,54 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-19 — Teams: shared-subject delete cascade across all members (Phase 5, increment 2b — final piece)
+Closes the last gap in increment 2b. Before this, `subjects.service.delete_subject`'s
+cascade enumerated only the SUBJECT OWNER's children — so on a shared org subject, any
+OTHER member's derived content (their own flashcards/quizzes/conversations, plus their
+`FlashcardReviewState` rows over the teacher's shared cards) was left behind, and the
+final `session.delete(subject)` would raise an FK violation (a loud 500), meaning a
+teacher literally couldn't delete a subject other members had used. Now the cascade
+cleans up EVERY member's content. **No schema change → no migration.** Commit:
+`feat(teams): shared-subject delete cascade across all members (Phase 5 increment 2b)`.
+
+- **Four cascade-only enumerators** added, one per content module — each returns ALL of a
+  subject's rows regardless of owner, with NO ownership/access check, documented as
+  cascade-only (same spirit as `subjects.service._get_subject_by_id`; never exposed to a
+  request path): `documents.service.list_all_documents_for_subject`,
+  `quiz.service.list_all_quizzes_for_subject`,
+  `flashcards.service.list_all_flashcards_for_subject`,
+  `ask.service.list_all_conversations_for_subject`.
+- **`delete_subject` cascade rewritten** to iterate those all-owner lists and call the
+  EXISTING owner-scoped `delete_*` with **each row's OWN `owner_id`** (not the subject
+  owner's, not the caller's), `commit=False`. This reuses every module's child-row + R2
+  cleanup unchanged: `delete_document` → chunks + R2 object; `delete_quiz` → questions;
+  `delete_flashcard` → that card's `FlashcardReviewState` rows for ALL reviewers;
+  `delete_conversation` → turns. Same delete ORDER (documents, quizzes, flashcards,
+  conversations, then the subject) and one-transaction/`commit=False` discipline as
+  before. For a private subject (owner == caller) it's identical to before — only one
+  owner's content ever exists. Rewrote the docstring (the old "content OTHER members
+  derived … is NOT enumerated … known limitation flagged for 2b" paragraph is now
+  resolved).
+- **Authorization UNCHANGED**: still `require_writable_subject` (owner, or a teacher/admin
+  of the owning org); a plain member still gets `SubjectWriteForbiddenError` (→ 403); a
+  non-readable subject still returns `False` (→ 404).
+- **Tests** (extend `tests/test_subjects.py`): `test_delete_shared_org_subject_cascades_across_all_members`
+  — teacher T owns an org subject; student member S has their own document(+chunk)/quiz(+question)/
+  flashcard/conversation(+turn) on it AND a `FlashcardReviewState` over one of T's shared
+  cards; T deletes → ALL rows across BOTH owners gone (incl. the review-state) and R2
+  `delete_object` ran for both owners' documents. Verified this test FAILS on the old
+  owner-only cascade (temporarily re-scoped the loop → the student's document survived,
+  assertion caught it) and passes on the new one. Plus `test_member_cannot_delete_shared_org_subject_403`
+  (member → `SubjectWriteForbiddenError`) and `test_delete_subject_not_readable_returns_false`
+  (different org → `False`). The pre-existing single-owner + empty-subject cascade tests
+  still pass unchanged (the enumerators filter by `subject_id`, so a *different* subject's
+  other-owner content stays untouched).
+  Verify: `pytest tests` → **372 passed, 11 deselected**; `ruff check .` → clean;
+  `ruff format --check .` → clean.
+- **Increment 2b is now COMPLETE** — flashcard read-through + quiz read-through + the
+  all-members delete cascade all done. Remaining Phase 5 work is "Teacher assigns +
+  tracks" and "Admin / billing seats" only.
+
 ## 2026-07-19 — Teams: quiz org read-through (Phase 5, increment 2b — quiz half)
 Applies the same org-owned shared-subject read model to **quizzes** (mirrors the
 flashcard half in the entry below). A member can now generate, list, and read quizzes

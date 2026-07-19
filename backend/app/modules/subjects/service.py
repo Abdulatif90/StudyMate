@@ -204,25 +204,29 @@ def get_subject(session: Session, owner_id: str, subject_id: uuid.UUID) -> Subje
 def delete_subject(
     session: Session, caller_id: str, org_ctx: OrgContext, subject_id: uuid.UUID
 ) -> bool:
-    """Delete a subject and everything its OWNER owns under it: their documents (+
-    `DocumentChunk` rows + R2 objects), quizzes (+ questions), flashcards, and
-    conversations (+ turns) — then the `Subject` row itself. Returns `False` (router →
-    404) if the subject doesn't exist or the caller can't read it. Raises
-    `SubjectWriteForbiddenError` (router → 403) if the caller can read but not write it
-    (a student member of the owning org).
+    """Delete a subject and ALL content derived under it by EVERY member — documents (+
+    `DocumentChunk` rows + R2 objects), quizzes (+ questions), flashcards (+ every
+    reviewer's `FlashcardReviewState` rows), and conversations (+ turns) — then the
+    `Subject` row itself. Returns `False` (router → 404) if the subject doesn't exist or
+    the caller can't read it. Raises `SubjectWriteForbiddenError` (router → 403) if the
+    caller can read but not write it (a student member of the owning org).
 
     **Authorization is `require_writable_subject`** (owner, or a teacher/admin of the
     org that owns it) — the same single-source-of-truth guard every write path uses.
 
-    **The cascade enumerates by the SUBJECT OWNER's id (`subject.owner_id`), not the
-    caller's** — so a teacher deleting an org subject they own cleans up their own child
-    rows correctly, and for a private subject (owner == caller) behavior is identical to
-    before. Content that OTHER members derived over a shared org subject (e.g. a
-    student's own conversations, quiz attempts, flashcards — all deliberately kept
-    `owner_id`-scoped to that student this increment) is NOT enumerated here; because
-    every child's `subject_id` is a real FK, such rows would make the final subject
-    delete fail loudly (FK violation) rather than silently orphan — a known limitation
-    flagged for the teacher-owned-content increment (2b), not a data-leak path.
+    **The cascade enumerates ALL owners' children, not just the subject owner's.** On a
+    shared org subject other members derive their own content (a student's own
+    flashcards/quizzes/conversations, all `owner_id`-scoped to that student, plus their
+    `FlashcardReviewState` rows over the teacher's shared cards). Because every child's
+    `subject_id` (or `flashcard_id`) is a real FK, leaving another member's rows behind
+    would make the final `session.delete(subject)` raise an FK violation. So each content
+    module exposes a cascade-only `list_all_*_for_subject` enumerator (ALL owners, no
+    access check), and this iterates those and calls the EXISTING owner-scoped `delete_*`
+    with **each row's OWN `owner_id`** — reusing every module's child-row + R2 cleanup
+    (delete_document → chunks + R2 object; delete_quiz → questions; delete_flashcard →
+    that card's `FlashcardReviewState` rows for all reviewers; delete_conversation →
+    turns). For a private subject (owner == caller) this is identical to before — there's
+    only ever one owner's content.
 
     **Deliberately not a DB-level `ON DELETE CASCADE`** (same reasoning as before org
     sharing): a DB cascade would delete `Document` rows while leaving their R2 objects
@@ -232,10 +236,10 @@ def delete_subject(
     entire thing back, never a half-deleted subject.
     """
     # See the module-level comment above for why these aren't top-level imports.
-    from app.modules.ask.service import delete_conversation, list_conversations_by_subject
-    from app.modules.documents.service import delete_document, list_documents
-    from app.modules.flashcards.service import delete_flashcard, list_flashcards
-    from app.modules.quiz.service import delete_quiz, list_quizzes
+    from app.modules.ask.service import delete_conversation, list_all_conversations_for_subject
+    from app.modules.documents.service import delete_document, list_all_documents_for_subject
+    from app.modules.flashcards.service import delete_flashcard, list_all_flashcards_for_subject
+    from app.modules.quiz.service import delete_quiz, list_all_quizzes_for_subject
 
     subject = _get_subject_by_id(session, subject_id)
     if subject is None or not can_read_subject(subject, caller_id, org_ctx.org_id):
@@ -243,19 +247,19 @@ def delete_subject(
     if not can_write_subject(subject, caller_id, org_ctx):
         raise SubjectWriteForbiddenError(subject_id)
 
-    owner_id = subject.owner_id  # enumerate the OWNER's children, not the caller's
+    # Enumerate EVERY member's children (not just the subject owner's) and delete each
+    # with its OWN owner_id, so no member's rows are left to trip the subject-delete FK.
+    for document in list_all_documents_for_subject(session, subject_id):
+        delete_document(session, document.owner_id, subject_id, document.id, commit=False)
 
-    for document in list_documents(session, owner_id, subject_id):
-        delete_document(session, owner_id, subject_id, document.id, commit=False)
+    for quiz in list_all_quizzes_for_subject(session, subject_id):
+        delete_quiz(session, quiz.owner_id, subject_id, quiz.id, commit=False)
 
-    for quiz in list_quizzes(session, owner_id, subject_id):
-        delete_quiz(session, owner_id, subject_id, quiz.id, commit=False)
+    for flashcard in list_all_flashcards_for_subject(session, subject_id):
+        delete_flashcard(session, flashcard.owner_id, flashcard.id, commit=False)
 
-    for flashcard in list_flashcards(session, owner_id, subject_id):
-        delete_flashcard(session, owner_id, flashcard.id, commit=False)
-
-    for conversation in list_conversations_by_subject(session, owner_id, subject_id):
-        delete_conversation(session, owner_id, conversation.id, commit=False)
+    for conversation in list_all_conversations_for_subject(session, subject_id):
+        delete_conversation(session, conversation.owner_id, conversation.id, commit=False)
 
     session.delete(subject)
     session.commit()

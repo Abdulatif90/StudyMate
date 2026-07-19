@@ -139,6 +139,16 @@ def list_quizzes(session: Session, owner_id: str, subject_id: uuid.UUID) -> list
     )
 
 
+def list_all_quizzes_for_subject(session: Session, subject_id: uuid.UUID) -> list[Quiz]:
+    """ALL of a subject's quizzes, EVERY owner, with NO ownership/access check —
+    **cascade-only**, same spirit as `subjects.service._get_subject_by_id`. Never expose
+    to a request path: used exclusively by `subjects.service.delete_subject` to enumerate
+    every member's quizzes on a shared org subject (each then passed to the owner-scoped
+    `delete_quiz` with its own `owner_id`), so the subject delete can't hit an FK
+    violation from another member's rows."""
+    return list(session.exec(select(Quiz).where(Quiz.subject_id == subject_id)))
+
+
 def list_quizzes_for_reader(
     session: Session, caller_id: str, org_ctx: OrgContext, subject_id: uuid.UUID
 ) -> list[Quiz]:
