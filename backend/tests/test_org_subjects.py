@@ -46,6 +46,11 @@ ORG_O2 = "org_O2"
 
 _ROLE_ADMIN = "org:admin"
 _ROLE_MEMBER = "org:member"
+# CONFIRMED AT RUNTIME (via `GET /org`) that Clerk can also emit the role claim as
+# this bare, unprefixed slug rather than `org:admin` — this was the exact shape
+# that broke teacher detection (see docs/DECISIONS.md ADR #9), so it gets its own
+# coverage below alongside the prefixed-form cases.
+_ROLE_ADMIN_BARE = "admin"
 
 _engine = create_engine(
     "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
@@ -180,6 +185,18 @@ def test_teacher_creates_org_subject_and_member_can_read_it_and_its_documents():
 
     # ...and it appears in their subject listing (own + active org's).
     assert subject["id"] in [s["id"] for s in client.get("/subjects").json()]
+
+
+def test_teacher_with_bare_admin_role_can_create_and_write_org_subject():
+    # The exact runtime bug: a real Clerk session emitted `org_role: "admin"` (bare,
+    # no `org:` prefix), which `is_teacher_role` used to reject outright, silently
+    # demoting an actual org admin to "student" and blocking org content writes.
+    _act_as(TEACHER, ORG_O, _ROLE_ADMIN_BARE)
+    subject = _create_subject("Shared Physics (bare role)")
+    assert subject["org_id"] == ORG_O  # published to the org, not private
+
+    assert _upload(subject["id"]).status_code == 201
+    assert client.delete(f"/subjects/{subject['id']}").status_code == 204
 
 
 def test_member_can_ask_over_an_org_subject(monkeypatch):
@@ -397,6 +414,11 @@ def test_can_write_subject_owner_and_org_teacher_only():
     assert can_write_subject(org_subject, "co_teacher", teacher_ctx) is True  # org teacher
     assert can_write_subject(org_subject, "student", student_ctx) is False  # member
     assert can_write_subject(org_subject, "t2", other_org_teacher_ctx) is False  # wrong org
+
+    # Bare (unprefixed) role slug — the runtime-confirmed shape — must grant the
+    # same write access as the `org:admin` form above.
+    bare_teacher_ctx = OrgContext(org_id=ORG_O, org_role=_ROLE_ADMIN_BARE)
+    assert can_write_subject(org_subject, "co_teacher2", bare_teacher_ctx) is True
 
 
 def test_can_write_subject_private_only_owner():

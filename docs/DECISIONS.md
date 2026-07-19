@@ -100,12 +100,21 @@ hand-roll auth" reasoning as ADR #2 (Clerk over hand-rolled JWT).
   Organizations disabled on the instance) → `OrgContext(None, None)`, a valid state, not
   an error/401. `get_org_context` / `require_teacher` (FastAPI deps in `auth.py`) reuse
   the existing JWKS verification — no second verification path, no unverified token.
-- **Role mapping**: Clerk's default org roles are `org:admin` / `org:member` (verified
-  against the installed `@clerk/*` SDK type docs). We map **admin → `teacher`, member →
-  `student`** (a custom `org:teacher` role is also honored if the instance ever adds
-  one). Mirrored client-side in `frontend/src/lib/orgRole.ts` so UI and API authorize on
-  the same role keys and can't drift. `student` is the safe default (teacher is the
-  privileged capability).
+- **Role mapping**: Clerk's default org roles are admin / member. The `@clerk/*` SDK
+  type docs suggest the `org:`-prefixed claim form (`org:admin` / `org:member`), but this
+  was **CONFIRMED AT RUNTIME (2026-07-19, via a real signed-in session hitting
+  `GET /org` with an active org)** to actually arrive as the **bare, unprefixed slug**
+  (`org_role: "admin"`) — which form an instance emits depends on its session-token
+  version, so `is_teacher_role`/`org_capability` in `org.py` normalize the claim (strip
+  any `prefix:`, lowercase) before comparing, accepting BOTH `admin`/`org:admin` and
+  `teacher`/`org:teacher`. (An earlier version of this mapping matched the raw claim
+  against `org:admin` only, which silently misclassified real admins as `student` —
+  fixed once the bare form was observed.) We map **admin → `teacher`, member →
+  `student`**. Mirrored client-side in `frontend/src/lib/orgRole.ts` so UI and API
+  authorize on the same role keys and can't drift — that mirror still assumes the
+  `org:`-prefixed form only and should be updated to the same normalization if a bare
+  role claim is ever observed reaching the frontend. `student` is the safe default
+  (teacher is the privileged capability).
 - **Scope of increment 1 = foundation only**: create org / add-invite members / roles /
   see membership, via Clerk's UI + the backend org-context deps. **No content is
   org-scoped yet** — existing subjects/documents/quiz/flashcards stay `owner_id`-scoped

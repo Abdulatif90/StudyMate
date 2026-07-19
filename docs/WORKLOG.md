@@ -2,6 +2,36 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-19 — Teams: fix bare Clerk org role slug misclassifying admins as students
+The Step 0 runtime check deferred in the entry below came back: the user hit `GET /org`
+in a real signed-in session with an active org and got `org_role: "admin"` — the BARE
+slug, not the `org:admin`-prefixed form `app/core/org.py` assumed. `is_teacher_role`
+compared the raw claim against `{"org:admin", "org:teacher"}` only, so a real org admin
+was silently mapped to `student`, which meant `can_write_subject`/`require_teacher` both
+denied them — an admin couldn't create an org subject or write to org content, quietly
+breaking the increment-2 sharing feature above for anyone whose instance emits the bare
+form.
+- Fix: `org.py` now normalizes the role (`_normalize_role` — strip any `prefix:`,
+  lowercase) before comparing, and the teacher-role set is the normalized
+  `{"admin", "teacher"}`. Accepts both `admin`/`org:admin` and `teacher`/`org:teacher`;
+  `member`/`org:member`, unknown roles, empty string, and `None` all still resolve to
+  the safe `student` default. `org_capability` keeps delegating to `is_teacher_role`
+  unchanged. Updated the module docstring/comments and ADR #9 to record the
+  runtime-confirmed bare-slug format instead of re-assuming the prefixed one.
+- Tests: `test_auth.py::test_role_helpers_map_admin_to_teacher_and_member_to_student`
+  extended to cover bare + prefixed forms both ways, plus `""`/`None`/unknown roles.
+  `test_org_subjects.py` gained `test_teacher_with_bare_admin_role_can_create_and_write_org_subject`
+  (the exact runtime scenario: bare `"admin"` role creates an org subject, uploads, and
+  deletes it — all previously 403'd) and a bare-role case in
+  `test_can_write_subject_owner_and_org_teacher_only`; all existing `org:admin`-prefixed
+  and cross-org-isolation cases kept unchanged/unweakened.
+- Noted (not fixed, out of scope for this pass): `frontend/src/lib/orgRole.ts` mirrors
+  the OLD prefixed-only assumption, so a bare-role teacher would still see student-tier
+  UI even though the backend now authorizes their writes correctly — flagged for a
+  follow-up so the client mirror doesn't drift from this fix.
+- Verify: `pytest tests` → **342 passed, 11 deselected**; `ruff check .` → clean.
+  Commit: `fix(teams): accept bare Clerk org role slugs so admins aren't seen as students`.
+
 ## 2026-07-19 — Teams: org-owned shared subjects (Phase 5, increment 2)
 First content-sharing slice on the Clerk-Organizations foundation (increment 1 / ADR #9).
 Model = **org-owned, read-shared subjects**: a `Subject` gains a nullable `org_id`; NULL =

@@ -141,11 +141,22 @@ def test_get_org_context_rejects_invalid_token():
 
 
 def test_role_helpers_map_admin_to_teacher_and_member_to_student():
+    # Clerk's `org_role` claim has been CONFIRMED AT RUNTIME (via `GET /org`) to
+    # arrive as the bare slug (`"admin"`), not just the `org:`-prefixed form the
+    # SDK docs describe — both must be accepted, and everything else must stay
+    # `student` (the safe default), including unknown/empty/missing roles.
+    assert is_teacher_role("admin") is True
     assert is_teacher_role("org:admin") is True
+    assert is_teacher_role("teacher") is True
+    assert is_teacher_role("org:teacher") is True
+    assert is_teacher_role("member") is False
     assert is_teacher_role("org:member") is False
+    assert is_teacher_role("viewer") is False
+    assert is_teacher_role("") is False
     assert is_teacher_role(None) is False
-    assert org_capability("org:admin") == "teacher"
-    assert org_capability("org:member") == "student"
+
+    assert org_capability("admin") == "teacher"
+    assert org_capability("member") == "student"
     assert org_capability(None) == "student"
 
 

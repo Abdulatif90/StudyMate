@@ -15,18 +15,36 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# Our two capability levels. Clerk's *default* org roles are `org:admin` and
-# `org:member` (confirmed against the installed @clerk/* SDK's own type docs, and
-# Clerk's docs). We map the admin-tier role -> "teacher" and everything else ->
-# "student". `org:teacher`/`org:student` are also honored in case a custom role set
-# is configured on the instance later — but nothing here assumes they exist.
+# Our two capability levels. Clerk's *default* org roles are admin and member.
+# CONFIRMED AT RUNTIME (2026-07-19, via `GET /org` in a real signed-in session
+# with an active org) that the `org_role` claim arrives as the BARE slug
+# (`"admin"`), NOT the `org:`-prefixed form (`"org:admin"`) — despite Clerk's SDK
+# docs suggesting the prefixed form. Which form an instance emits depends on its
+# session-token version, so both are normalized and accepted here. We map the
+# admin-tier role -> "teacher" and everything else -> "student". `teacher`/
+# `org:teacher` are also honored in case a custom role set is configured on the
+# instance later — but nothing here assumes they exist.
 TEACHER = "teacher"
 STUDENT = "student"
 
-# Role keys that grant the teacher/admin capability. Kept as a set so a custom
-# `org:teacher` role maps correctly if the instance ever adds one, without changing
-# the default `org:admin`->teacher behavior.
-_TEACHER_ROLE_KEYS = frozenset({"org:admin", "org:teacher"})
+# Role keys (already normalized: prefix stripped, lowercased) that grant the
+# teacher/admin capability. Kept as a set so a custom `teacher` role maps
+# correctly if the instance ever adds one, without changing the default
+# `admin`->teacher behavior.
+_TEACHER_ROLE_KEYS = frozenset({"admin", "teacher"})
+
+
+def _normalize_role(role: str | None) -> str | None:
+    """Strip an optional `org:`-style prefix and lowercase a Clerk role slug.
+
+    Clerk's `org_role` claim has been observed BOTH prefixed (`"org:admin"`) and
+    bare (`"admin"`) depending on the instance's session-token version — see the
+    runtime confirmation above. Normalizing to the bare, lowercased slug lets
+    every comparison in this module accept either form uniformly.
+    """
+    if role is None:
+        return None
+    return role.rsplit(":", 1)[-1].lower()
 
 
 @dataclass(frozen=True)
@@ -35,8 +53,10 @@ class OrgContext:
 
     Both fields are `None` when the user has no active organization (personal
     workspace) — a valid, non-error state, not a failure. When an org is active,
-    `org_role` is the raw Clerk role key (e.g. `org:admin`), mapped to a capability
-    via `org_capability`.
+    `org_role` is the raw Clerk role key exactly as it arrived in the claim —
+    either bare (e.g. `admin`, the form confirmed at runtime) or `org:`-prefixed
+    (e.g. `org:admin`) depending on the instance's session-token version. Callers
+    must normalize via `is_teacher_role` / `org_capability`, not compare directly.
     """
 
     org_id: str | None = None
@@ -74,8 +94,13 @@ def extract_org_context(claims: dict) -> OrgContext:
 
 
 def is_teacher_role(role: str | None) -> bool:
-    """Whether a Clerk org role key grants the teacher/admin capability."""
-    return role is not None and role in _TEACHER_ROLE_KEYS
+    """Whether a Clerk org role key grants the teacher/admin capability.
+
+    Accepts both the bare slug (`"admin"`, confirmed at runtime) and the
+    `org:`-prefixed form (`"org:admin"`), case-insensitively.
+    """
+    normalized = _normalize_role(role)
+    return normalized is not None and normalized in _TEACHER_ROLE_KEYS
 
 
 def org_capability(role: str | None) -> str:
