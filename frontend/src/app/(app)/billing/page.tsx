@@ -179,7 +179,7 @@ export default function BillingPage() {
             <h2 className="mb-3 text-[13px] font-semibold tracking-wide text-muted-foreground uppercase">
               {t("Billing.comparePlans")}
             </h2>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               {PLAN_ORDER.map((candidate) => {
                 const isCurrent = candidate === plan.plan;
                 const canCheckout = checkoutTargets.includes(candidate as Exclude<Plan, "free">);
