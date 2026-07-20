@@ -22,7 +22,17 @@ new table/Polar) has now shipped too, **fully closing Phase 4**. Phase 1–3 rec
 (R2 + Inngest ingest with auto-summary, deletable), hybrid Ask/RAG (Postgres FTS + vector
 + RRF + Cohere Rerank, streaming), Conversations, Quiz (tool-use generation + full UI),
 Flashcards + SM-2 (tool-use generation + full review-session UI) — all with their own
-frontends already shipped.
+frontends already shipped. **Phase 6 — Research mode: complete.** **Phase 7 — Telegram +
+OCR: in progress.** OCR is done on the backend — students can now upload IMAGES
+(photographed/scanned notes, `image/jpeg`/`png`/`webp`) and their text is extracted via
+**Claude vision** (reusing the existing `ANTHROPIC_API_KEY`, no new OCR service/binary/key)
+and flows into the same chunk → embed → summarize RAG pipeline as any PDF/DOCX/TXT. A
+failed OCR degrades exactly like a failed PDF parse (`status: failed`, zero chunks). The
+**Telegram bot** is the remaining Phase 7 item. Phase 8 (mobile app, PWA or native) is
+deferred — revisit later. OCR follow-up TODOs: OCR of scanned-PDF *pages* (a text-less PDF
+still parses to zero text today, it isn't image-OCR'd), and a friendly frontend
+accept-types hint (the existing upload UI already accepts any file, so images work now —
+this is just UX polish).
 
 ## Done
 - [x] Repo skeleton + `.gitignore`

@@ -1,10 +1,11 @@
 """Text extraction for uploaded documents — the only place that knows how to read
-PDF/DOCX/TXT bytes. Each library's own exceptions are wrapped in `DocumentParseError`
-so callers only need to handle one exception type regardless of file format.
+PDF/DOCX/TXT bytes and, for photographed/scanned notes, image bytes (via Claude vision
+OCR — see `ocr.py`). Each library's / the vision API's own exceptions are wrapped in
+`DocumentParseError` so callers only need to handle one exception type regardless of
+file format.
 
-The extracted text itself isn't persisted yet (no chunking/embedding pipeline exists
-until Inngest + Cohere are wired in) — for now this only proves the upload is a real,
-readable document, and its outcome decides `Document.status` (ready vs. failed).
+The extracted text (whatever the source) feeds the same chunk → embed → summarize
+pipeline, and its outcome decides `Document.status` (ready vs. failed).
 """
 
 from __future__ import annotations
@@ -17,8 +18,16 @@ import pypdf
 PDF_CONTENT_TYPE = "application/pdf"
 DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 TXT_CONTENT_TYPE = "text/plain"
+# Image types transcribed via Claude vision (`ocr.py`). Kept in sync with
+# `ocr.SUPPORTED_IMAGE_CONTENT_TYPES` — the media types the vision API accepts.
+IMAGE_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
-SUPPORTED_CONTENT_TYPES = {PDF_CONTENT_TYPE, DOCX_CONTENT_TYPE, TXT_CONTENT_TYPE}
+SUPPORTED_CONTENT_TYPES = {
+    PDF_CONTENT_TYPE,
+    DOCX_CONTENT_TYPE,
+    TXT_CONTENT_TYPE,
+    *IMAGE_CONTENT_TYPES,
+}
 
 
 class DocumentParseError(Exception):
@@ -32,6 +41,14 @@ def extract_text(content_type: str, raw: bytes) -> str:
         return _extract_docx(raw)
     if content_type == TXT_CONTENT_TYPE:
         return _extract_txt(raw)
+    if content_type in IMAGE_CONTENT_TYPES:
+        # Imported lazily: ocr.py imports DocumentParseError from this module, so a
+        # top-level import would be circular. OCR is just another parse branch — its
+        # DocumentParseError on failure keeps the "failed parse → status: failed, zero
+        # chunks" invariant, same as the PDF/DOCX paths above.
+        from app.modules.documents.ocr import extract_text_from_image
+
+        return extract_text_from_image(raw, content_type)
     raise DocumentParseError(f"Unsupported content type: {content_type}")
 
 

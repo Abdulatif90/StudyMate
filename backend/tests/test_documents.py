@@ -229,10 +229,23 @@ def test_documents_are_scoped_to_owner():
 
 def test_upload_rejects_unsupported_content_type(_mock_inngest):
     subject_id = _create_subject()
-    files = {"file": ("image.png", io.BytesIO(b"fake png bytes"), "image/png")}
+    # A genuinely unsupported type — images (image/png etc.) are now accepted (OCR'd via
+    # Claude vision), so this uses an archive type that has no parse path.
+    files = {"file": ("archive.zip", io.BytesIO(b"fake zip bytes"), "application/zip")}
     response = client.post(f"/subjects/{subject_id}/documents", files=files)
     assert response.status_code == 415
     _mock_inngest.assert_not_called()
+
+
+def test_upload_accepts_an_image_content_type(_mock_inngest):
+    """Images (photographed/scanned notes) are now a supported upload — the sync path
+    accepts them and enqueues processing; OCR happens later in process_document."""
+    subject_id = _create_subject()
+    files = {"file": ("notes.png", io.BytesIO(b"fake png bytes"), "image/png")}
+    response = client.post(f"/subjects/{subject_id}/documents", files=files)
+    assert response.status_code == 201
+    assert response.json()["status"] == documents_service.DocumentStatus.PENDING.value
+    _mock_inngest.assert_called_once()
 
 
 def test_upload_rejects_oversize_file(_mock_inngest):
@@ -300,6 +313,49 @@ def test_process_marks_unparseable_pdf_failed_with_no_chunks():
 
     assert document.status.value == "failed"
     assert _chunk_texts(_TEST_USER, created["id"]) == []
+
+
+def test_process_ocrs_an_image_into_chunks(monkeypatch):
+    """An uploaded image is OCR'd (Claude vision mocked) and its transcribed text flows
+    through the same chunk/embed pipeline as any other document → status ready, chunks
+    present."""
+    from app.modules.documents import ocr
+
+    monkeypatch.setattr(
+        ocr, "extract_text_from_image", lambda image_bytes, content_type: "transcribed page text"
+    )
+
+    subject_id = _create_subject()
+    files = {"file": ("notes.png", io.BytesIO(b"fake png bytes"), "image/png")}
+    created = client.post(f"/subjects/{subject_id}/documents", files=files).json()
+    assert created["status"] == "pending"
+
+    document = _process(_TEST_USER, created["id"])
+
+    assert document.status.value == "ready"
+    assert _chunk_texts(_TEST_USER, created["id"]) == ["transcribed page text"]
+
+
+def test_process_marks_image_failed_when_ocr_fails(monkeypatch):
+    """A failed OCR degrades exactly like a failed PDF parse: status failed, zero chunks
+    — while the original upload request itself already succeeded (returned pending)."""
+    from app.modules.documents import ocr
+    from app.modules.documents.parsing import DocumentParseError
+
+    def _raise_parse_error(image_bytes, content_type):
+        raise DocumentParseError("vision API exploded")
+
+    monkeypatch.setattr(ocr, "extract_text_from_image", _raise_parse_error)
+
+    subject_id = _create_subject()
+    files = {"file": ("notes.jpg", io.BytesIO(b"fake jpeg bytes"), "image/jpeg")}
+    created = client.post(f"/subjects/{subject_id}/documents", files=files).json()
+    assert created["status"] == "pending"  # upload request succeeded regardless
+
+    document = _process(_TEST_USER, created["id"])
+
+    assert document.status.value == "failed"
+    assert _chunks(_TEST_USER, created["id"]) == []
 
 
 def test_process_marks_failed_when_embedding_fails(monkeypatch):

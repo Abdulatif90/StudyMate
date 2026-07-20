@@ -2,6 +2,53 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-20 — OCR: extract text from uploaded images via Claude vision (Phase 7, backend)
+Students can now upload IMAGES (photographed/scanned notes) and have their text extracted
+so it flows into the existing RAG pipeline — no new OCR service/binary/key, just the
+existing `ANTHROPIC_API_KEY` and Claude's vision. Also split the phase plan (separate
+`docs:` commit): Phase 7 = Telegram + OCR (in progress), mobile deferred to Phase 8.
+Commits: `docs: split phase 7 into Telegram+OCR now, mobile deferred` and
+`feat(documents): OCR image uploads via Claude vision (Phase 7)`.
+
+- **Step 0 — vision format confirmed via the `claude-api` skill** (not guessed): the image
+  goes in a base64 **image content block** on a `messages.create` call —
+  `{"type": "image", "source": {"type": "base64", "media_type": <content_type>, "data": <b64>}}`
+  — followed by a text block carrying the transcription prompt. Model: **`claude-haiku-4-5-20251001`**,
+  matching the model `ask/llm.py` and `documents/summarization.py` already use (Haiku 4.5 is
+  vision-capable; verbatim transcription isn't intelligence-heavy, so the cheaper same-family
+  model keeps ingest costs down and stays consistent with the repo). Supported image media
+  types: `image/jpeg`, `image/png`, `image/webp` (the set the vision API accepts).
+- **New `documents/ocr.py`** — `extract_text_from_image(image_bytes, content_type) -> str`.
+  Isolates ALL vision specifics (client construction, base64 block, media type, the
+  "transcribe ALL text verbatim, no summarizing/commentary" prompt). Missing
+  `ANTHROPIC_API_KEY` → bare `RuntimeError` (the existing `db.py`/`ask.llm`/`summarization`
+  deployment-mistake pattern); any Claude/vision API failure → wrapped in `DocumentParseError`.
+- **Parse-branch wiring** — `parsing.extract_text` gains an image branch: image content-type
+  → `extract_text_from_image`, everything else → the existing PDF/DOCX/TXT path. `ocr.py`
+  imports `DocumentParseError` from `parsing.py`, so `parsing` imports `ocr` **lazily** inside
+  the branch to avoid a circular import. Image types added to `SUPPORTED_CONTENT_TYPES`
+  (`IMAGE_CONTENT_TYPES`, kept in sync with `ocr.SUPPORTED_IMAGE_CONTENT_TYPES`). Every
+  existing invariant is preserved: R2 storage, the Inngest async job, idempotency, `status`
+  transitions, tenant scoping — OCR is purely a new branch of the parse step. A failed OCR
+  → `DocumentParseError` → `status: failed`, zero chunks (same as a failed PDF parse, never a
+  500); an image that yields no text behaves like any empty parse (0 chunks, `status: ready`).
+  **No migration** — an image is just another document *source*; `content_type` is already a
+  column and only gains new valid values.
+- Tests: new `tests/test_ocr.py` (+4, Anthropic client mocked — returns transcribed text;
+  verifies the base64 image-block shape + verbatim prompt; API failure → `DocumentParseError`;
+  missing key → `RuntimeError`; never calls the API for real). New ingestion tests in
+  `test_documents.py` (image `image/png` through `process_document` with OCR mocked → chunks
+  from the transcribed text; OCR failure → `status: failed`, zero chunks, while the upload
+  request itself still returned pending; an image content-type now accepted → 201). Fixed the
+  pre-existing `test_upload_rejects_unsupported_content_type` (it used `image/png` as the
+  "unsupported" type — now uses `application/zip`). Full suite **478 passed** (was 471),
+  12 deselected (live). `ruff check` + `ruff format --check` clean; app + suite boot with no
+  `ANTHROPIC_API_KEY` (the unset-key `RuntimeError` path already existed).
+- **Follow-up TODOs**: OCR of scanned-PDF *pages* (a text-less PDF still parses to zero text,
+  it isn't image-OCR'd yet) and a friendly frontend accept-types hint (the upload UI already
+  sends any file, so images already work — pure UX polish). The **Telegram bot** is the
+  remaining Phase 7 item.
+
 ## 2026-07-20 — Research mode UI: `/research` page (Phase 6, frontend — completes Phase 6)
 New `src/app/(app)/research/page.tsx` — a heading, query `Textarea`, and "Research" button
 wired to `POST /research` via `useApiClient` + `useMutation`. Confirmed the exact
