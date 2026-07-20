@@ -34,6 +34,7 @@ from app.modules.quiz.router import router as quiz_router
 from app.modules.referral.router import router as referral_router
 from app.modules.research.router import router as research_router
 from app.modules.subjects.router import router as subjects_router
+from app.modules.telegram.router import router as telegram_router
 
 settings = get_settings()
 
@@ -85,6 +86,7 @@ app.include_router(billing_router)
 app.include_router(referral_router)
 app.include_router(assignments_router)
 app.include_router(research_router)
+app.include_router(telegram_router)
 
 
 @app.exception_handler(PlanLimitExceededError)

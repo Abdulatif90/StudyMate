@@ -77,6 +77,17 @@ class Settings(BaseSettings):
     # error at point of use, and nothing else is affected.
     polar_product_id_team: str | None = None
 
+    # Telegram bot (Phase 7). Optional/env-gated like every other credential:
+    #  - telegram_bot_token: the Bot API token from @BotFather (app/modules/telegram/
+    #    telegram_api.py reads it). Unset → RuntimeError at point of use (a deploy mistake
+    #    that must fail loudly), so the app/tests still boot without it.
+    #  - telegram_webhook_secret: the value passed to Telegram's setWebhook `secret_token`,
+    #    which Telegram then echoes back in the `X-Telegram-Bot-Api-Secret-Token` header on
+    #    every webhook call. The webhook verifies incoming requests against it. Set live when
+    #    the webhook is registered; treated gracefully when unset (dev only — see router).
+    telegram_bot_token: str | None = None
+    telegram_webhook_secret: str | None = None
+
     # Error monitoring (Sentry). Optional so the app/tests boot without it —
     # app/core/sentry.py's init_sentry() is a no-op when unset, never a crash (a missing
     # DSN means "no observability", not a startup failure).

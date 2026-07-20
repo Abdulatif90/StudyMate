@@ -28,8 +28,20 @@ OCR: in progress.** OCR is done on the backend — students can now upload IMAGE
 **Claude vision** (reusing the existing `ANTHROPIC_API_KEY`, no new OCR service/binary/key)
 and flows into the same chunk → embed → summarize RAG pipeline as any PDF/DOCX/TXT. A
 failed OCR degrades exactly like a failed PDF parse (`status: failed`, zero chunks). The
-**Telegram bot** is the remaining Phase 7 item. Phase 8 (mobile app, PWA or native) is
-deferred — revisit later. OCR follow-up TODOs: OCR of scanned-PDF *pages* (a text-less PDF
+**Telegram bot backend is now done too** — a linked student can DM the bot a question and
+get a web-research answer back. `app/modules/telegram/`: a `POST /telegram/link`
+(authenticated) mints a one-time code + `https://t.me/helperstudymatebot?start=<code>` deep
+link tied to the caller's `owner_id`; a public `POST /telegram/webhook` (verified by the
+`X-Telegram-Bot-Api-Secret-Token` header vs `TELEGRAM_WEBHOOK_SECRET`) handles Telegram
+updates — `/start <code>` links `chat_id → owner_id`, a linked chat's text is answered via
+the existing Research service, an unlinked chat gets link instructions. Only LINKED users
+may use the bot (protects the Claude/Tavily budget). **LIVE BLOCKER**: registering the
+webhook with Telegram needs a public URL (ngrok/deploy) + setting `TELEGRAM_WEBHOOK_SECRET`
+via setWebhook's `secret_token` — like the Polar webhook, this is the one remaining
+live step (while the secret is unset the webhook processes updates unverified, dev-only).
+Telegram follow-ups: answering over the user's OWN uploaded materials (needs subject
+handling), and a "Connect Telegram" frontend button on the link endpoint. This closes the
+backend half of Phase 7. Phase 8 (mobile app, PWA or native) is deferred — revisit later. OCR follow-up TODOs: OCR of scanned-PDF *pages* (a text-less PDF
 still parses to zero text today, it isn't image-OCR'd), and a friendly frontend
 accept-types hint (the existing upload UI already accepts any file, so images work now —
 this is just UX polish).

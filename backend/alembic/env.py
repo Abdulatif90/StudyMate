@@ -45,6 +45,10 @@ from app.modules.quiz.models import (  # noqa: E402, F401
 )
 from app.modules.referral.models import ReferralAttribution, ReferralCode  # noqa: E402, F401
 from app.modules.subjects.models import Subject  # noqa: E402, F401
+from app.modules.telegram.models import (  # noqa: E402, F401
+    TelegramLink,
+    TelegramLinkCode,
+)
 
 target_metadata = SQLModel.metadata
 

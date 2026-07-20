@@ -2,6 +2,62 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-20 — Telegram bot: account linking + research answers (Phase 7, backend)
+A linked StudyMate student can DM the bot **@helperstudymatebot** a question and get a
+web-research answer. New module `app/modules/telegram/`. Backend-only; registering the
+webhook with Telegram is a flagged live blocker (like the Polar webhook).
+Commit: `feat(telegram): account linking + research answers via bot (Phase 7)`.
+
+- **Step 0 — Bot API contract verified against the live docs** (core.telegram.org/bots/api,
+  verified 2026-07-20), NOT guessed:
+  - **Update** object: `update.message.chat.id` (Integer), `update.message.text` (String,
+    optional), `update.message.from` (User, optional). Non-`message`/non-text updates are
+    ignored.
+  - **sendMessage**: `POST https://api.telegram.org/bot<token>/sendMessage` with JSON
+    `chat_id` + `text` (optional `parse_mode`); a text message is capped at **4096 chars**.
+  - **setWebhook** `secret_token` param → Telegram echoes it back in the
+    `X-Telegram-Bot-Api-Secret-Token` header on every webhook request; that's what the
+    endpoint verifies incoming calls with.
+- **Security (public webhook)**: `POST /telegram/webhook` is Clerk-auth-free (Telegram has
+  no user token). When `TELEGRAM_WEBHOOK_SECRET` is set, the request's
+  `X-Telegram-Bot-Api-Secret-Token` header MUST equal it → else **403, nothing processed**
+  (mirrors billing's Polar-signature-first order). While the secret is unset (pre-live), the
+  endpoint processes updates unverified — dev convenience only, documented as a LIVE BLOCKER
+  that MUST be set in production. Always returns 200 on a processed/ignored/send-failed
+  update (Telegram retries the SAME update on non-200, which would re-run research and burn
+  budget); a malformed body or a transient Bot-API failure is swallowed to a 200 no-op.
+- **Link flow**: `create_link_code(session, owner_id)` mints a single-use, 30-min base32
+  code (the referral-code alphabet) tied to the caller's verified `owner_id`, plus a
+  `https://t.me/helperstudymatebot?start=<code>` deep link. `/start <code>` → look the code
+  up, upsert `chat_id → owner_id` (chat id is the PK — one chat, one account), consume the
+  code (`used=True`); unknown/used/expired codes get a friendly reply and link nothing. A
+  code carries its creator's `owner_id`, so it can only ever link a chat to that user
+  (cross-tenant safe by construction — the webhook never trusts a client-supplied owner).
+- **Answering**: a linked chat's plain text → existing Research service `research(text)`
+  (web-agentic, query-only) → reply with the answer + a brief sources footer, truncated to
+  4096 chars. Unlinked chat → link instructions, research NOT called. Research/API failures
+  degrade to a friendly reply, never a 500. Answering over the user's OWN uploaded materials
+  is a deliberate follow-up TODO (needs subject handling).
+- **Isolation**: `telegram_api.py` isolates all Bot-API specifics — missing
+  `TELEGRAM_BOT_TOKEN` → bare `RuntimeError` (loud deploy-mistake pattern), any network/API
+  failure → `TelegramApiError` (caught, never a 500 leak). `Settings.telegram_bot_token` +
+  `telegram_webhook_secret` added (env-gated; app + suite boot with both unset); both
+  documented in `.env.example`.
+- **Migration** `06650625fb97_add_telegram_links_and_telegram_link_...` (down_revision
+  `6c9f0c767feb`) — `telegram_links` (`telegram_chat_id` BIGINT PK, `owner_id` indexed,
+  `created_at`) + `telegram_link_codes` (`code` PK, `owner_id` indexed, `used`,
+  `created_at`). BigInteger chat id on purpose (Telegram ids can exceed 32-bit INTEGER).
+  **Applied to Neon** and schema verified via `inspect` (BIGINT PK + code PK confirmed).
+- Tests: `tests/test_telegram.py` (29, fully offline — Bot API and Research service ALWAYS
+  mocked): link-code issuance/consumption, valid/unknown/used/expired `/start`, linked-chat
+  research answer + sources footer, unlinked instructions (research not called), 4096-char
+  truncation, webhook secret mismatch → 403 (nothing processed) / match → processed / unset
+  → dev-processed / malformed body → 200 no-op / send failure → 200, defensive parsing of 7
+  malformed update shapes, cross-tenant (a code for A links only to A; two chats to
+  different owners stay independent), and `telegram_api.send_message` success / API failure →
+  `TelegramApiError` / missing token → `RuntimeError` / over-limit truncation.
+  Full suite: **507 passed, 12 deselected**; `ruff check` + `ruff format --check` clean.
+
 ## 2026-07-20 — OCR: extract text from uploaded images via Claude vision (Phase 7, backend)
 Students can now upload IMAGES (photographed/scanned notes) and have their text extracted
 so it flows into the existing RAG pipeline — no new OCR service/binary/key, just the
