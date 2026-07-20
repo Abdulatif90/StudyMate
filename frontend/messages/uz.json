@@ -148,6 +148,7 @@
     "uploadTitle": "Hujjat yuklash",
     "uploading": "Yuklanmoqda…",
     "uploadingPercent": "Yuklanmoqda… {percent}%",
+    "maxSizeHint": "Har bir fayl uchun maks. {max} MB",
     "acceptHint": "Qo‘llab-quvvatlanadigan fayllar: PDF, Word (.docx), matn va rasmlar (JPG, PNG, WebP). Qo‘lda yozilgan yoki chop etilgan qaydlar surati va skanerlangan PDF fayllar OCR yordamida o‘qiladi.",
     "processingHint": "Qayta ishlash (tahlil, bo‘laklash, embedding) fonda amalga oshadi — yangi hujjat tayyor bo‘lguncha \"kutilmoqda\" holatida ko‘rinadi.",
     "loadError": "Hujjatlarni yuklab bo‘lmadi.",

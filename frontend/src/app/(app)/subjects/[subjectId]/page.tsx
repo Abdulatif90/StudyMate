@@ -24,6 +24,7 @@ import { documentsRefetchInterval } from "@/lib/documentsPolling";
 import { orgCapability } from "@/lib/orgRole";
 import { parsePlanLimitError, type PlanLimitError } from "@/lib/planLimitError";
 import { canWriteSharedSubject, isOrgSubject } from "@/lib/subjectSharing";
+import { MAX_UPLOAD_MB } from "@/lib/uploadLimits";
 import { friendlyUploadError } from "@/lib/uploadError";
 
 export default function SubjectDetailPage() {
@@ -210,7 +211,10 @@ export default function SubjectDetailPage() {
               if (file) uploadMutation.mutate(file);
             }}
           />
-          <p className="mt-2 text-xs text-muted-foreground">{t("SubjectDetail.acceptHint")}</p>
+          <p className="mt-2 text-xs font-medium text-muted-foreground">
+            {t("SubjectDetail.maxSizeHint", { max: MAX_UPLOAD_MB })}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">{t("SubjectDetail.acceptHint")}</p>
           {uploadMutation.isPending && (
             <div className="mt-3">
               <p className="mb-1.5 text-sm text-muted-foreground">

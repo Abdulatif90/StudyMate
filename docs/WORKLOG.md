@@ -2,6 +2,26 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-21 — fix(frontend): guard oversize uploads client-side + show the 20 MB limit hint
+
+Upload UX (frontend only). The backend enforces the 20 MB cap at the CONFIRM step, so a
+file over the limit was first fully PUT to R2, then rejected with a 413 — wasting the whole
+upload over the wire. Two fixes:
+
+- *Client-side size guard:* `lib/api/uploadDocument.ts` now rejects a file whose `size`
+  exceeds the cap BEFORE the presign call — no bytes ever leave the browser. It throws the
+  same `UploadError` shape with status `413` (new `kind: "size"`), so the page's existing
+  handler maps it to the exact same "too large" copy as a server-side 413 (`lib/uploadError`).
+- *Visible max-size hint:* an always-on muted line ("Max 20 MB per file") under the file
+  input on the subject-detail page, translated in all four locales.
+- *Shared constant:* `lib/uploadLimits.ts` (`MAX_UPLOAD_MB` / `MAX_UPLOAD_SIZE_BYTES`) backs
+  both the guard and the hint number so they can't drift; commented that it MUST stay in
+  sync with the backend `documents/service.MAX_UPLOAD_SIZE_BYTES` (independent across the
+  Python/TS boundary — no shared source). Backend check untouched (defense-in-depth).
+- Tests: `uploadDocument.test.ts` — guard rejects an oversize file before any API call, and
+  a file at the limit proceeds; `subject-detail-page.test.tsx` — the hint renders with the
+  20 MB text. Full frontend suite **260 passed**; `tsc --noEmit`, `eslint` clean.
+
 ## 2026-07-21 — fix(quiz): delete assignments + attempts referencing a quiz before deleting it (fixes subject-delete 500)
 
 Production bug (verified from a real Vercel traceback): `DELETE /subjects/{id}` 500'd when
