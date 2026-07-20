@@ -14,10 +14,10 @@ so this choice is deliberate, not an accidental answer-key leak.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from app.shared.datetime import UtcDatetime
 from app.shared.language import DEFAULT_LANGUAGE
 
 
@@ -44,7 +44,7 @@ class QuizRead(BaseModel):
     id: uuid.UUID
     subject_id: uuid.UUID
     title: str | None
-    created_at: datetime
+    created_at: UtcDatetime
 
 
 class QuizWithQuestions(QuizRead):

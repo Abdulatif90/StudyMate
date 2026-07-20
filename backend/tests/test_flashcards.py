@@ -135,10 +135,12 @@ def test_generate_flashcards_creates_cards_with_default_sr_state():
     assert first["interval_days"] == 0
     assert first["last_reviewed_at"] is None
     assert "owner_id" not in first
-    # a new card is due immediately, not at some future offset. SQLite (the test
-    # engine) round-trips datetimes without tzinfo, so compare naive-to-naive.
+    # a new card is due immediately, not at some future offset. The API serializes every
+    # datetime as explicit UTC (app.shared.datetime.UtcDatetime), so `due_at` parses to a
+    # tz-aware value — compare aware-to-aware against `now(UTC)`.
     due_at = datetime.fromisoformat(first["due_at"])
-    assert due_at <= datetime.now(UTC).replace(tzinfo=None) + timedelta(seconds=5)
+    assert due_at.tzinfo is not None
+    assert due_at <= datetime.now(UTC) + timedelta(seconds=5)
 
 
 def test_generate_flashcards_persists_and_is_listed():

@@ -8,6 +8,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from app.shared.datetime import UtcDatetime
+
 
 class AssignmentCreate(BaseModel):
     title: str = Field(min_length=1, max_length=300)
@@ -31,8 +33,8 @@ class AssignmentRead(BaseModel):
     quiz_id: uuid.UUID | None = None
     title: str
     description: str | None = None
-    due_at: datetime | None = None
-    created_at: datetime
+    due_at: UtcDatetime | None = None
+    created_at: UtcDatetime
 
 
 class AssignmentSubmissionCreate(BaseModel):
@@ -50,7 +52,7 @@ class AssignmentSubmissionRead(BaseModel):
     # The submitting student's Clerk user id. Exposed so the teacher view can attribute
     # each submission to its student (all persisted fields).
     owner_id: str
-    completed_at: datetime
+    completed_at: UtcDatetime
     score: int | None = None
     note: str | None = None
 
@@ -63,7 +65,7 @@ class RosterMember(BaseModel):
     user_id: str
     submitted: bool
     score: int | None = None
-    completed_at: datetime | None = None
+    completed_at: UtcDatetime | None = None
 
 
 class AssignmentRoster(BaseModel):

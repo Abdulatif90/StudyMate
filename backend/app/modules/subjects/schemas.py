@@ -4,9 +4,10 @@ so the DB schema (owner_id, table structure) is never accidentally exposed over 
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 
 from pydantic import BaseModel, Field
+
+from app.shared.datetime import UtcDatetime
 
 
 class SubjectCreate(BaseModel):
@@ -22,4 +23,4 @@ class SubjectRead(BaseModel):
     # backend 403 is the real guard, this is the UX signal. `owner_id` is deliberately
     # NOT exposed (never was) — it isn't needed client-side and shouldn't leak.
     org_id: str | None = None
-    created_at: datetime
+    created_at: UtcDatetime

@@ -5,11 +5,11 @@ upload (multipart), not a JSON body, so FastAPI's `UploadFile` param covers it.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 
 from pydantic import BaseModel
 
 from app.modules.documents.models import DocumentStatus
+from app.shared.datetime import UtcDatetime
 
 
 class DocumentRead(BaseModel):
@@ -19,4 +19,4 @@ class DocumentRead(BaseModel):
     content_type: str
     status: DocumentStatus
     summary: str | None
-    created_at: datetime
+    created_at: UtcDatetime

@@ -2,6 +2,47 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-20 — fix: API datetimes serialize as explicit UTC (tz-drift) + billing 3-plan row
+Two fixes. The first (one root cause) fixes both the "fresh assignment shows Overdue" and
+"quiz time off by hours" bugs; the second is billing CSS. Commits:
+`fix(api): serialize all datetimes as explicit UTC to stop frontend tz drift` and
+`fix(billing): show all three compare plans in one row`.
+
+- **Root cause (Fix 1 + 2).** Models write `datetime.now(UTC)` (tz-aware) but the DB columns
+  are `TIMESTAMP WITHOUT TIME ZONE`, so values round-trip NAIVE and Pydantic serialized them
+  with no tz marker (`"2026-07-20T13:00:00"`). The frontend's `new Date(str)` then reads a
+  tz-less string as LOCAL time, shifting every timestamp by the viewer's offset →
+  `dueStatus` flagged a just-created assignment "Overdue" and `formatRelativeTime` showed the
+  wrong quiz time. Verified with a Step-0 script (Pydantic 2.13.4): BEFORE
+  `…T09:50:31.014880` (no marker), AFTER `…+00:00`.
+- **The fix — single source of truth.** New `app/shared/datetime.py` exports
+  `UtcDatetime = Annotated[datetime, PlainSerializer(_to_utc_isoformat, return_type=str)]`;
+  `_to_utc_isoformat` does `dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt` then
+  `.isoformat()`. Applied to EVERY datetime field returned to the client, across schemas:
+  `quiz.QuizRead.created_at`; `subjects.SubjectRead.created_at`;
+  `documents.DocumentRead.created_at`; `ask.ConversationRead.created_at` +
+  `ConversationTurnRead.created_at`; `flashcards.FlashcardRead.{due_at,last_reviewed_at,
+  created_at}`; `assignments.AssignmentRead.{due_at,created_at}` +
+  `AssignmentSubmissionRead.completed_at` + `RosterMember.completed_at`. Audited billing/
+  referral/research/telegram — no datetime fields in their Read shapes; `submitted_at` and
+  billing's `event_at` are never returned to the client. Output-boundary only — no DB column
+  change, no migration, no change to server-side comparison logic (SM-2, billing day math).
+  Request-input datetimes (`AssignmentCreate.due_at`) left as plain `datetime`.
+- **Tests.** New `tests/test_utc_datetime.py` asserts the serialized JSON carries a UTC marker
+  for every touched Read schema (and documents the plain-`datetime` regression it fixes).
+  Updated `test_flashcards.py` — the existing "due immediately" assertion parsed `due_at` as
+  naive; now `due_at` is tz-aware, so it compares aware-to-aware against `now(UTC)`. No
+  frontend change needed (helpers already expected UTC): `relativeTime.test.ts`/`dueStatus`
+  already feed/expect a `Z`. Inline `new Date(…).toLocaleDateString()` renders in
+  assignments/subjects pages now receive correct UTC and localize correctly — no regression.
+- **Billing (Fix 3).** `billing/page.tsx:182` compare grid `sm:grid-cols-2` → `sm:grid-cols-3`
+  so all three plans (free/pro/business) sit in ONE equal-width row on `sm`+ while stacking on
+  mobile. `PlanCard` has no fixed width and already uses `h-full flex-col`, so widths/heights
+  stay equal. No new i18n.
+- Tests: backend `pytest` 549 passed (was 548 passed + 1 failing pre-fix → now green),
+  `ruff check` + `ruff format --check` clean. Frontend `vitest` 245 passed (58 files),
+  `tsc --noEmit` clean, `eslint` clean.
+
 ## 2026-07-20 — fix: assignments submitter names + team page fit-to-viewport (UI polish)
 Two small frontend fixes, no new i18n keys. Commit: `fix(frontend): show submitter names on
 assignments + fit Clerk org UI to viewport`.

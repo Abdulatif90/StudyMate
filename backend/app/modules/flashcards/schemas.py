@@ -11,10 +11,10 @@ progress/debugging, not a secret.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from app.shared.datetime import UtcDatetime
 from app.shared.language import DEFAULT_LANGUAGE
 
 
@@ -39,6 +39,6 @@ class FlashcardRead(BaseModel):
     repetitions: int
     ease_factor: float
     interval_days: int
-    due_at: datetime
-    last_reviewed_at: datetime | None
-    created_at: datetime
+    due_at: UtcDatetime
+    last_reviewed_at: UtcDatetime | None
+    created_at: UtcDatetime

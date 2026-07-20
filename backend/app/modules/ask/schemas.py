@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 
 from pydantic import BaseModel, Field
+
+from app.shared.datetime import UtcDatetime
 
 
 class AskRequest(BaseModel):
@@ -34,7 +35,7 @@ class ConversationRead(BaseModel):
     id: uuid.UUID
     subject_id: uuid.UUID
     title: str | None
-    created_at: datetime
+    created_at: UtcDatetime
 
 
 class ConversationTurnRead(BaseModel):
@@ -42,7 +43,7 @@ class ConversationTurnRead(BaseModel):
     question: str
     answer: str
     sources: list[SourceChunk]
-    created_at: datetime
+    created_at: UtcDatetime
 
 
 class ConversationWithTurns(ConversationRead):
