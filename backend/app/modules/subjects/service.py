@@ -192,6 +192,22 @@ def list_subjects(
     return list({subject.id: subject for subject in subjects}.values())
 
 
+def list_owned_subjects(session: Session, owner_id: str) -> list[Subject]:
+    """The caller's OWN subjects, in a deterministic order (creation time, then id as a
+    stable tiebreaker). Deliberately owner-only — no org sharing — because its one caller,
+    the Telegram bot, has no active-org context (a Telegram chat carries only an
+    `owner_id`), so it may only ever reach the user's own private subjects. The stable
+    order lets the bot present a numbered picker whose numbers don't shift between the
+    `/subjects` listing and a later `/subject <n>` selection."""
+    return list(
+        session.exec(
+            select(Subject)
+            .where(Subject.owner_id == owner_id)
+            .order_by(Subject.created_at, Subject.id)
+        )
+    )
+
+
 def get_subject(session: Session, owner_id: str, subject_id: uuid.UUID) -> Subject | None:
     """Owner-only lookup — unchanged. Still used where ownership (not mere readability)
     is the right scope: the `delete_subject` cascade enumerates the *owner's* own child

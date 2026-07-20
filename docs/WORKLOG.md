@@ -2,6 +2,50 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-20 — Telegram: answer over the user's OWN uploaded materials (Phase 7)
+A linked chat can now ask about its own subjects, not just the web. Closes the Telegram
+"answer over OWN materials" follow-up TODO. Backend-only (no new HTTP endpoint, so no
+frontend/client regen). Commit: `feat(telegram): answer over own uploaded materials via
+subject picker (Phase 7)`.
+
+- **Subject selection = SIMPLEST coherent design (decision).** Rather than a chat-side
+  conversation model or NLU, the linked chat tracks ONE active subject on its own
+  `TelegramLink` row (new nullable `active_subject_id` UUID column; migration
+  `c1d2e3f4a5b6`, down_revision the current head `06650625fb97` — NOT applied to Neon,
+  batched into the project-end migration pass like the other deferred migrations).
+  Commands: `/subjects` (a stable numbered picker — new owner-scoped
+  `subjects.service.list_owned_subjects`, ordered by `created_at, id` so numbers don't
+  shift between listing and selection), `/subject <n|name>` (by 1-based number or
+  case-insensitive exact name), `/research <query>` (explicit web answer — preserves the
+  original bot behaviour), `/help`.
+- **Answering reuses the EXISTING Ask/RAG service** — `ask.service.ask_question`, no RAG
+  logic duplicated. A plain question over the active subject calls
+  `ask_question(session, owner_id, active_subject_id, text, org_ctx=OrgContext())`; the
+  reply is the answer plus a footer of the distinct source filenames it was grounded in,
+  truncated to Telegram's 4096-char limit (the existing `_format_answer` helper,
+  generalized to take footer lines).
+- **Owner-scoping / cross-user isolation (fail-closed).** Every RAG call passes the
+  chat's linked `owner_id` and an EMPTY `OrgContext` (a Telegram chat carries no
+  active-org session), so `ask_question`'s own `require_readable_subject` gate can only
+  ever admit the linked user's OWN private subjects — never another user's, never an org
+  subject they're merely a member of. `list_owned_subjects` is owner-only for the same
+  reason. Verified by a test that owner A's chat never sees/selects owner B's subject.
+- **Graceful UX for the edge cases (decision).** No active subject + user HAS subjects →
+  prompt to pick one (don't guess). No subjects at all → fall back to web research so the
+  bot stays useful. Active subject deleted since selection → `ask_question` raises
+  `SubjectNotFoundError`, which the bot catches to clear the stale selection and ask the
+  user to pick again (never a 500). A truly unexpected ask failure → friendly reply. A
+  re-`/start` (relinking a chat to a new account) clears the old `active_subject_id`.
+- Tests: `tests/test_telegram.py` (+16, all offline — `ask_question` and `research` are
+  ALWAYS mocked, same discipline as before): `/subjects` list + empty-state, `/subject`
+  by number/name/unknown/no-arg, question-over-active-subject routes to `ask_question`
+  with the right owner+subject and renders the source footer, question-without-selection
+  prompts, no-subjects falls back to research, deleted-subject clears + prompts,
+  unexpected-failure friendly reply, `/research` with/without a query, `/help` + unknown
+  command, a command from an unlinked chat gets link instructions, and owner-scoped
+  subject isolation. Full suite: **528 passed, 12 deselected** (was 512); `ruff check` +
+  `ruff format --check` clean.
+
 ## 2026-07-20 — Telegram: dashboard "Connect Telegram" UI + status endpoint (Phase 7)
 One-tap connect flow: click a button on the dashboard → Telegram opens with the deep link
 pre-filled → tap Start → linked. Closes Phase 7's Telegram track end-to-end except the live

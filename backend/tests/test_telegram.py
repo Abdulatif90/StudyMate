@@ -8,6 +8,7 @@ nothing leaks into other modules sharing the same `app`).
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 
@@ -21,7 +22,9 @@ from app.core.auth import get_current_user_id
 from app.core.config import get_settings
 from app.core.db import get_session
 from app.main import app
+from app.modules.ask.schemas import AskResponse, SourceChunk
 from app.modules.research.schemas import ResearchResponse, ResearchSource
+from app.modules.subjects.models import Subject
 from app.modules.telegram import service, telegram_api
 from app.modules.telegram.models import TelegramLink, TelegramLinkCode
 
@@ -72,6 +75,41 @@ def mock_research(monkeypatch):
     )
     monkeypatch.setattr(service, "research", spy)
     return spy
+
+
+@pytest.fixture
+def mock_ask(monkeypatch):
+    """Replace the Ask/RAG service with a spy returning a canned grounded answer over the
+    user's own materials. Keeps these tests offline (no Cohere/Claude) and focused on the
+    Telegram command/routing/scoping logic — the RAG pipeline itself is covered in
+    test_ask.py / test_search.py."""
+
+    def _fake(session, owner_id, subject_id, question, org_ctx=None):
+        return AskResponse(
+            answer="Mitochondria are the powerhouse of the cell.",
+            sources=[
+                SourceChunk(
+                    document_id=uuid.uuid4(),
+                    filename="biology.pdf",
+                    chunk_index=0,
+                    text="...",
+                    similarity_score=0.9,
+                )
+            ],
+            conversation_id=uuid.uuid4(),
+        )
+
+    spy = Mock(side_effect=_fake)
+    monkeypatch.setattr(service, "ask_question", spy)
+    return spy
+
+
+def _make_subject(session, owner_id: str, name: str) -> Subject:
+    subject = Subject(owner_id=owner_id, name=name)
+    session.add(subject)
+    session.commit()
+    session.refresh(subject)
+    return subject
 
 
 def _text_update(chat_id: int, text: str) -> dict:
@@ -199,6 +237,213 @@ def test_research_unexpected_failure_replies_friendly(session, mock_send, monkey
 
     (_, text), _ = mock_send.call_args
     assert "couldn't answer" in text.lower()
+
+
+# --- answering over the user's OWN materials (subjects) ---------------------------------
+
+
+def _link(session, chat_id: int, owner_id: str, active_subject_id=None) -> None:
+    session.add(
+        TelegramLink(
+            telegram_chat_id=chat_id, owner_id=owner_id, active_subject_id=active_subject_id
+        )
+    )
+    session.commit()
+
+
+def test_subjects_command_lists_owner_subjects(session, mock_send):
+    _link(session, 555, _TEST_USER)
+    _make_subject(session, _TEST_USER, "Biology")
+    _make_subject(session, _TEST_USER, "History")
+
+    service.handle_update(session, _text_update(555, "/subjects"))
+
+    (chat_id, text), _ = mock_send.call_args
+    assert chat_id == 555
+    assert "Biology" in text
+    assert "History" in text
+    assert "/subject" in text
+
+
+def test_subjects_command_no_subjects_prompts_to_create(session, mock_send):
+    _link(session, 555, _TEST_USER)
+
+    service.handle_update(session, _text_update(555, "/subjects"))
+
+    (_, text), _ = mock_send.call_args
+    assert "don't have any subjects" in text.lower()
+
+
+def test_subject_command_by_number_sets_active(session, mock_send):
+    _link(session, 555, _TEST_USER)
+    _make_subject(session, _TEST_USER, "Biology")
+    _make_subject(session, _TEST_USER, "History")
+    ordered = service.list_owned_subjects(session, _TEST_USER)
+
+    service.handle_update(session, _text_update(555, "/subject 2"))
+
+    link = session.get(TelegramLink, 555)
+    assert link.active_subject_id == ordered[1].id
+    (_, text), _ = mock_send.call_args
+    assert ordered[1].name in text
+
+
+def test_subject_command_by_name_sets_active(session, mock_send):
+    _link(session, 555, _TEST_USER)
+    bio = _make_subject(session, _TEST_USER, "Biology")
+    _make_subject(session, _TEST_USER, "History")
+
+    service.handle_update(session, _text_update(555, "/subject biology"))  # case-insensitive
+
+    assert session.get(TelegramLink, 555).active_subject_id == bio.id
+
+
+def test_subject_command_unknown_replies_not_found(session, mock_send):
+    _link(session, 555, _TEST_USER)
+    _make_subject(session, _TEST_USER, "Biology")
+
+    service.handle_update(session, _text_update(555, "/subject 99"))
+
+    assert session.get(TelegramLink, 555).active_subject_id is None
+    (_, text), _ = mock_send.call_args
+    assert "couldn't find that subject" in text.lower()
+
+
+def test_subject_command_no_arg_shows_listing(session, mock_send):
+    _link(session, 555, _TEST_USER)
+    _make_subject(session, _TEST_USER, "Biology")
+
+    service.handle_update(session, _text_update(555, "/subject"))
+
+    (_, text), _ = mock_send.call_args
+    assert "Biology" in text
+
+
+def test_question_over_active_subject_uses_ask_service(session, mock_send, mock_ask, mock_research):
+    bio = _make_subject(session, _TEST_USER, "Biology")
+    _link(session, 555, _TEST_USER, active_subject_id=bio.id)
+
+    service.handle_update(session, _text_update(555, "What are mitochondria?"))
+
+    # RAG, not web research.
+    mock_research.assert_not_called()
+    mock_ask.assert_called_once()
+    # ask_question(session, owner_id, subject_id, question, org_ctx=...) — all positional.
+    _args, _kwargs = mock_ask.call_args
+    _session, owner_id, subject_id, question = _args
+    assert owner_id == _TEST_USER
+    assert subject_id == bio.id
+    assert question == "What are mitochondria?"
+    (_, text), _ = mock_send.call_args
+    assert "powerhouse of the cell" in text
+    assert "biology.pdf" in text  # source filename footer
+
+
+def test_question_without_active_subject_prompts_pick(session, mock_send, mock_ask, mock_research):
+    _link(session, 555, _TEST_USER)
+    _make_subject(session, _TEST_USER, "Biology")
+
+    service.handle_update(session, _text_update(555, "What are mitochondria?"))
+
+    # Has subjects but none selected → prompt, don't answer.
+    mock_ask.assert_not_called()
+    mock_research.assert_not_called()
+    (_, text), _ = mock_send.call_args
+    assert "Biology" in text
+    assert "/subject" in text
+
+
+def test_question_no_subjects_falls_back_to_research(session, mock_send, mock_ask, mock_research):
+    _link(session, 555, _TEST_USER)  # no subjects at all
+
+    service.handle_update(session, _text_update(555, "What is photosynthesis?"))
+
+    mock_ask.assert_not_called()
+    mock_research.assert_called_once_with("What is photosynthesis?")
+
+
+def test_deleted_active_subject_clears_and_prompts(session, mock_send, monkeypatch):
+    bio = _make_subject(session, _TEST_USER, "Biology")
+    _link(session, 555, _TEST_USER, active_subject_id=bio.id)
+    # Simulate the subject having been deleted after selection: ask_question fails closed.
+    monkeypatch.setattr(
+        service, "ask_question", Mock(side_effect=service.SubjectNotFoundError(bio.id))
+    )
+
+    service.handle_update(session, _text_update(555, "What are mitochondria?"))
+
+    assert session.get(TelegramLink, 555).active_subject_id is None
+    (_, text), _ = mock_send.call_args
+    assert "no longer available" in text.lower()
+
+
+def test_question_ask_unexpected_failure_replies_friendly(session, mock_send, monkeypatch):
+    bio = _make_subject(session, _TEST_USER, "Biology")
+    _link(session, 555, _TEST_USER, active_subject_id=bio.id)
+    monkeypatch.setattr(service, "ask_question", Mock(side_effect=RuntimeError("boom")))
+
+    service.handle_update(session, _text_update(555, "What are mitochondria?"))
+
+    (_, text), _ = mock_send.call_args
+    assert "couldn't answer" in text.lower()
+
+
+def test_research_command_calls_research(session, mock_send, mock_research, mock_ask):
+    bio = _make_subject(session, _TEST_USER, "Biology")
+    _link(session, 555, _TEST_USER, active_subject_id=bio.id)  # active subject present
+
+    service.handle_update(session, _text_update(555, "/research quantum tunneling"))
+
+    # /research forces web research even with an active subject; RAG not used.
+    mock_ask.assert_not_called()
+    mock_research.assert_called_once_with("quantum tunneling")
+
+
+def test_research_command_no_query_prompts(session, mock_send, mock_research):
+    _link(session, 555, _TEST_USER)
+
+    service.handle_update(session, _text_update(555, "/research"))
+
+    mock_research.assert_not_called()
+    (_, text), _ = mock_send.call_args
+    assert "what would you like me to research" in text.lower()
+
+
+def test_help_and_unknown_command_reply_help(session, mock_send):
+    _link(session, 555, _TEST_USER)
+
+    service.handle_update(session, _text_update(555, "/help"))
+    (_, help_text), _ = mock_send.call_args
+    assert "/subjects" in help_text and "/research" in help_text
+
+    mock_send.reset_mock()
+    service.handle_update(session, _text_update(555, "/wat"))
+    (_, unknown_text), _ = mock_send.call_args
+    assert "/subjects" in unknown_text
+
+
+def test_command_from_unlinked_chat_gets_instructions(session, mock_send, mock_ask):
+    service.handle_update(session, _text_update(555, "/subjects"))
+
+    mock_ask.assert_not_called()
+    (_, text), _ = mock_send.call_args
+    assert "isn't connected" in text
+
+
+def test_subject_selection_is_owner_scoped(session, mock_send):
+    # Owner A's chat must only ever see and select A's subjects, never B's.
+    _make_subject(session, "owner_B", "Secret B Subject")
+    a_bio = _make_subject(session, _TEST_USER, "A Biology")
+    _link(session, 555, _TEST_USER)
+
+    service.handle_update(session, _text_update(555, "/subjects"))
+    (_, listing), _ = mock_send.call_args
+    assert "Secret B Subject" not in listing
+    assert "A Biology" in listing
+
+    # Only one subject visible to A, so number 1 resolves to A's own subject.
+    service.handle_update(session, _text_update(555, "/subject 1"))
+    assert session.get(TelegramLink, 555).active_subject_id == a_bio.id
 
 
 # --- defensive parsing ------------------------------------------------------------------

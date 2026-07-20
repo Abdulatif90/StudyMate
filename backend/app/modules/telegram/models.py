@@ -23,6 +23,7 @@ Chat/user ids from Telegram can exceed a 32-bit INTEGER, so `telegram_chat_id` u
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import BigInteger, Column
@@ -35,6 +36,13 @@ class TelegramLink(SQLModel, table=True):
     # The Telegram chat id IS the primary key — one chat links to exactly one account.
     telegram_chat_id: int = Field(sa_column=Column(BigInteger, primary_key=True))
     owner_id: str = Field(index=True)
+    # The subject the chat is currently asking over (picked via the bot's /subject
+    # command). NULL = none selected yet. A plain FK column with no ORM relationship or
+    # DB-level FK constraint — matching this codebase's plain-column style, and so a
+    # subject delete never has to know about this table. If the referenced subject is
+    # later deleted, the service treats a dangling value as "no subject selected" (the
+    # owner-scoped access check fails closed) and clears it.
+    active_subject_id: uuid.UUID | None = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

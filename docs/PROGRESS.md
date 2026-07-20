@@ -46,11 +46,19 @@ Telegram track end-to-end except one **LIVE BLOCKER**: registering the webhook w
 Telegram needs a public URL (ngrok/deploy) + setting `TELEGRAM_WEBHOOK_SECRET` via
 setWebhook's `secret_token` — like the Polar webhook, this is the one remaining live step
 (while the secret is unset the webhook processes updates unverified, dev-only). Telegram
-follow-up TODO: answering over the user's OWN uploaded materials (needs subject handling).
-Phase 8 (mobile app, PWA or native) is deferred — revisit later. OCR follow-up TODOs: OCR
-of scanned-PDF *pages* (a text-less PDF still parses to zero text today, it isn't
-image-OCR'd), and a friendly frontend accept-types hint (the existing upload UI already
-accepts any file, so images work now — this is just UX polish).
+follow-up TODO **now DONE**: a linked chat can answer over the user's OWN uploaded
+materials. A `/subjects` numbered picker + `/subject <n|name>` selects an active subject
+(tracked on the `TelegramLink` row, new nullable `active_subject_id` column, migration
+`c1d2e3f4a5b6`); a plain question is then answered over that subject's chunks via the
+EXISTING Ask/RAG service (`ask.service.ask_question`), scoped to the linked `owner_id` +
+an empty `OrgContext` (a Telegram chat has no org session), so it can only ever reach the
+user's OWN private subjects — never another user's, never an org subject they're merely a
+member of. `/research <query>` still gives an explicit web answer; a linked user with no
+subjects yet falls back to web research; with subjects but none selected the bot prompts
+them to pick. Phase 8 (mobile app, PWA or native) is deferred — revisit later. OCR
+follow-up TODOs: OCR of scanned-PDF *pages* (a text-less PDF still parses to zero text
+today, it isn't image-OCR'd), and a friendly frontend accept-types hint (the existing
+upload UI already accepts any file, so images work now — this is just UX polish).
 
 ## Done
 - [x] Repo skeleton + `.gitignore`
