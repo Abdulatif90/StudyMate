@@ -2611,6 +2611,13 @@ four locales) noting photos/scans are read via OCR.
   submitted/Submitted name lists, and the 503/502 graceful inline notes.
 
 ## Blockers / needs from user
+> **All deferred blockers are now consolidated (grouped + de-duplicated, each as an
+> actionable step) in [`docs/RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) — the single
+> end-of-project pass to run with real accounts + a browser.** The items below remain as
+> the detailed history; the checklist is the canonical to-do. Note: Neon is one migration
+> behind `head` (`c1d2e3f4a5b6`, the Telegram `active_subject_id` column) — apply it per
+> checklist §A before the Telegram own-materials feature works against Neon.
+
 - ~~Confirm Clerk Organizations config (Phase 5 org foundation)~~ **RESOLVED —
   LIVE-VERIFIED in the browser** (see WORKLOG "Live verification: Polar webhook,
   observability env, Clerk orgs" entry). The user enabled Organizations in Clerk,

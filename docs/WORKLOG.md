@@ -2,6 +2,31 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-20 — Release checklist + full automated verification pass (Phase 7 wrap)
+No new user-facing feature — consolidated every deferred blocker into one actionable doc
+and ran the full automated verification. Commit: `docs: consolidate deferred blockers into
+RELEASE_CHECKLIST + record automated verification`.
+
+- **`docs/RELEASE_CHECKLIST.md` (new).** Gathers, groups, and de-duplicates every deferred
+  blocker scattered across PROGRESS.md/WORKLOG.md into steps the USER can run:
+  (A) apply the one pending Neon migration `c1d2e3f4a5b6`; (B) live webhook registration —
+  Telegram `setWebhook` + `TELEGRAM_WEBHOOK_SECRET`, and Polar sandbox→production;
+  (C) env/secrets — `CLERK_SECRET_KEY` for the assignment roster, per-env keys;
+  (D) observability live-capture confirmation (Sentry error + PostHog event in the
+  dashboards); (E) the batched no-browser click-through list (all pages, real Clerk auth,
+  360/768/1280, light+dark); (F) deferred/optional — scanned-PDF full-page rasterization
+  (poppler/PyMuPDF, not added), old one-time Polar product cleanup, plan-limits review,
+  org-context runtime confirmation, Phase 8 mobile. PROGRESS.md's "Blockers" section now
+  points at it as the canonical to-do.
+- **Full automated verification (recorded in the checklist + here).** All green:
+  backend `pytest tests` → **536 passed, 12 deselected**; `ruff check .` clean;
+  `ruff format --check .` clean (150 files); frontend `npm run test` → **245 passed / 58
+  files**; `npx tsc --noEmit` clean; `npm run lint` clean. `alembic heads` → `c1d2e3f4a5b6`;
+  `alembic current` (Neon) → `06650625fb97` — Neon is **one migration behind head** (the new
+  Telegram `active_subject_id` column), flagged in checklist §A to apply with
+  `alembic upgrade head` (migrations are deliberately NOT run against Neon from here). Nothing
+  was red, so no test fixes were needed this increment.
+
 ## 2026-07-20 — OCR: scanned-PDF pages + friendly upload accept-types hint (Phase 7)
 Closes the two OCR follow-up TODOs. Commit: `feat(documents): OCR scanned-PDF pages via
 Claude vision + upload accept-types hint (Phase 7)`.
