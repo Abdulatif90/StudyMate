@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 from app.core.config import get_settings
 
@@ -81,6 +82,40 @@ def put_object(key: str, data: bytes, content_type: str) -> None:
 def get_object(key: str) -> bytes:
     response = _get_client().get_object(Bucket=_bucket(), Key=key)
     return response["Body"].read()
+
+
+def generate_presigned_put_url(key: str, content_type: str, expires_in: int) -> str:
+    """A short-lived presigned S3/R2 `PutObject` URL the browser can `PUT` a file to
+    directly — bypassing the backend function entirely (and thus Vercel's ~4.5 MB
+    serverless request-body cap; see docs/DEPLOYMENT.md §8 / RELEASE_CHECKLIST.md).
+
+    The URL is signed for this exact `key` and `ContentType`, so the PUT MUST send a
+    matching `Content-Type` header or R2 rejects the signature. `key` is owner-scoped
+    (`build_object_key`), so a URL minted for one owner can never target another's
+    namespace. Size is NOT enforceable on a presigned PUT — the caller (confirm step)
+    re-checks the real object size via `head_object_size` afterward.
+    """
+    return _get_client().generate_presigned_url(
+        "put_object",
+        Params={"Bucket": _bucket(), "Key": key, "ContentType": content_type},
+        ExpiresIn=expires_in,
+    )
+
+
+def head_object_size(key: str) -> int | None:
+    """The object's size in bytes via a `HEAD`, or `None` if it doesn't exist. Used by
+    the confirm step to prove a presigned upload actually landed and to enforce the
+    size limit the presigned PUT itself couldn't. A genuine 404/NoSuchKey is the
+    expected "not uploaded" signal (→ `None`); any other error propagates (a real
+    infra/credentials problem should fail loudly, not masquerade as 'not uploaded')."""
+    try:
+        response = _get_client().head_object(Bucket=_bucket(), Key=key)
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code")
+        if code in {"404", "NoSuchKey", "NotFound"}:
+            return None
+        raise
+    return response["ContentLength"]
 
 
 def delete_object(key: str) -> None:

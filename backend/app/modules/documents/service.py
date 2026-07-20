@@ -60,6 +60,11 @@ RERANK_CANDIDATE_POOL = 30
 # Emitted by create_document, consumed by the Inngest function in documents.jobs.
 DOCUMENT_UPLOADED_EVENT = "document/uploaded"
 
+# How long a presigned direct-to-R2 upload URL stays valid. Short on purpose — long
+# enough to upload a 20 MB file on a slow connection, short enough that a leaked URL
+# is useless within minutes.
+PRESIGN_EXPIRY_SECONDS = 15 * 60  # 15 minutes
+
 
 class UnsupportedFileTypeError(Exception):
     """Raised when the upload's content type isn't one StudyMate can parse."""
@@ -67,6 +72,12 @@ class UnsupportedFileTypeError(Exception):
 
 class FileTooLargeError(Exception):
     """Raised when the upload exceeds MAX_UPLOAD_SIZE_BYTES."""
+
+
+class DocumentNotUploadedError(Exception):
+    """Raised on confirm when the presigned object isn't in R2 — the browser's direct
+    PUT never completed (or was to the wrong URL). Distinct from a parse/type error:
+    there's simply nothing to process yet."""
 
 
 def require_owned_subject(session: Session, owner_id: str, subject_id: uuid.UUID) -> None:
@@ -152,6 +163,110 @@ def enqueue_document_processing(document: Document) -> None:
             data={"document_id": str(document.id), "owner_id": document.owner_id},
         )
     )
+
+
+def presign_document_upload(
+    session: Session,
+    owner_id: str,
+    subject_id: uuid.UUID,
+    filename: str,
+    content_type: str,
+    org_ctx: OrgContext | None = None,
+) -> tuple[uuid.UUID, str, str]:
+    """Step 1 of the presigned direct-to-R2 upload flow (the browser never streams the
+    bytes through the backend function — see docs/DEPLOYMENT.md §8). Validate write
+    access + plan limit + content type up front, then mint a short-lived presigned R2
+    `PutObject` URL for a fresh, owner-scoped object key. Returns
+    `(document_id, object_key, upload_url)`.
+
+    **No DB row is created here** — deliberately. The `Document` row is created only at
+    `confirm_document_upload`, after the object provably landed in R2, so an abandoned or
+    failed upload can never leave a stuck `pending` row (and never inflates the
+    per-subject document count used by the plan limit). The `document_id` is generated
+    now only so it can be baked into the object key; confirm re-derives the exact same
+    key from `owner_id`+`document_id`+`filename`.
+
+    Same authorization + validation ordering as `create_document`:
+    `require_writable_subject` (→ 404/403), then the plan-limit guard (→ 402), then the
+    content-type check (→ 415).
+    """
+    require_writable_subject(session, owner_id, org_ctx or OrgContext(), subject_id)
+    ensure_can_upload_document(session, owner_id, subject_id, org_ctx)
+    if content_type not in SUPPORTED_CONTENT_TYPES:
+        raise UnsupportedFileTypeError(f"Unsupported content type: {content_type}")
+
+    document_id = uuid.uuid4()
+    object_key = r2_client.build_object_key(owner_id, document_id, filename)
+    upload_url = r2_client.generate_presigned_put_url(
+        object_key, content_type, PRESIGN_EXPIRY_SECONDS
+    )
+    return document_id, object_key, upload_url
+
+
+def confirm_document_upload(
+    session: Session,
+    owner_id: str,
+    subject_id: uuid.UUID,
+    document_id: uuid.UUID,
+    filename: str,
+    content_type: str,
+    language: str = DEFAULT_LANGUAGE,
+    org_ctx: OrgContext | None = None,
+) -> Document:
+    """Step 3 of the presigned upload flow: the browser has `PUT` the file straight to
+    R2, now finalize it. Re-verify write access, HEAD the uploaded object to prove it
+    exists and read its real size, **enforce `MAX_UPLOAD_SIZE_BYTES` here** (a presigned
+    PUT can't cap upload size, and the backend never sees the bytes), then create the
+    `pending` `Document` row pointing at the object. The caller enqueues processing.
+
+    Ordering / failure modes:
+    - `require_writable_subject` first (→ 404/403) — same single source of truth as
+      every other write path; a caller who can't write the subject can't confirm here.
+    - `content_type` re-validated (→ 415) — the row must not be created for a type the
+      job can't parse.
+    - object missing → `DocumentNotUploadedError` (→ 409): the PUT never landed.
+    - object over the size limit → the object is **deleted** and `FileTooLargeError`
+      (→ 413) raised, so an over-cap file leaves no orphaned storage.
+    - plan-limit guard (→ 402) before the row is actually created (the real commit
+      point), consistent with `create_document`.
+
+    Idempotent on a duplicate confirm: if the row already exists (same `document_id`,
+    same owner), it's returned as-is instead of hitting a primary-key conflict.
+    """
+    require_writable_subject(session, owner_id, org_ctx or OrgContext(), subject_id)
+    if content_type not in SUPPORTED_CONTENT_TYPES:
+        raise UnsupportedFileTypeError(f"Unsupported content type: {content_type}")
+
+    object_key = r2_client.build_object_key(owner_id, document_id, filename)
+    size = r2_client.head_object_size(object_key)
+    if size is None:
+        raise DocumentNotUploadedError(document_id)
+    if size > MAX_UPLOAD_SIZE_BYTES:
+        # The bytes are already in R2 (uploaded directly, unmetered by us) — delete the
+        # over-cap object so a rejected upload never costs storage, then reject.
+        r2_client.delete_object(object_key)
+        raise FileTooLargeError(f"File exceeds {MAX_UPLOAD_SIZE_BYTES} byte limit")
+
+    existing = get_document_by_id(session, owner_id, document_id)
+    if existing is not None:
+        return existing
+
+    ensure_can_upload_document(session, owner_id, subject_id, org_ctx)
+
+    document = Document(
+        id=document_id,
+        subject_id=subject_id,
+        owner_id=owner_id,
+        filename=filename,
+        content_type=content_type,
+        status=DocumentStatus.PENDING,
+        language=language,
+        r2_object_key=object_key,
+    )
+    session.add(document)
+    session.commit()
+    session.refresh(document)
+    return document
 
 
 def get_document_by_id(session: Session, owner_id: str, document_id: uuid.UUID) -> Document | None:

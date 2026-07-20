@@ -103,9 +103,20 @@ def _mock_r2(request, monkeypatch):
     def put(key, data, content_type):
         store[key] = data
 
+    def presign(key, content_type, expires_in):
+        # A stand-in URL — the real one is signed by boto3. Tests that exercise the
+        # presigned flow simulate the browser's direct PUT by calling put_object.
+        return f"https://r2.example/{key}?sig=fake&ct={content_type}&exp={expires_in}"
+
+    def head_size(key):
+        data = store.get(key)
+        return None if data is None else len(data)
+
     monkeypatch.setattr(r2_client, "put_object", put)
     monkeypatch.setattr(r2_client, "get_object", lambda key: store[key])
     monkeypatch.setattr(r2_client, "delete_object", lambda key: store.pop(key, None))
+    monkeypatch.setattr(r2_client, "generate_presigned_put_url", presign)
+    monkeypatch.setattr(r2_client, "head_object_size", head_size)
     yield store
     return store
 
@@ -288,6 +299,168 @@ def test_upload_still_persists_the_document_if_enqueueing_fails(_mock_inngest, _
         assert len(documents) == 1
         assert documents[0].status == documents_service.DocumentStatus.PENDING
         assert _mock_r2[documents[0].r2_object_key] == b"still saved"
+
+
+# --- Presigned direct-to-R2 upload (presign + confirm) ----------------------
+
+
+def test_presign_returns_url_key_and_document_id(_mock_r2):
+    subject_id = _create_subject()
+
+    response = client.post(
+        f"/subjects/{subject_id}/documents/presign",
+        json={"filename": "notes.pdf", "content_type": "application/pdf"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["document_id"]
+    # owner-scoped key: {owner}/{document_id}/{filename}
+    assert body["object_key"] == f"{_TEST_USER}/{body['document_id']}/notes.pdf"
+    assert body["upload_url"].startswith("https://r2.example/")
+    # presign creates NO row and enqueues nothing — the row is created at confirm
+    assert client.get(f"/subjects/{subject_id}/documents").json() == []
+
+
+def test_presign_rejects_unsupported_content_type():
+    subject_id = _create_subject()
+    response = client.post(
+        f"/subjects/{subject_id}/documents/presign",
+        json={"filename": "archive.zip", "content_type": "application/zip"},
+    )
+    assert response.status_code == 415
+
+
+def test_presign_returns_404_for_missing_subject():
+    response = client.post(
+        f"/subjects/{_MISSING_ID}/documents/presign",
+        json={"filename": "notes.pdf", "content_type": "application/pdf"},
+    )
+    assert response.status_code == 404
+
+
+def test_presign_is_scoped_to_owner():
+    subject_id = _create_subject()
+    app.dependency_overrides[get_current_user_id] = lambda: "someone_else"
+    response = client.post(
+        f"/subjects/{subject_id}/documents/presign",
+        json={"filename": "notes.pdf", "content_type": "application/pdf"},
+    )
+    # can't even read the subject → 404 (existence never leaks), never a presigned URL
+    assert response.status_code == 404
+
+
+def _presign_and_put(
+    subject_id: str, content: bytes, filename="notes.txt", content_type="text/plain"
+):
+    """Full browser flow: presign → simulate the direct PUT to R2 → return the presign
+    body so the caller can confirm."""
+    presigned = client.post(
+        f"/subjects/{subject_id}/documents/presign",
+        json={"filename": filename, "content_type": content_type},
+    ).json()
+    r2_client.put_object(presigned["object_key"], content, content_type)
+    return presigned
+
+
+def test_confirm_creates_pending_row_and_enqueues(_mock_inngest, _mock_r2):
+    subject_id = _create_subject()
+    presigned = _presign_and_put(subject_id, b"hello world")
+
+    response = client.post(
+        f"/subjects/{subject_id}/documents/{presigned['document_id']}/confirm",
+        json={"filename": "notes.txt", "content_type": "text/plain", "language": "en"},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["id"] == presigned["document_id"]
+    assert body["status"] == "pending"
+    assert "owner_id" not in body
+    _mock_inngest.assert_called_once()
+
+    # the row now exists and points at the uploaded object; the async job can process it
+    document = _process(_TEST_USER, presigned["document_id"])
+    assert document.status.value == "ready"
+    assert _chunk_texts(_TEST_USER, presigned["document_id"]) == ["hello world"]
+
+
+def test_confirm_enforces_the_size_limit_and_deletes_the_oversize_object(_mock_inngest, _mock_r2):
+    subject_id = _create_subject()
+    big = b"x" * (21 * 1024 * 1024)  # over the 20 MB limit
+    presigned = _presign_and_put(subject_id, big, filename="big.txt")
+
+    response = client.post(
+        f"/subjects/{subject_id}/documents/{presigned['document_id']}/confirm",
+        json={"filename": "big.txt", "content_type": "text/plain"},
+    )
+
+    assert response.status_code == 413
+    # the over-cap object is deleted (no orphaned storage), no row created, nothing queued
+    assert presigned["object_key"] not in _mock_r2
+    assert client.get(f"/subjects/{subject_id}/documents").json() == []
+    _mock_inngest.assert_not_called()
+
+
+def test_confirm_returns_409_when_the_object_was_never_uploaded(_mock_inngest, _mock_r2):
+    subject_id = _create_subject()
+    # presign but DON'T put anything to R2 (the browser PUT failed / never happened)
+    presigned = client.post(
+        f"/subjects/{subject_id}/documents/presign",
+        json={"filename": "notes.txt", "content_type": "text/plain"},
+    ).json()
+
+    response = client.post(
+        f"/subjects/{subject_id}/documents/{presigned['document_id']}/confirm",
+        json={"filename": "notes.txt", "content_type": "text/plain"},
+    )
+
+    assert response.status_code == 409
+    assert client.get(f"/subjects/{subject_id}/documents").json() == []
+    _mock_inngest.assert_not_called()
+
+
+def test_confirm_rejects_unsupported_content_type(_mock_inngest, _mock_r2):
+    subject_id = _create_subject()
+    response = client.post(
+        f"/subjects/{subject_id}/documents/{uuid.uuid4()}/confirm",
+        json={"filename": "archive.zip", "content_type": "application/zip"},
+    )
+    assert response.status_code == 415
+    _mock_inngest.assert_not_called()
+
+
+def test_confirm_is_scoped_to_owner(_mock_inngest, _mock_r2):
+    subject_id = _create_subject()
+    presigned = _presign_and_put(subject_id, b"hello world")
+
+    app.dependency_overrides[get_current_user_id] = lambda: "someone_else"
+    response = client.post(
+        f"/subjects/{subject_id}/documents/{presigned['document_id']}/confirm",
+        json={"filename": "notes.txt", "content_type": "text/plain"},
+    )
+    # another user can't read the subject → 404, and nothing is created for them
+    assert response.status_code == 404
+    _mock_inngest.assert_not_called()
+
+
+def test_confirm_is_idempotent_on_a_duplicate_call(_mock_inngest, _mock_r2):
+    subject_id = _create_subject()
+    presigned = _presign_and_put(subject_id, b"hello world")
+    payload = {"filename": "notes.txt", "content_type": "text/plain", "language": "en"}
+
+    first = client.post(
+        f"/subjects/{subject_id}/documents/{presigned['document_id']}/confirm", json=payload
+    )
+    second = client.post(
+        f"/subjects/{subject_id}/documents/{presigned['document_id']}/confirm", json=payload
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["id"] == second.json()["id"]
+    # exactly one row exists despite two confirms
+    assert len(client.get(f"/subjects/{subject_id}/documents").json()) == 1
 
 
 # --- Processing (the async job — service.process_document) ------------------
