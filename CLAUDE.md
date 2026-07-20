@@ -1,6 +1,9 @@
 # CLAUDE.md — StudyMate
 
 Router for anyone (human or AI) working on this repo. **Read this first, then `docs/PROGRESS.md`.**
+Other docs: `docs/FUTURE.md` (proposals / deferred features, not committed work),
+`docs/RELEASE_CHECKLIST.md` (live launch steps), `docs/DEPLOYMENT.md` (Vercel deploy runbook),
+`docs/DECISIONS.md` (ADRs), `docs/FRONTEND.md` (UI rules).
 
 ## What this is
 Education RAG SaaS. Students upload materials → cited Q&A, auto-summary, quizzes,

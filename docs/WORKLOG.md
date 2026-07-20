@@ -2,6 +2,23 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-20 — docs: consolidate all future/deferred ideas into docs/FUTURE.md
+Gathered every not-yet-built idea scattered across `PROGRESS.md`/`WORKLOG.md` (markers:
+TODO, deferred, follow-up, deliberately NOT, out of scope, kept simple) into one grouped,
+de-duplicated index. Commit: `docs: add docs/FUTURE.md consolidated proposals index`.
+
+- **`docs/FUTURE.md`** — stance at top: these are FUTURE PROPOSALS, not committed work.
+  Grouped: Product features (research answer persistence, web+RAG research, Telegram over
+  org-shared subjects, Telegram card live status), B2B/Teams (per-student assignment
+  targeting, Team-plan seat-count enforcement), Billing (plan-limit review + old Polar
+  product cleanup — cross-ref RELEASE_CHECKLIST §F), i18n (native uz/ko/ru review, typed
+  next-intl messages, Clerk Uzbek localization), Infra/OCR (full-page rasterization of vector
+  text-less PDFs via poppler/PyMuPDF), Mobile (Phase 8 PWA/native). Each: one-line desc, why
+  deferred, rough effort. PROGRESS.md kept as the historical record (not deleted).
+- Pointers added to FUTURE.md from `PROGRESS.md` (header) and `CLAUDE.md` (router section,
+  alongside RELEASE_CHECKLIST/DEPLOYMENT/DECISIONS/FRONTEND).
+- Docs-only; no tests affected.
+
 ## 2026-07-20 — fix: API datetimes serialize as explicit UTC (tz-drift) + billing 3-plan row
 Two fixes. The first (one root cause) fixes both the "fresh assignment shows Overdue" and
 "quiz time off by hours" bugs; the second is billing CSS. Commits:

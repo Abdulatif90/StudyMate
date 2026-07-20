@@ -1,6 +1,10 @@
 # PROGRESS
 
 > Current state of the StudyMate build. **Read this to resume work** after any break/reset.
+>
+> Not-yet-built ideas (proposals / TODOs / deferred features) are indexed in
+> [`docs/FUTURE.md`](FUTURE.md); live launch steps are in
+> [`docs/RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md). This file stays the historical record.
 
 ## Current phase
 **Phase 0 — Setup: complete.** **Phase 1 — Core RAG: complete.** **Phase 2 — Quiz + FTS
