@@ -146,13 +146,20 @@ function MobileTopBar({ pathname, t }: { pathname: string; t: ReturnType<typeof 
         {/* Org create/switch (and admin member-invite) via Clerk's own flow — see the
             desktop utility row below for the reasoning on placing it here, not the
             always-dark sidebar. `afterCreate/SelectOrganizationUrl` route to the Team
-            page so a fresh org lands on its management surface. */}
-        <OrganizationSwitcher
-          afterCreateOrganizationUrl="/team"
-          afterSelectOrganizationUrl="/team"
-        />
-        <ThemeToggle />
-        <LanguageSwitcher />
+            page so a fresh org lands on its management surface.
+            Below `md` these three utility controls plus the org switcher won't fit
+            alongside the brand + user button + menu on a narrow phone (they overflowed
+            below ~667px), so this inline cluster is hidden there and the same controls
+            move into the dropdown menu (see the `md:hidden` block below). At md–lg they
+            stay inline; the whole top bar is replaced by the sidebar at `lg`+. */}
+        <div className="hidden items-center gap-2 md:flex">
+          <OrganizationSwitcher
+            afterCreateOrganizationUrl="/team"
+            afterSelectOrganizationUrl="/team"
+          />
+          <ThemeToggle />
+          <LanguageSwitcher />
+        </div>
         <UserButton />
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -186,6 +193,20 @@ function MobileTopBar({ pathname, t }: { pathname: string; t: ReturnType<typeof 
                 />
               );
             })}
+            {/* Collapsed utility controls for narrow phones (below `md`). Above `md`
+                these live inline in the header cluster instead, so this block is hidden
+                there to avoid rendering them twice. Kept as plain interactive controls
+                (not menu items) so toggling theme/language doesn't close the menu. */}
+            <div className="mt-1 flex flex-col gap-2 border-t border-border px-1 pt-2 md:hidden">
+              <div className="flex items-center gap-2">
+                <ThemeToggle />
+                <LanguageSwitcher />
+              </div>
+              <OrganizationSwitcher
+                afterCreateOrganizationUrl="/team"
+                afterSelectOrganizationUrl="/team"
+              />
+            </div>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
