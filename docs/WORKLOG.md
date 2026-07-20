@@ -2,6 +2,52 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-21 — feat(documents): presigned direct-to-R2 upload (fixes >4.5 MB uploads on Vercel)
+
+**Problem.** Vercel serverless functions cap the request body at ~4.5 MB. Upload streamed the
+whole file *through* the backend function (`UploadFile` → `await file.read()` →
+`create_document`), so any file between 4.5 MB and the 20 MB app limit 413'd at the Vercel
+edge *before* reaching the function — and because the edge 413 carries no CORS header, the
+browser reported it as a CORS error. Files under 4.5 MB worked.
+
+**Fix — presigned direct-to-R2 upload** (stays fully on Vercel/free). The browser now `PUT`s
+the file straight to R2, so the bytes never traverse the function and the 4.5 MB cap no longer
+applies. Downstream processing is unchanged (the Inngest job still fetches from R2).
+
+- **Two new endpoints** (`documents/router.py`, both auth'd + org-scoped, thin — logic in
+  service):
+  - `POST /subjects/{subject_id}/documents/presign` → validates write access (404/403), plan
+    limit (402), content type (415); mints a fresh owner-scoped R2 object key + a 15-min
+    presigned `PutObject` URL. **Creates no DB row** — so an abandoned/failed upload can never
+    leave a stuck `pending` row or inflate the per-subject document count.
+  - `POST /subjects/{subject_id}/documents/{document_id}/confirm` → HEADs the uploaded object
+    to prove it landed and read its size, **enforces the 20 MB cap here** (the presigned PUT
+    can't) — over-cap → deletes the object + 413; missing object → 409; bad type → 415. Then
+    creates the `pending` row and enqueues the same `document/uploaded` Inngest job as before.
+    Idempotent on a duplicate confirm.
+- **`MAX_UPLOAD_SIZE_BYTES` stays the single source of truth** (20 MB), now checked at confirm
+  via `head_object_size`. `r2_client.py` gained `generate_presigned_put_url` +
+  `head_object_size` (both mock the same way as the existing put/get/delete in tests). No new
+  dependency — boto3 was already a dep.
+- **Old multipart `POST .../documents` kept** (still works for <4.5 MB; used by existing tests
+  + live smoke tests) — the frontend just no longer uses it, so no dead path in the browser.
+- **Frontend:** new `lib/api/uploadDocument.ts` (presign → `PUT` via `XMLHttpRequest` for
+  real upload-progress → confirm; throws a typed `UploadError` carrying step + HTTP status +
+  body so the page keeps its 402 inline upgrade prompt and shows friendly 415/413/409/network
+  messages) + `lib/inferContentType.ts` (browser `file.type`, falling back to an
+  extension→MIME map so empty-type `.txt`/`.docx` don't spuriously 415). Subject-detail page
+  swapped to the new flow with a live progress bar (`AnimatedProgressBar`, new
+  `SubjectDetail.uploadingPercent` string across all 4 locales). Typed API client regenerated
+  from the FastAPI OpenAPI.
+- **R2 bucket CORS is a required MANUAL step** (can't be set from code) — exact policy JSON +
+  dashboard instructions added to `RELEASE_CHECKLIST.md` §A2, cross-ref'd from `DEPLOYMENT.md`
+  §0. Without it the cross-origin browser PUT is blocked.
+- **Tests:** backend `pytest tests` **559 passed, 12 deselected** (+10: presign url/key/scope,
+  confirm enqueues, over-size→413+object-deleted, missing-object→409, wrong-owner→404,
+  unsupported→415, idempotent confirm); `ruff check` + `ruff format --check` clean. Frontend
+  `npx vitest run` **254 passed (60 files)** (+9: inferContentType, uploadError 409/network,
+  uploadDocument flow), `tsc --noEmit` + `eslint` clean.
+
 ## 2026-07-20 — chore(deploy): Vercel deploy prep (frontend + backend) + DEPLOYMENT.md
 Deploy-readiness config for an **all-Vercel** deploy (frontend + FastAPI backend). No app
 code changed — CORS is already env-driven (`config.cors_origins` → `cors_origin_list` →

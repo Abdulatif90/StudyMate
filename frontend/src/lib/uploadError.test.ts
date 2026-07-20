@@ -10,6 +10,14 @@ describe("friendlyUploadError", () => {
     expect(friendlyUploadError(413)).toMatch(/too large/);
   });
 
+  it("maps 409 to an upload-didn't-complete message", () => {
+    expect(friendlyUploadError(409)).toMatch(/didn't complete/);
+  });
+
+  it("maps 0 (the direct-to-R2 PUT failing) to a storage-unreachable message", () => {
+    expect(friendlyUploadError(0)).toMatch(/file storage/);
+  });
+
   it("falls back to a generic message for any other status", () => {
     expect(friendlyUploadError(500)).toBe("Couldn't upload the file. Please try again.");
   });

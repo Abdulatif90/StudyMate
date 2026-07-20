@@ -7,7 +7,8 @@ than blocking each increment). Each item is scattered across `docs/PROGRESS.md` 
 (the developer, with real accounts + a browser) can execute. Nothing here blocks the
 automated test suites — those are all green (see "Automated verification" at the bottom).
 
-Work top to bottom; A is the only one that will actually break a feature in production.
+Work top to bottom. **A** and **A2** are the ones that actually break a feature in
+production (A2 breaks uploads over ~4.5 MB until the R2 bucket CORS policy is set).
 
 ---
 
@@ -31,6 +32,50 @@ alembic current          # confirm c1d2e3f4a5b6
 ```
 
 > The build intentionally never ran migrations against Neon; this is the batched apply.
+
+---
+
+## A2. Cloudflare R2 bucket CORS — required for large-file uploads (MANUAL)
+
+Document upload now uses **presigned direct-to-R2 upload**: the browser `PUT`s the file
+straight to R2 (bypassing Vercel's ~4.5 MB serverless request-body cap), so files up to the
+full 20 MB limit upload — but **only once the R2 bucket allows a cross-origin `PUT` from the
+frontend origin.** Until then, the browser's preflight/`PUT` is blocked by CORS and the
+upload fails (files under ~4.5 MB were the only ones that ever worked before this; now none
+of the direct uploads work until this is set).
+
+This **cannot be set from code** — it is a bucket setting you must apply once in the
+**Cloudflare dashboard → R2 → your bucket → Settings → CORS Policy** (or via the S3 API
+`PutBucketCors`). Paste **exactly** this policy:
+
+```json
+[
+  {
+    "AllowedOrigins": [
+      "https://studymate-web-psi.vercel.app",
+      "http://localhost:3000"
+    ],
+    "AllowedMethods": ["PUT"],
+    "AllowedHeaders": ["Content-Type"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+- `AllowedOrigins` — the deployed frontend origin **and** `http://localhost:3000` for local
+  dev. Add any custom domain you assign the frontend (e.g. `https://app.yourdomain.com`) here
+  too; a missing origin means uploads from that origin silently fail CORS.
+- `AllowedMethods: ["PUT"]` — the direct upload is a single presigned `PUT`. (No `GET`/`POST`
+  needed: downloads are done server-side by the Inngest job with credentials, not from the
+  browser.)
+- `AllowedHeaders: ["Content-Type"]` — the presigned URL is signed with the file's
+  `Content-Type`, so the browser sends that header and the preflight must allow it.
+
+**Verify:** after saving, upload a ~10 MB PDF from the deployed frontend; it should reach
+`pending → ready`. If the browser console shows a CORS error on a `PUT` to
+`*.r2.cloudflarestorage.com`, the policy origin doesn't match the frontend origin exactly
+(scheme + host, no trailing slash).
 
 ---
 

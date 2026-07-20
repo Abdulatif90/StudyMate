@@ -14,8 +14,10 @@ import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
 import { UpgradePrompt } from "@/components/upgrade-prompt";
 import { useConfirm } from "@/components/confirm-provider";
+import { AnimatedProgressBar } from "@/components/ui/animated-progress-bar";
 import { captureEvent } from "@/lib/analytics";
 import { useApiClient } from "@/lib/api/useApiClient";
+import { uploadDocument, UploadError } from "@/lib/api/uploadDocument";
 import { friendlyDeleteError } from "@/lib/deleteError";
 import { documentStatusVariant } from "@/lib/documentStatus";
 import { documentsRefetchInterval } from "@/lib/documentsPolling";
@@ -35,6 +37,7 @@ export default function SubjectDetailPage() {
   const capability = orgCapability(membership?.role);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [limitError, setLimitError] = useState<PlanLimitError | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   const subjectQuery = useQuery({
     queryKey: ["subjects", subjectId],
@@ -61,38 +64,32 @@ export default function SubjectDetailPage() {
     refetchInterval: (query) => documentsRefetchInterval(query.state.data),
   });
 
-  const uploadDocument = useMutation({
+  const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append("file", file);
-      // The auto-summary generated during processing is written in whatever
-      // language the uploader's UI is currently in — see backend
-      // documents.router.create_document / summarization.py.
-      formData.append("language", locale);
-      const { data, error, response } = await api.POST("/subjects/{subject_id}/documents", {
-        params: { path: { subject_id: subjectId } },
-        // openapi-fetch passes FormData straight through to fetch (letting the
-        // browser set the multipart boundary) — the generated type expects a
-        // `{ file: string; language: string }` JSON body since openapi-typescript
-        // renders `format: binary` as `string`, so this cast is the documented
-        // workaround.
-        body: formData as unknown as { file: string; language: string },
-      });
-      if (error) {
-        // A 402 means the plan's per-subject document cap is hit — capture it (status
-        // lives on the response, not the body) so the UI can show an upgrade prompt
-        // instead of a toast. Any other status toasts a friendly message (415/413/
-        // generic) — the 402 path stays inline per FRONTEND.md §3.3, so it's the one
-        // case that must NOT also fire a toast here.
-        const limit = parsePlanLimitError(response.status, error);
-        setLimitError(limit);
-        const message = friendlyUploadError(response.status);
-        if (!limit) toast.error(t("SubjectDetail.uploadErrorTitle"), message);
-        throw new Error(message);
+      // Presigned direct-to-R2 upload: the file is PUT straight from the browser to R2,
+      // never through the backend function — so it bypasses Vercel's ~4.5 MB serverless
+      // body cap and uploads up to the full 20 MB limit work. The auto-summary language
+      // (locale) is captured at the confirm step. See lib/api/uploadDocument.ts.
+      try {
+        return await uploadDocument(api, { subjectId, file, language: locale }, setUploadProgress);
+      } catch (err) {
+        if (err instanceof UploadError) {
+          // A 402 (plan's per-subject document cap) surfaces at the presign step —
+          // capture it for the inline upgrade prompt (per FRONTEND.md §3.3) instead of
+          // a toast. Every other status toasts a friendly message.
+          const limit = parsePlanLimitError(err.status, err.body);
+          setLimitError(limit);
+          const message = friendlyUploadError(err.status);
+          if (!limit) toast.error(t("SubjectDetail.uploadErrorTitle"), message);
+          throw new Error(message);
+        }
+        throw err;
       }
-      return data;
     },
-    onMutate: () => setLimitError(null),
+    onMutate: () => {
+      setLimitError(null);
+      setUploadProgress(0);
+    },
     onSuccess: (data) => {
       if (fileInputRef.current) fileInputRef.current.value = "";
       queryClient.invalidateQueries({ queryKey: ["subjects", subjectId, "documents"] });
@@ -105,6 +102,7 @@ export default function SubjectDetailPage() {
     onError: () => {
       if (fileInputRef.current) fileInputRef.current.value = "";
     },
+    onSettled: () => setUploadProgress(null),
   });
 
   const deleteDocument = useMutation({
@@ -206,15 +204,20 @@ export default function SubjectDetailPage() {
             ref={fileInputRef}
             type="file"
             accept=".pdf,.docx,.txt,.jpg,.jpeg,.png,.webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,image/jpeg,image/png,image/webp"
-            disabled={uploadDocument.isPending}
+            disabled={uploadMutation.isPending}
             onChange={(event) => {
               const file = event.target.files?.[0];
-              if (file) uploadDocument.mutate(file);
+              if (file) uploadMutation.mutate(file);
             }}
           />
           <p className="mt-2 text-xs text-muted-foreground">{t("SubjectDetail.acceptHint")}</p>
-          {uploadDocument.isPending && (
-            <p className="mt-2 text-sm text-muted-foreground">{t("SubjectDetail.uploading")}</p>
+          {uploadMutation.isPending && (
+            <div className="mt-3">
+              <p className="mb-1.5 text-sm text-muted-foreground">
+                {t("SubjectDetail.uploadingPercent", { percent: uploadProgress ?? 0 })}
+              </p>
+              <AnimatedProgressBar percent={uploadProgress ?? 0} />
+            </div>
           )}
           <p className="mt-2 text-xs text-muted-foreground">{t("SubjectDetail.processingHint")}</p>
           {limitError && <UpgradePrompt message={limitError.detail} />}
