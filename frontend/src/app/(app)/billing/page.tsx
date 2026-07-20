@@ -183,6 +183,12 @@ export default function BillingPage() {
               {PLAN_ORDER.map((candidate) => {
                 const isCurrent = candidate === plan.plan;
                 const canCheckout = checkoutTargets.includes(candidate as Exclude<Plan, "free">);
+                // Pending state is per-card: only the plan whose checkout is actually
+                // in flight (`checkout.variables === candidate`) shows "Redirecting…"
+                // and disables. The global `checkout.isPending` must NOT gate every
+                // card, or clicking one plan visibly greys out/locks the others too —
+                // the user reads that as both upgrade buttons reacting to one click.
+                const isThisPending = checkout.isPending && checkout.variables === candidate;
                 return (
                   <PlanCard
                     key={candidate}
@@ -196,13 +202,13 @@ export default function BillingPage() {
                     ctaLabel={
                       isCurrent
                         ? t("Billing.currentPlanCta")
-                        : checkout.isPending && checkout.variables === candidate
+                        : isThisPending
                           ? t("Billing.redirecting")
                           : canCheckout
                             ? t("Billing.upgradeTo", { plan: PLAN_LABELS[candidate] })
                             : t("Billing.notAvailable")
                     }
-                    ctaDisabled={!canCheckout || checkout.isPending}
+                    ctaDisabled={!canCheckout || isThisPending}
                     onCta={
                       canCheckout
                         ? () => checkout.mutate(candidate as Exclude<Plan, "free">)

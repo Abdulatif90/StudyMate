@@ -96,6 +96,56 @@ Polar product cleanup) and are cross-referenced rather than duplicated.
   `documents/parsing._extract_page_images` and reuse the existing Claude-vision OCR path.
   *Cross-ref:* `RELEASE_CHECKLIST.md` §F.
 
+- **Support 100 MB+ document uploads without hitting Cohere / Anthropic limits.** Uploads
+  are capped at `MAX_UPLOAD_SIZE_BYTES = 20 MB` (`documents/service.py`), enforced at
+  `confirm_document_upload` via `r2_client.head_object_size` on the direct-to-R2 object. The
+  async job (`documents/jobs.process_document_fn` → `service.process_document`) does the whole
+  ingest **in one Inngest step** (`ctx.step.run("process-document", …)`): `r2_client.get_object`
+  pulls the *entire* file into memory, `parsing.extract_text` parses it (pypdf / python-docx),
+  `chunking.chunk_text` splits it, `embedding.embed_texts` embeds **all** chunks via Cohere, and
+  `summarization.summarize_document` sends the text to Claude for one auto-summary. Raising the cap
+  alone would just move the failure downstream — four bottlenecks appear:
+  (1) **Memory** — whole file + parsed text + every embedding held in one serverless invocation
+  can exceed the function's memory ceiling.
+  (2) **Cohere throughput / rate limits** — `embed_texts` already passes `batching=True` so the
+  SDK splits a big list across calls (respecting Cohere's documented max texts-per-call), but a
+  100 MB doc → thousands of chunks → many sequential calls, provider rate limits, and real cost;
+  it isn't sliced across steps, so one invocation carries it all.
+  (3) **Anthropic summary quality** — `summarize_document` already truncates to
+  `MAX_INPUT_CHARS = 12_000` chars (Claude models have roughly a ~200K-token context window, so a
+  full 100 MB doc could never go in one call anyway). Today that means a huge doc is summarized
+  from only its opening excerpt — no crash, but an unrepresentative summary.
+  (4) **Single-step duration** — parse + embed for a huge doc can exceed one Inngest step's time
+  budget, and the whole job is one step today. *Proposed design (build in this order):*
+  **(a)** raise `MAX_UPLOAD_SIZE_BYTES` (e.g. to 100 MB) — but only alongside the pipeline changes
+  below, never on its own. **(b)** **Streaming / bounded-memory parse** — stream the R2 object and
+  parse page-by-page / section-by-section instead of `get_object`-ing all bytes, so memory stays
+  flat regardless of file size. **(c)** **Batched embedding across multiple Inngest steps** — split
+  the embed work into slices, each embedded in its own `ctx.step.run` (steps give durability +
+  resumability so no single invocation runs too long or repeats finished work on retry), with
+  retry/backoff honouring Cohere's rate limits. **(d)** **Map-reduce (hierarchical) summarization** —
+  the standard pattern: summarize each chunk-group (map), then summarize the group-summaries
+  (reduce), so every Claude call stays within the context window and it scales to any doc size —
+  replacing today's opening-excerpt truncation. **(e)** **Per-document progress state** — persist
+  chunks-embedded / total so the UI shows a real progress bar for long ingestions (the frontend
+  already has `components/ui/animated-progress-bar.tsx`). **(f)** *Optional* **Inngest fan-out** —
+  process chunk-batches in parallel, bounded by provider rate limits.
+  *Trade-offs.* **Pros:** supports arbitrarily large files; bounded memory; respects provider
+  batch / rate / context limits; resumable + durable via Inngest steps; better UX via real
+  progress. **Cons:** far more moving parts than today's single-pass job (batching, fan-out,
+  map-reduce, progress state) → more code, tests, failure modes; **provider cost** — embedding +
+  summarizing a 100 MB doc is expensive per-token, so it needs per-plan size caps / quotas
+  (`billing/service.LIMITS`) to protect the cost model; **latency** — a big doc may take minutes to
+  reach `ready`, needing clear pending/progress UX; **summary quality** — map-reduce is lossier than
+  a single-context summary (hierarchical compression drops nuance); **storage / search** — thousands
+  of extra pgvector rows per big doc grow the Neon DB and slow vector search, possibly needing index
+  tuning (IVFFlat / HNSW params); **rate limits** — concurrent big uploads can hit Cohere / Anthropic
+  limits, needing throttling / queueing. *Alternatives:* (a) keep 20 MB — simplest, current; (b)
+  raise to ~50 MB with ONLY batched embedding + map-reduce summary, skip fan-out — medium; (c) full
+  streaming + fan-out pipeline — highest capability and complexity. *Recommendation:* **defer**; if
+  pursued, do it incrementally — batched embedding + map-reduce summarization first (unlocks larger
+  docs within provider limits), then streaming parse + fan-out for true 100 MB+. *Effort:* large.
+
 ## 6. Mobile — Phase 8 (deferred)
 
 - **Mobile app (PWA or native).** Roadmap Phase 8, explicitly deferred throughout the build

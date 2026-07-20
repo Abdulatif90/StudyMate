@@ -1,4 +1,5 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { AppShell } from "./app-shell";
 import { renderWithIntl } from "@/lib/test/renderWithIntl";
@@ -71,5 +72,28 @@ describe("AppShell", () => {
     renderWithIntl(<AppShell>content</AppShell>);
     expect(screen.getByText("Ada Lovelace")).toBeInTheDocument();
     expect(screen.getByText("Free")).toBeInTheDocument();
+  });
+
+  it("collapses the mobile top bar's utility controls into the dropdown menu", async () => {
+    // Bug 4: below md the org switcher + theme + language controls would overflow the
+    // slim mobile top bar, so they move into the dropdown menu (the header only keeps
+    // them inline from md up). Opening the menu must expose all of nav + those controls
+    // so every destination and control stays reachable on a narrow phone.
+    currentPathname = "/dashboard";
+    const user = userEvent.setup();
+    renderWithIntl(<AppShell>content</AppShell>);
+
+    await user.click(screen.getByRole("button", { name: /menu/i }));
+
+    // Base UI portals the popup; scope assertions to it.
+    const popup = await screen.findByRole("menu");
+    const menu = within(popup);
+    // Nav destinations reachable from the collapsed menu.
+    expect(menu.getByRole("menuitem", { name: /dashboard/i })).toBeInTheDocument();
+    expect(menu.getByRole("menuitem", { name: /subjects/i })).toBeInTheDocument();
+    // The collapsed utility controls: theme toggle, language switcher, org switcher.
+    expect(menu.getByRole("button", { name: /toggle theme|light mode|dark mode/i })).toBeInTheDocument();
+    expect(menu.getByRole("combobox", { name: /language/i })).toBeInTheDocument();
+    expect(menu.getByTestId("org-switcher")).toBeInTheDocument();
   });
 });
