@@ -221,8 +221,9 @@ def delete_subject(
     session: Session, caller_id: str, org_ctx: OrgContext, subject_id: uuid.UUID
 ) -> bool:
     """Delete a subject and ALL content derived under it by EVERY member — documents (+
-    `DocumentChunk` rows + R2 objects), quizzes (+ questions), flashcards (+ every
-    reviewer's `FlashcardReviewState` rows), and conversations (+ turns) — then the
+    `DocumentChunk` rows + R2 objects), quizzes (+ questions, + quiz attempts, + any
+    assignments linking them), flashcards (+ every reviewer's `FlashcardReviewState` rows),
+    conversations (+ turns), and the subject's assignments (+ their submissions) — then the
     `Subject` row itself. Returns `False` (router → 404) if the subject doesn't exist or
     the caller can't read it. Raises `SubjectWriteForbiddenError` (router → 403) if the
     caller can read but not write it (a student member of the owning org).
@@ -253,6 +254,7 @@ def delete_subject(
     """
     # See the module-level comment above for why these aren't top-level imports.
     from app.modules.ask.service import delete_conversation, list_all_conversations_for_subject
+    from app.modules.assignments.service import delete_assignments_for_subject
     from app.modules.documents.service import delete_document, list_all_documents_for_subject
     from app.modules.flashcards.service import delete_flashcard, list_all_flashcards_for_subject
     from app.modules.quiz.service import delete_quiz, list_all_quizzes_for_subject
@@ -276,6 +278,12 @@ def delete_subject(
 
     for conversation in list_all_conversations_for_subject(session, subject_id):
         delete_conversation(session, conversation.owner_id, conversation.id, commit=False)
+
+    # Assignments (org-broadcast) reference the subject DIRECTLY via `assignments.subject_id`
+    # (and their submissions hang off them). The quiz cascade above already removed any
+    # assignment that LINKED a quiz; this sweeps the rest — an assignment over the subject
+    # with no quiz link — so the final subject DELETE can't trip `assignments_subject_id_fkey`.
+    delete_assignments_for_subject(session, subject_id)
 
     session.delete(subject)
     session.commit()

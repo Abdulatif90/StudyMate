@@ -28,7 +28,7 @@ submission tracking (who did the assignment), per-student targeting, and any fro
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
 
 from sqlmodel import Session, delete, select
@@ -185,6 +185,52 @@ def delete_assignment(
     session.delete(assignment)
     session.commit()
     return True
+
+
+# ---------------------------------------------------------------------------
+# Cascade-only cleanup (no access check, no commit) — the assignments module owns the
+# FK-safe ordering for its own rows, so parent-delete cascades elsewhere reuse it rather
+# than re-deriving the submissions-before-assignment order. Same spirit as the
+# `list_all_*_for_subject` enumerators the other modules expose for `delete_subject`.
+# ---------------------------------------------------------------------------
+
+
+def _delete_assignments_by_ids(session: Session, assignment_ids: Sequence[uuid.UUID]) -> None:
+    """Delete the given assignments and their submission rows, submissions FIRST then the
+    assignments (the flush-before-parent-delete FK order — no ORM cascade to order it for
+    us), each `flush()`ed. Does NOT commit: the calling parent-delete owns the transaction.
+    No-op on an empty list (avoids emitting an `IN ()` delete)."""
+    if not assignment_ids:
+        return
+    session.exec(
+        delete(AssignmentSubmission).where(AssignmentSubmission.assignment_id.in_(assignment_ids))
+    )
+    session.flush()
+    session.exec(delete(Assignment).where(Assignment.id.in_(assignment_ids)))
+    session.flush()
+
+
+def delete_assignments_for_quiz(session: Session, quiz_id: uuid.UUID) -> None:
+    """Cascade-only: delete every assignment (any org/owner) that links `quiz_id`, plus its
+    submissions. Called by `quiz.service.delete_quiz` BEFORE it deletes the quiz row, so the
+    quiz DELETE can't trip `assignments_quiz_id_fkey`. Filtered by `quiz_id` alone — an
+    assignment references the quiz regardless of who created it — the same "clean every
+    referencing row" reasoning the subject cascade uses. No commit (the caller owns it)."""
+    assignment_ids = list(session.exec(select(Assignment.id).where(Assignment.quiz_id == quiz_id)))
+    _delete_assignments_by_ids(session, assignment_ids)
+
+
+def delete_assignments_for_subject(session: Session, subject_id: uuid.UUID) -> None:
+    """Cascade-only: delete every assignment (any org/owner) over `subject_id`, plus its
+    submissions. Called by `subjects.service.delete_subject` so an assignment that references
+    the subject DIRECTLY (`assignments.subject_id`) — even one with no quiz link — can't trip
+    `assignments_subject_id_fkey` on the final subject DELETE. No commit (the caller owns
+    it). Idempotent with `delete_assignments_for_quiz`: a quiz-linked assignment already
+    removed by the quiz cascade simply isn't re-selected here."""
+    assignment_ids = list(
+        session.exec(select(Assignment.id).where(Assignment.subject_id == subject_id))
+    )
+    _delete_assignments_by_ids(session, assignment_ids)
 
 
 def submit_assignment(
