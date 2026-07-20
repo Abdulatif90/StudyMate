@@ -2086,6 +2086,46 @@ frontends already shipped.
   - **Follow-up TODOs**: frontend (separate later increment), persistence of research
     sessions (like Ask), and combining live web results with the user's own RAG documents
     (this increment is web-only).
+- [x] **Frontend, second increment — `/research` page (Phase 6 now complete end-to-end).**
+  New `src/app/(app)/research/page.tsx`: a heading + a `Textarea` query box + a "Research"
+  button, wired to `POST /research` (`{query}` → `{answer, sources: [{title, url}]}`) via
+  `useApiClient` + a `useMutation` (mirrors the Ask page's mutation shape, no streaming —
+  this endpoint isn't a stream). Confirmed the exact field names by regenerating the typed
+  client against the live backend (`npm run generate-api-types`, :8000) before writing any
+  code, not assumed from the task description.
+  - **Slow-request UX**: the request is a bounded agentic loop (5-20s) — input + button both
+    `disabled` for the whole `isPending` window, plus an explicit "Researching the web…"
+    message (not just a spinner on the button), so the wait reads as expected, not stalled.
+  - **Answer rendering mirrors the Ask answer bubble exactly**: same `react-markdown`
+    `Components` config (`components/answer-message.tsx`) copied in — deliberately no
+    `rehype-raw`, so any HTML in the answer stays escaped/safe, same as Ask. Below it, a
+    "Sources" list — each source a real `<a target="_blank" rel="noopener noreferrer">`,
+    label from a new pure helper `lib/researchSource.ts` (`researchSourceLabel`: title,
+    falling back to the raw url when title is blank/whitespace-only) — hidden entirely when
+    `sources` is empty.
+  - **Error handling**: a `toast.error` PLUS a persistent inline destructive-text message
+    (task explicitly asked for both, not the usual toast-only pattern) — the toast covers a
+    genuine request failure (network/5xx); the backend's own graceful-degradation case (200
+    with an explanatory answer, empty sources) needs no special handling at all, since it's
+    rendered through the exact same success path.
+  - **Nav**: new `research` entry in `lib/navItems.ts` (`Globe` icon, positioned after
+    Assignments, before Billing) + `/research(.*)` added to `middleware.ts`'s protected
+    matcher. `navItems.test.ts` updated for the new 7-item href list.
+  - **i18n**: new `Nav.research` key + a new `Research` namespace (7 keys: heading,
+    subheading, placeholder, button, researching, sourcesHeading, error) added to all four
+    catalogs via targeted anchored edits (not a full JSON round-trip) — `messages.test.ts`
+    parity stays green.
+  - Tests: new `lib/researchSource.test.ts` (+3 — title wins, empty title falls back to url,
+    whitespace-only title falls back to url). No page-level test, matching this codebase's
+    established pattern (pages verified via `tsc`/`eslint`, not unit-tested — see the
+    Landing-page increment above). Frontend **240 passed** (up from 237), `tsc --noEmit`
+    clean, `eslint` clean. (`next build` deliberately skipped per the dev-server workflow —
+    dev server owns :3000.)
+  - **Follow-up TODOs unchanged from the backend increment**: persistence of research
+    sessions (like Ask's conversations), and combining live web results with the user's own
+    RAG documents (still web-only). **Not browser-verified** (standing no-browser gap): the
+    page's actual look/responsiveness at 360/768/1280px, and a real end-to-end click-through
+    of a slow research request.
 
 ## Next (Phase 4+)
 - **Frontend redesign roadmap (in progress)** — a phased UI/UX overhaul, one increment per

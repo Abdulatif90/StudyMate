@@ -2,6 +2,7 @@ import {
   BookOpen,
   ClipboardList,
   CreditCard,
+  Globe,
   LayoutDashboard,
   LifeBuoy,
   type LucideIcon,
@@ -11,7 +12,14 @@ import {
 export interface NavItem {
   href: string;
   /** Key into the `Nav` next-intl namespace. */
-  translationKey: "dashboard" | "subjects" | "team" | "assignments" | "billing" | "support";
+  translationKey:
+    | "dashboard"
+    | "subjects"
+    | "team"
+    | "assignments"
+    | "research"
+    | "billing"
+    | "support";
   icon: LucideIcon;
 }
 
@@ -21,6 +29,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/subjects", translationKey: "subjects", icon: BookOpen },
   { href: "/team", translationKey: "team", icon: Users },
   { href: "/assignments", translationKey: "assignments", icon: ClipboardList },
+  { href: "/research", translationKey: "research", icon: Globe },
   { href: "/billing", translationKey: "billing", icon: CreditCard },
   { href: "/support", translationKey: "support", icon: LifeBuoy },
 ];

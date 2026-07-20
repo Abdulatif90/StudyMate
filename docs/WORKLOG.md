@@ -2,6 +2,41 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-20 — Research mode UI: `/research` page (Phase 6, frontend — completes Phase 6)
+New `src/app/(app)/research/page.tsx` — a heading, query `Textarea`, and "Research" button
+wired to `POST /research` via `useApiClient` + `useMutation`. Confirmed the exact
+`{query}` → `{answer, sources: [{title, url}]}` field names by regenerating the typed
+client against the live backend (`npm run generate-api-types`, :8000) before writing any
+code. Commit: `feat(research): Research mode UI — agentic web search page (Phase 6)`.
+
+- **Slow-request UX**: the endpoint is a bounded agentic loop (5–20s) — input/button both
+  disabled for the whole `isPending` window, plus an explicit "Researching the web…"
+  message, not just a button spinner.
+- **Answer rendering** reuses the Ask answer bubble's exact `react-markdown` `Components`
+  config (`components/answer-message.tsx`) — no `rehype-raw`, so any HTML in the answer
+  stays escaped/safe. Below it, a "Sources" list of real `target="_blank"
+  rel="noopener noreferrer"` links, labeled via a new pure helper
+  `lib/researchSource.ts::researchSourceLabel` (title, falling back to the url when the
+  title is blank/whitespace) — the whole section is hidden when `sources` is empty.
+- **Error handling**: a `toast.error` plus a persistent inline destructive message (the
+  task asked for both). The backend's own graceful-degradation case (200 + explanatory
+  answer + empty sources) needs no special handling — it renders through the normal
+  success path.
+- **Nav + routing**: new `research` entry in `lib/navItems.ts` (`Globe` icon, between
+  Assignments and Billing) + `/research(.*)` added to `middleware.ts`'s protected-route
+  matcher; `navItems.test.ts` updated for the new 7-item href list.
+- **i18n**: new `Nav.research` key + a new 7-key `Research` namespace added to all four
+  locale catalogs (`en`/`uz`/`ko`/`ru`) via targeted anchored edits, not a full JSON
+  round-trip; `messages.test.ts` parity stays green.
+- Tests: new `lib/researchSource.test.ts` (+3). No page-level test — matches this
+  codebase's established pattern (pages verified via `tsc`/`eslint`, not unit-tested).
+  Frontend **240 passed** (up from 237), `tsc --noEmit` clean, `eslint` clean. `next build`
+  deliberately skipped (dev server owns :3000 per the workflow).
+- **Follow-up TODOs (unchanged from the backend increment)**: persistence of research
+  sessions (like Ask's conversations) and combining live web results with the user's own
+  RAG documents. **Not browser-verified** (standing no-browser gap): actual
+  look/responsiveness at 360/768/1280px and a real click-through of a slow request.
+
 ## 2026-07-20 — Research mode: agentic web search (Phase 6, backend first increment)
 New `app/modules/research/` (router + service + schemas + `tavily.py` + `agent.py`; no
 models — nothing persisted yet, like the original Ask). `POST /research` (authenticated):

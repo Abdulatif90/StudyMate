@@ -541,6 +541,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/research": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Research */
+        post: operations["research_research_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/inngest": {
         parameters: {
             query?: never;
@@ -1104,6 +1121,25 @@ export interface components {
         ReferralRedeemRequest: {
             /** Code */
             code: string;
+        };
+        /** ResearchRequest */
+        ResearchRequest: {
+            /** Query */
+            query: string;
+        };
+        /** ResearchResponse */
+        ResearchResponse: {
+            /** Answer */
+            answer: string;
+            /** Sources */
+            sources: components["schemas"]["ResearchSource"][];
+        };
+        /** ResearchSource */
+        ResearchSource: {
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
         };
         /** ReviewRequest */
         ReviewRequest: {
@@ -2371,6 +2407,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssignmentSubmissionRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    research_research_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchResponse"];
                 };
             };
             /** @description Validation Error */

@@ -18,6 +18,7 @@
     "billing": "Tarif va to‘lov",
     "team": "Jamoa",
     "assignments": "Topshiriqlar",
+    "research": "Tadqiqot",
     "support": "Yordam",
     "menu": "Menyu",
     "accountFallback": "Hisob"
@@ -230,6 +231,15 @@
     "send": "Yuborish",
     "thinkingHint": "O‘ylanmoqda… bu bir necha soniya vaqt olishi mumkin.",
     "streamError": "Javob olib bo‘lmadi. Qayta urinib ko‘ring."
+  },
+  "Research": {
+    "heading": "Tadqiqot",
+    "subheading": "Internetdagi istalgan narsa haqida so‘rang — Claude izlaydi va manbalarini keltiradi.",
+    "placeholder": "Nimani tadqiq qilmoqchisiz?",
+    "button": "Tadqiq qilish",
+    "researching": "Internetda qidirilmoqda…",
+    "sourcesHeading": "Manbalar",
+    "error": "Tadqiqotni yakunlab bo‘lmadi. Qayta urinib ko‘ring."
   },
   "Progress": {
     "heading": "Progress",
