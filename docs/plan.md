@@ -30,7 +30,8 @@ Flashcards + SM-2 · Progress · Freemium (Free / Pro / Business-B2B).
 - **Phase 4** — Progress + Polar billing + Referral + Support/FAQ + Sentry/PostHog.
 - **Phase 5** — Business/Teams (B2B): org, teacher assigns + tracks students, admin.
 - **Phase 6** — Research mode (agentic, Tavily).
-- **Phase 7** — optional: Telegram, OCR, mobile.
+- **Phase 7** — Telegram + OCR (in progress): Telegram bot + image-upload OCR (Claude vision).
+- **Phase 8** (deferred — revisit later) — mobile app (PWA or native).
 
 ## Conventions
 Service layer · tenant scoping · tests per change · Conventional Commits · main/develop ·
