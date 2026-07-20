@@ -2037,6 +2037,56 @@ frontends already shipped.
     to `#how`/`#features`/`#pricing`, and the gradient CTA band's contrast/legibility
     all still want a real click-through.
 
+## Phase 6 — Research mode (agentic web search)
+- [x] **Backend, first increment — agentic web research (`POST /research`).** A new
+  `app/modules/research/` (router + service + schemas + `tavily.py` + `agent.py`; **no
+  models — nothing persisted yet**, like the original Ask). An authenticated user asks a
+  research question; Claude runs a **bounded tool-use loop**, searches the live web via
+  **Tavily**, and synthesizes a cited answer that goes BEYOND the user's uploaded
+  materials.
+  - **Verified both external contracts before writing code** (Step 0):
+    - **Tavily** (docs.tavily.com/documentation/api-reference/endpoint/search, verified
+      2026-07-20): `POST https://api.tavily.com/search`, auth via `Authorization: Bearer
+      tvly-...` header (NOT an `api_key` body field), request `query`/`max_results`/
+      `search_depth`/`include_answer`, response top-level `answer` (only when requested) +
+      `results[]` of `{title, url, content, score}`. Cited in `tavily.py`.
+    - **Claude tool-use loop** (per the `claude-api` skill): model `claude-opus-4-8` (the
+      skill's current recommended id — deliberately Opus, not the Haiku that Ask uses; a
+      cost-tuning point noted for later). Manual loop: `messages.create(tools=[web_search])`
+      → while `stop_reason == "tool_use"`, execute the search, append the assistant turn +
+      one `tool_result` block per call, call again → until a final text answer. Thinking left
+      off (no thinking blocks to preserve) for a simple first increment.
+  - **Bounded-iteration safety**: `MAX_ITERATIONS = 5` hard cap on Claude calls; the final
+    permitted call drops the `web_search` tool so Claude MUST synthesize a final answer
+    from what it gathered instead of looping forever. Cannot run away.
+  - **`tavily.py`** isolates all Tavily specifics: `search_web(query, max_results=5) ->
+    list[SearchResult]`. Missing `TAVILY_API_KEY` → bare `RuntimeError` at point of use
+    (env-gated loud failure, same as embedding.py/llm.py); any Tavily/network/HTTP failure
+    → `TavilyError`.
+  - **`agent.py`** runs the loop and returns `(answer, sources actually surfaced)`, deduped
+    by URL. Missing `ANTHROPIC_API_KEY` → `RuntimeError` (reuses the llm.py pattern); Claude
+    failure → `ResearchError`.
+  - **`service.py`** owns ALL graceful degradation: a `TavilyError` (failed/aborted search)
+    or a `ResearchError` (Claude failure) both degrade to a normal **200** `ResearchResponse`
+    with an explanatory answer + empty sources — never a 5xx. The missing-key `RuntimeError`
+    is deliberately NOT caught (deploy mistake → genuine loud 500). Router is thin (auth only).
+  - **Env-gating**: `Settings.tavily_api_key` added (optional); `.env.example` documents
+    `TAVILY_API_KEY`. App + full suite boot/pass with NO Tavily key; the default suite is
+    fully offline (both the Anthropic client and Tavily's HTTP layer mocked).
+  - **No DB models → no migration** (confirmed).
+  - Tests (all offline): `test_research_tavily.py` (3 — parse success shape, failure →
+    `TavilyError`, missing key → `RuntimeError`), `test_research_agent.py` (5 — search runs +
+    `tool_result` fed back + cited answer/sources through, loop bounded at `MAX_ITERATIONS`
+    with the tool dropped on the last call, missing-key `RuntimeError`, Claude failure →
+    `ResearchError`), `test_research.py` (4 default + 1 live — HTTP happy path, empty sources
+    still 200, Claude failure degrades to 200, search failure degrades to 200). One `live`
+    test (`-m live`, `skipif` on both keys) hits real Tavily + Claude; deselected by default.
+  - Full suite: **471 passed** (was 460; +11), 12 deselected (live); `ruff check` + `ruff
+    format --check` clean.
+  - **Follow-up TODOs**: frontend (separate later increment), persistence of research
+    sessions (like Ask), and combining live web results with the user's own RAG documents
+    (this increment is web-only).
+
 ## Next (Phase 4+)
 - **Frontend redesign roadmap (in progress)** — a phased UI/UX overhaul, one increment per
   commit batch, each gated on a `tekshir` review before the next starts. FRONTEND.md was

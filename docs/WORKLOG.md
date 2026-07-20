@@ -2,6 +2,63 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-20 — Research mode: agentic web search (Phase 6, backend first increment)
+New `app/modules/research/` (router + service + schemas + `tavily.py` + `agent.py`; no
+models — nothing persisted yet, like the original Ask). `POST /research` (authenticated):
+the user asks a research question; Claude runs a bounded tool-use loop, searches the live
+web via Tavily, and synthesizes a cited answer that goes BEYOND uploaded materials.
+Commit: `feat(research): agentic web search via Tavily + Claude tool-use (Phase 6)`.
+
+- **Step 0 — both external contracts verified before any code:**
+  - **Tavily** (docs: https://docs.tavily.com/documentation/api-reference/endpoint/search,
+    verified 2026-07-20): `POST https://api.tavily.com/search`; auth is an
+    `Authorization: Bearer tvly-...` header (NOT an `api_key` JSON field — the older
+    docs' body-key form is superseded); request params `query`, `max_results` (0–20,
+    default 5), `search_depth` ("basic"/"advanced"), `include_answer` (kept off — Claude
+    synthesizes, not Tavily); response = optional top-level `answer` + `results[]` of
+    `{title, url, content, score, ...}`. Doc URL cited in `tavily.py`'s module docstring.
+  - **Claude tool-use loop** (per the `claude-api` skill): model **`claude-opus-4-8`** (the
+    skill's current recommended id — note this is Opus, deliberately not the Haiku used by
+    Ask; flagged as a possible cost-tuning point later). Manual loop confirmed against the
+    skill's manual-loop pattern: define a custom `web_search` tool (name/description/
+    input_schema), send `messages.create(tools=[...])`, and while `stop_reason == "tool_use"`
+    execute the search, append the assistant turn plus one `tool_result` block per call, and
+    call again — until a final text answer. Custom Tavily-backed tool, NOT Anthropic's
+    server-side web-search tool. Thinking left off (nothing to preserve across turns) for a
+    simple first increment.
+- **Bounded-iteration safety**: `MAX_ITERATIONS = 5` hard cap on Claude calls so the loop
+  can never run away; the final permitted call is made WITHOUT the tool, forcing Claude to
+  synthesize a final answer from what it already gathered. Proven by a test that mocks Claude
+  to request tools forever and asserts exactly `MAX_ITERATIONS` calls, the tool dropped on the
+  last one, and a real final answer + gathered sources still returned.
+- **`tavily.py`** isolates all Tavily specifics: `search_web(query, max_results=5) ->
+  list[SearchResult]`. Missing `TAVILY_API_KEY` → bare `RuntimeError` at point of use
+  (env-gated loud failure, same pattern as embedding.py/llm.py/clerk_api.py); any
+  Tavily/network/HTTP failure → `TavilyError`. Uses `httpx` (already installed via anthropic).
+- **`agent.py`** drives the loop, returns `(answer, sources actually surfaced)` deduped by
+  URL in first-seen order. Missing `ANTHROPIC_API_KEY` → `RuntimeError` (reuses llm.py's
+  `_get_client`); Claude API failure → `ResearchError`.
+- **`service.py`** owns all graceful degradation so the router stays thin: a `TavilyError`
+  (failed/aborted search) or `ResearchError` (Claude failure) both degrade to a normal
+  **200** `ResearchResponse` with an explanatory answer + empty sources — never a 5xx. The
+  missing-key `RuntimeError` is deliberately NOT caught (deploy mistake → genuine loud 500).
+- **Env-gating**: `Settings.tavily_api_key` (optional) added to `app/core/config.py`;
+  `.env.example` documents `TAVILY_API_KEY`. The app + full suite boot/pass with the key
+  unset, and the default suite is fully offline (both the Anthropic client and Tavily's
+  `httpx.post` are mocked). `.env`/secrets untouched. **No DB models → no migration** (confirmed).
+- Wired into `app/main.py`.
+- **Tests (offline, network-free — both externals mocked):** `test_research_tavily.py` (3),
+  `test_research_agent.py` (5), `test_research.py` (4 default + 1 live). The agentic-loop test
+  asserts the search ran, the results were fed back as a `tool_result`, and the final answer +
+  sources came through; the bounded test asserts termination; graceful-degradation tests assert
+  both a Claude failure and a search failure return 200. The one `live` test (`-m live`,
+  `skipif` on both keys) hits real Tavily + Claude and is deselected by default.
+  Backend: **471 passed** (was 460; +11), 12 deselected (live); `ruff check` +
+  `ruff format --check` clean.
+- **Follow-up TODOs** (noted in code + PROGRESS): frontend is a separate later increment;
+  persisting research sessions (like Ask); combining live web results with the user's own RAG
+  documents (this increment is web-only).
+
 ## 2026-07-20 — Teams: Team Plan upgrade UI for org admins (Phase 5)
 Frontend-only close-out of the seats feature: `/billing` gained a "Team Plan" upgrade
 card, gated to org admins, so an admin can actually subscribe their org from the app

@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     clerk_secret_key: str | None = None
     cohere_api_key: str | None = None
     anthropic_api_key: str | None = None
+    # Tavily (live web search for Phase 6 Research mode — app/modules/research/tavily.py).
+    # Optional/env-gated like the others: unset means the research search path raises a
+    # clear error at point of use (RuntimeError), so the app/tests boot without it.
+    tavily_api_key: str | None = None
     # Inngest (async document processing). Optional so the app/tests boot without
     # them; the event-send path raises a clear error at point of use if unset (see
     # app/core/inngest_client.py).
