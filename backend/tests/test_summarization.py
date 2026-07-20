@@ -37,7 +37,11 @@ def test_summarize_document_returns_response_text(monkeypatch):
     expected_prompt = summarization._build_system_prompt(summarization.DEFAULT_LANGUAGE)
     assert call_kwargs["system"] == expected_prompt
     assert "English" in call_kwargs["system"]
-    assert call_kwargs["messages"][0]["content"] == "Photosynthesis converts sunlight into energy."
+    # The excerpt is embedded in the user message, and the target language is restated
+    # there too (belt-and-suspenders so a small model reliably honors it — Bug 2).
+    user_content = call_kwargs["messages"][0]["content"]
+    assert "Photosynthesis converts sunlight into energy." in user_content
+    assert "English" in user_content
 
 
 def test_summarize_document_targets_the_requested_language(monkeypatch):
@@ -48,7 +52,12 @@ def test_summarize_document_targets_the_requested_language(monkeypatch):
     summarization.summarize_document("Fotosintez yorug'likni energiyaga aylantiradi.", "uz")
 
     call_kwargs = fake_client.messages.create.call_args.kwargs
+    # Target language stated in BOTH the system prompt and the user message so a small
+    # model reliably obeys it rather than defaulting to the excerpt's own language.
     assert "Uzbek" in call_kwargs["system"]
+    assert "Uzbek" in call_kwargs["messages"][0]["content"]
+    # And never leaks the source language name as the target.
+    assert "English" not in call_kwargs["messages"][0]["content"]
 
 
 def test_summarize_document_truncates_long_input(monkeypatch):
@@ -60,7 +69,10 @@ def test_summarize_document_truncates_long_input(monkeypatch):
     summarization.summarize_document(long_text)
 
     sent_content = fake_client.messages.create.call_args.kwargs["messages"][0]["content"]
-    assert len(sent_content) == summarization.MAX_INPUT_CHARS
+    # The excerpt is capped at MAX_INPUT_CHARS before being wrapped into the user message:
+    # exactly that many source chars appear, never one more.
+    assert "x" * summarization.MAX_INPUT_CHARS in sent_content
+    assert "x" * (summarization.MAX_INPUT_CHARS + 1) not in sent_content
 
 
 def test_summarize_document_wraps_api_failures(monkeypatch):
