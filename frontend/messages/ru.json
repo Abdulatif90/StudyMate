@@ -125,7 +125,12 @@
     "statDocuments": "{count, plural, one {# документ} few {# документа} many {# документов} other {# документов}}",
     "statFlashcardsDue": "{count} к повторению",
     "statQuizzes": "{count, plural, one {# тест} few {# теста} many {# тестов} other {# тестов}}",
-    "viewAllCount": "{count, plural, one {Смотреть # предмет} few {Смотреть все # предмета} many {Смотреть все # предметов} other {Смотреть все # предметов}}"
+    "viewAllCount": "{count, plural, one {Смотреть # предмет} few {Смотреть все # предмета} many {Смотреть все # предметов} other {Смотреть все # предметов}}",
+    "telegramCardTitle": "Подключить Telegram",
+    "telegramCardDescription": "Задавайте вопросы StudyMate через Telegram.",
+    "telegramConnect": "Подключить Telegram",
+    "telegramConnected": "Подключено",
+    "telegramConnectedHandle": "Напишите @helperstudymatebot в Telegram"
   },
   "Usage": {
     "subjects": "Предметы",

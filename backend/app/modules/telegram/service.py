@@ -19,7 +19,7 @@ from __future__ import annotations
 import secrets
 from datetime import UTC, datetime, timedelta
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.modules.research.service import research
 from app.modules.telegram.models import TelegramLink, TelegramLinkCode
@@ -78,6 +78,17 @@ def create_link_code(session: Session, owner_id: str) -> LinkCodeResponse:
             session.commit()
             return LinkCodeResponse(code=code, deep_link=_deep_link(code))
     raise RuntimeError("Could not generate a unique Telegram link code after retries.")
+
+
+def is_linked(session: Session, owner_id: str) -> bool:
+    """True iff `owner_id` has at least one linked Telegram chat.
+
+    Owner-scoped by construction: `TelegramLink.owner_id` is only ever set from a link
+    code's stored owner (see `_link_chat`), never from caller input, so this can't be
+    tricked into reporting another user's link.
+    """
+    existing = session.exec(select(TelegramLink).where(TelegramLink.owner_id == owner_id)).first()
+    return existing is not None
 
 
 def _is_expired(link_code: TelegramLinkCode) -> bool:

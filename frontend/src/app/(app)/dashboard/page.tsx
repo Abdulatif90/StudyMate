@@ -8,6 +8,7 @@ import { BookOpen, Circle, CircleCheck, Plus } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { SubjectCard } from "@/components/subject-card";
+import { TelegramConnectCard } from "@/components/telegram-connect-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -158,6 +159,10 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       )}
+
+      <div className="mb-6">
+        <TelegramConnectCard />
+      </div>
 
       {progress.subject_count === 0 ? (
         <EmptyState

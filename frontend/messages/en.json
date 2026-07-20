@@ -125,7 +125,12 @@
     "statDocuments": "{count, plural, one {# document} other {# documents}}",
     "statFlashcardsDue": "{count} due",
     "statQuizzes": "{count, plural, one {# quiz} other {# quizzes}}",
-    "viewAllCount": "{count, plural, one {View # subject} other {View all # subjects}}"
+    "viewAllCount": "{count, plural, one {View # subject} other {View all # subjects}}",
+    "telegramCardTitle": "Connect Telegram",
+    "telegramCardDescription": "Ask StudyMate questions from Telegram.",
+    "telegramConnect": "Connect Telegram",
+    "telegramConnected": "Connected",
+    "telegramConnectedHandle": "Message @helperstudymatebot on Telegram"
   },
   "Usage": {
     "subjects": "Subjects",

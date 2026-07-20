@@ -558,6 +558,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/telegram/link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Link
+         * @description Issue a one-time Telegram link code + deep link for the authenticated caller.
+         *
+         *     The code is tied to the caller's verified `owner_id`, so it can only ever link a
+         *     Telegram chat to this account — a caller can't mint a code for someone else.
+         */
+        post: operations["create_link_telegram_link_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/telegram/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Status
+         * @description Whether the authenticated caller currently has a linked Telegram chat.
+         */
+        get: operations["get_status_telegram_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/telegram/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Telegram Webhook
+         * @description Telegram -> us. **Public endpoint, no Clerk auth** (Telegram has no user token).
+         *
+         *     Security: when `TELEGRAM_WEBHOOK_SECRET` is configured, the request's
+         *     `X-Telegram-Bot-Api-Secret-Token` header MUST equal it, else 403 (process nothing).
+         *     LIVE BLOCKER: this secret MUST be set in production — while it's unset (before the
+         *     webhook is registered live) the endpoint processes updates unverified, which is a dev
+         *     convenience only.
+         *
+         *     Always returns 200 on a processed/ignored update (Telegram retries the SAME update on
+         *     any non-200, which would re-run research and waste budget). A malformed body or a
+         *     transient Bot-API send failure is swallowed to a 200 no-op rather than a 500.
+         */
+        post: operations["telegram_webhook_telegram_webhook_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/inngest": {
         parameters: {
             query?: never;
@@ -953,6 +1026,26 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * LinkCodeResponse
+         * @description Returned by POST /telegram/link: the one-time code plus a ready-to-tap deep link
+         *     (`https://t.me/<bot>?start=<code>`) that opens the bot and sends `/start <code>`.
+         */
+        LinkCodeResponse: {
+            /** Code */
+            code: string;
+            /** Deep Link */
+            deep_link: string;
+        };
+        /**
+         * LinkStatusResponse
+         * @description Returned by GET /telegram/status: whether the authenticated caller has a linked
+         *     Telegram chat.
+         */
+        LinkStatusResponse: {
+            /** Linked */
+            linked: boolean;
         };
         /** OverallProgress */
         OverallProgress: {
@@ -2440,6 +2533,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResearchResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_link_telegram_link_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkCodeResponse"];
+                };
+            };
+        };
+    };
+    get_status_telegram_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LinkStatusResponse"];
+                };
+            };
+        };
+    };
+    telegram_webhook_telegram_webhook_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-telegram-bot-api-secret-token"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
                 };
             };
             /** @description Validation Error */

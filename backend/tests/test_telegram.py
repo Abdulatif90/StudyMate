@@ -248,6 +248,49 @@ def test_two_chats_linked_to_different_owners_stay_independent(session, mock_sen
     assert session.get(TelegramLink, 222).owner_id == "owner_B"
 
 
+# --- is_linked / status -------------------------------------------------------------------
+
+
+def test_is_linked_true_for_linked_owner(session):
+    session.add(TelegramLink(telegram_chat_id=555, owner_id=_TEST_USER))
+    session.commit()
+
+    assert service.is_linked(session, _TEST_USER) is True
+
+
+def test_is_linked_false_for_unlinked_owner(session):
+    assert service.is_linked(session, _TEST_USER) is False
+
+
+def test_is_linked_owner_scoped(session):
+    # Owner B's link must not make owner A appear linked.
+    session.add(TelegramLink(telegram_chat_id=555, owner_id="owner_B"))
+    session.commit()
+
+    assert service.is_linked(session, "owner_B") is True
+    assert service.is_linked(session, _TEST_USER) is False
+
+
+def test_status_endpoint_true_when_linked(session):
+    session.add(TelegramLink(telegram_chat_id=555, owner_id=_TEST_USER))
+    session.commit()
+    client = TestClient(app)
+
+    resp = client.get("/telegram/status")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"linked": True}
+
+
+def test_status_endpoint_false_when_unlinked():
+    client = TestClient(app)
+
+    resp = client.get("/telegram/status")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"linked": False}
+
+
 # --- HTTP: link endpoint + webhook security ---------------------------------------------
 
 

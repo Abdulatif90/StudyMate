@@ -125,7 +125,12 @@
     "statDocuments": "문서 {count}개",
     "statFlashcardsDue": "{count}개 학습 예정",
     "statQuizzes": "퀴즈 {count}개",
-    "viewAllCount": "{count}개 과목 모두 보기"
+    "viewAllCount": "{count}개 과목 모두 보기",
+    "telegramCardTitle": "텔레그램 연결",
+    "telegramCardDescription": "텔레그램에서 StudyMate에게 질문하세요.",
+    "telegramConnect": "텔레그램 연결",
+    "telegramConnected": "연결됨",
+    "telegramConnectedHandle": "텔레그램에서 @helperstudymatebot 에게 메시지를 보내세요"
   },
   "Usage": {
     "subjects": "과목",

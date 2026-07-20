@@ -18,7 +18,7 @@ from app.core.auth import get_current_user_id
 from app.core.config import get_settings
 from app.core.db import get_session
 from app.modules.telegram import service
-from app.modules.telegram.schemas import LinkCodeResponse
+from app.modules.telegram.schemas import LinkCodeResponse, LinkStatusResponse
 from app.modules.telegram.telegram_api import TelegramApiError
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
@@ -38,6 +38,15 @@ def create_link(
     Telegram chat to this account — a caller can't mint a code for someone else.
     """
     return service.create_link_code(session, owner_id)
+
+
+@router.get("/status", response_model=LinkStatusResponse)
+def get_status(
+    session: Session = Depends(get_session),
+    owner_id: str = Depends(get_current_user_id),
+) -> LinkStatusResponse:
+    """Whether the authenticated caller currently has a linked Telegram chat."""
+    return LinkStatusResponse(linked=service.is_linked(session, owner_id))
 
 
 @router.post("/webhook")

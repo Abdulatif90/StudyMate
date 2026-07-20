@@ -17,3 +17,10 @@ class LinkCodeResponse(BaseModel):
 
     code: str
     deep_link: str
+
+
+class LinkStatusResponse(BaseModel):
+    """Returned by GET /telegram/status: whether the authenticated caller has a linked
+    Telegram chat."""
+
+    linked: bool

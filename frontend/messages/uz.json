@@ -125,7 +125,12 @@
     "statDocuments": "{count} ta hujjat",
     "statFlashcardsDue": "{count} ta muddati kelgan",
     "statQuizzes": "{count} ta test",
-    "viewAllCount": "Barcha {count} ta fanni ko‘rish"
+    "viewAllCount": "Barcha {count} ta fanni ko‘rish",
+    "telegramCardTitle": "Telegram’ni ulash",
+    "telegramCardDescription": "StudyMate’dan Telegram orqali savol bering.",
+    "telegramConnect": "Telegram’ni ulash",
+    "telegramConnected": "Ulandi",
+    "telegramConnectedHandle": "Telegram’da @helperstudymatebot ga yozing"
   },
   "Usage": {
     "subjects": "Fanlar",

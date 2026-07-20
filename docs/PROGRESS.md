@@ -23,28 +23,34 @@ new table/Polar) has now shipped too, **fully closing Phase 4**. Phase 1–3 rec
 + RRF + Cohere Rerank, streaming), Conversations, Quiz (tool-use generation + full UI),
 Flashcards + SM-2 (tool-use generation + full review-session UI) — all with their own
 frontends already shipped. **Phase 6 — Research mode: complete.** **Phase 7 — Telegram +
-OCR: in progress.** OCR is done on the backend — students can now upload IMAGES
-(photographed/scanned notes, `image/jpeg`/`png`/`webp`) and their text is extracted via
-**Claude vision** (reusing the existing `ANTHROPIC_API_KEY`, no new OCR service/binary/key)
-and flows into the same chunk → embed → summarize RAG pipeline as any PDF/DOCX/TXT. A
-failed OCR degrades exactly like a failed PDF parse (`status: failed`, zero chunks). The
-**Telegram bot backend is now done too** — a linked student can DM the bot a question and
-get a web-research answer back. `app/modules/telegram/`: a `POST /telegram/link`
-(authenticated) mints a one-time code + `https://t.me/helperstudymatebot?start=<code>` deep
-link tied to the caller's `owner_id`; a public `POST /telegram/webhook` (verified by the
-`X-Telegram-Bot-Api-Secret-Token` header vs `TELEGRAM_WEBHOOK_SECRET`) handles Telegram
-updates — `/start <code>` links `chat_id → owner_id`, a linked chat's text is answered via
-the existing Research service, an unlinked chat gets link instructions. Only LINKED users
-may use the bot (protects the Claude/Tavily budget). **LIVE BLOCKER**: registering the
-webhook with Telegram needs a public URL (ngrok/deploy) + setting `TELEGRAM_WEBHOOK_SECRET`
-via setWebhook's `secret_token` — like the Polar webhook, this is the one remaining
-live step (while the secret is unset the webhook processes updates unverified, dev-only).
-Telegram follow-ups: answering over the user's OWN uploaded materials (needs subject
-handling), and a "Connect Telegram" frontend button on the link endpoint. This closes the
-backend half of Phase 7. Phase 8 (mobile app, PWA or native) is deferred — revisit later. OCR follow-up TODOs: OCR of scanned-PDF *pages* (a text-less PDF
-still parses to zero text today, it isn't image-OCR'd), and a friendly frontend
-accept-types hint (the existing upload UI already accepts any file, so images work now —
-this is just UX polish).
+OCR: Telegram complete end-to-end (backend + dashboard UI); OCR done on the backend.**
+OCR: students can now upload IMAGES (photographed/scanned notes,
+`image/jpeg`/`png`/`webp`) and their text is extracted via **Claude vision** (reusing the
+existing `ANTHROPIC_API_KEY`, no new OCR service/binary/key) and flows into the same chunk
+→ embed → summarize RAG pipeline as any PDF/DOCX/TXT. A failed OCR degrades exactly like a
+failed PDF parse (`status: failed`, zero chunks). **Telegram** — a linked student can DM
+the bot a question and get a web-research answer back. `app/modules/telegram/`: a
+`POST /telegram/link` (authenticated) mints a one-time code +
+`https://t.me/helperstudymatebot?start=<code>` deep link tied to the caller's `owner_id`; a
+public `POST /telegram/webhook` (verified by the `X-Telegram-Bot-Api-Secret-Token` header
+vs `TELEGRAM_WEBHOOK_SECRET`) handles Telegram updates — `/start <code>` links
+`chat_id → owner_id`, a linked chat's text is answered via the existing Research service,
+an unlinked chat gets link instructions. Only LINKED users may use the bot (protects the
+Claude/Tavily budget). A `GET /telegram/status` endpoint (owner-scoped, `{linked: bool}`)
+now backs a **dashboard "Connect Telegram" card**: unlinked shows a one-tap
+`<a target="_blank">` deep link (fetched on mount so the anchor's `href` is populated
+before the first click — avoids popup-blocker issues from a click-then-fetch flow), linked
+shows a success-styled "Connected" state; a manual page refresh after linking in Telegram
+is required to flip the card (no live push/poll this increment). This closes Phase 7's
+Telegram track end-to-end except one **LIVE BLOCKER**: registering the webhook with
+Telegram needs a public URL (ngrok/deploy) + setting `TELEGRAM_WEBHOOK_SECRET` via
+setWebhook's `secret_token` — like the Polar webhook, this is the one remaining live step
+(while the secret is unset the webhook processes updates unverified, dev-only). Telegram
+follow-up TODO: answering over the user's OWN uploaded materials (needs subject handling).
+Phase 8 (mobile app, PWA or native) is deferred — revisit later. OCR follow-up TODOs: OCR
+of scanned-PDF *pages* (a text-less PDF still parses to zero text today, it isn't
+image-OCR'd), and a friendly frontend accept-types hint (the existing upload UI already
+accepts any file, so images work now — this is just UX polish).
 
 ## Done
 - [x] Repo skeleton + `.gitignore`
@@ -2625,3 +2631,9 @@ this is just UX polish).
   production has its own separate dashboard, products and tokens.
 - Neon, Clerk, Cohere, Anthropic, Inngest, R2, and Polar (sandbox) keys are all in
   `backend/.env`.
+- **Telegram webhook is not registered live yet.** Needs a public URL (ngrok/deploy)
+  pointed at `POST /telegram/webhook`, then Telegram's `setWebhook` called with that URL
+  + a `secret_token`, and `TELEGRAM_WEBHOOK_SECRET` set to the same value in
+  `backend/.env` — like the Polar webhook, this is the one remaining live step (until
+  then the webhook processes updates unverified, dev-only). The dashboard "Connect
+  Telegram" UI is otherwise done end-to-end and ready to use once this is live.

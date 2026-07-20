@@ -2,6 +2,45 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-20 — Telegram: dashboard "Connect Telegram" UI + status endpoint (Phase 7)
+One-tap connect flow: click a button on the dashboard → Telegram opens with the deep link
+pre-filled → tap Start → linked. Closes Phase 7's Telegram track end-to-end except the live
+webhook registration blocker (see PROGRESS.md Blockers).
+Commit: `feat(telegram): dashboard Connect Telegram UI + status endpoint (Phase 7)`.
+
+- **Backend**: `GET /telegram/status` (authenticated) → `{linked: bool}`. New
+  `service.is_linked(session, owner_id)` — owner-scoped by construction (queries
+  `TelegramLink.owner_id`, which is only ever set from a link code's stored owner, never
+  from caller input). Thin router endpoint, no new schema table (`LinkStatusResponse`
+  pydantic model only). 5 new tests in `test_telegram.py`: linked-true, unlinked-false,
+  owner-scoping (owner B's link doesn't make owner A appear linked), and the HTTP
+  endpoint's linked/unlinked responses. Full suite: **512 passed** (was 507); `ruff check`
+  + `ruff format --check` clean.
+- **Frontend**: regenerated the typed client from an offline `app.openapi()` dump (the live
+  :8000 server hadn't picked up the new route via reload) → `openapi-typescript` →
+  `src/lib/api/schema.d.ts` now has `/telegram/status` + `/telegram/link` types; diff was
+  purely additive (nothing else in the schema changed). New
+  `src/components/telegram-connect-card.tsx` on `/dashboard`: queries `GET
+  /telegram/status`; while unlinked, also queries `POST /telegram/link` (fetched on mount,
+  not on click, so the link code is already minted and the anchor's `href` populated
+  before the user's first tap) and renders a real `<a target="_blank"
+  rel="noopener noreferrer">` styled as a button — a genuine user-gesture navigation to the
+  deep link, avoiding the popup-blocker risk of a click→fetch→`window.open` flow. Linked
+  state renders a `bg-success-bg`/`text-success` "Connected" row (existing token, same
+  pattern as the assignments page's completed state) — no button. A manual refresh after
+  returning from Telegram is required to flip the card (noted as a known limitation, not a
+  bug — no live push/poll this increment). Pure branching logic extracted to
+  `src/lib/telegramConnectState.ts` (loading/error/connected/connect-with-or-without-a-
+  ready-deep-link) and unit-tested (5 cases) — the fetching component itself follows the
+  existing `referral-card.tsx` precedent of no direct test (needs a QueryClient + Clerk
+  provider to render). i18n: 5 new keys under `Dashboard.*`
+  (`telegramCardTitle`/`telegramCardDescription`/`telegramConnect`/`telegramConnected`/
+  `telegramConnectedHandle`) added to `en.json` and mirrored into `uz`/`ko`/`ru` via
+  targeted anchored edits (not a full JSON rewrite) — `messages.test.ts` parity stays
+  green. Full suite: **245 tests / 58 files passed** (was 240/57); `npx tsc --noEmit`
+  clean; `npm run lint` clean. (`next build` intentionally not run — dev server owns
+  :3000.)
+
 ## 2026-07-20 — Telegram bot: account linking + research answers (Phase 7, backend)
 A linked StudyMate student can DM the bot **@helperstudymatebot** a question and get a
 web-research answer. New module `app/modules/telegram/`. Backend-only; registering the
