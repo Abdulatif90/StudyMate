@@ -2,6 +2,32 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-20 — chore(deploy): Vercel deploy prep (frontend + backend) + DEPLOYMENT.md
+Deploy-readiness config for an **all-Vercel** deploy (frontend + FastAPI backend). No app
+code changed — CORS is already env-driven (`config.cors_origins` → `cors_origin_list` →
+`main.py`), so only env values change for prod. Commit: `chore(deploy): Vercel config for
+FastAPI backend + Next.js frontend, DEPLOYMENT.md runbook`.
+
+- **Step 0 verified against Vercel's live docs** (not memory): (1) FastAPI ASGI runs as one
+  Vercel Function on Fluid compute; `requirements.txt` auto-installed. (2) **SSE streaming IS
+  supported on the Python runtime** (GA Jan 5 2025) — enable via
+  `VERCEL_FORCE_PYTHON_STREAMING=1`; this is what backs `/…/ask/stream`. (3) **maxDuration**
+  with Fluid: Hobby 300 s, Pro 300 s default/800 s max — our Ask stream (~s), Research loop
+  (~5–20 s) and Inngest steps all fit. (4) Inngest Cloud calls `/api/inngest`; Vercel↔Inngest
+  integration auto-syncs (Deployment Protection must be bypassed). **All-Vercel is viable**;
+  documented a Render/Railway/Fly fallback for the backend anyway (no code change — app still
+  runs `uvicorn app.main:app`).
+- **Files:** `backend/api/index.py` (re-exports `app.main:app`, does NOT redefine — local
+  uvicorn untouched); `backend/vercel.json` (`functions."api/index.py".maxDuration = 300`);
+  `backend/pyproject.toml` `[tool.vercel] entrypoint = "api.index:app"` (pins the single
+  entrypoint); `backend/.env.example` + `frontend/.env.local.example` (prod/Vercel notes:
+  where each var is set, `CORS_ORIGINS`, `VERCEL_FORCE_PYTHON_STREAMING`, `INNGEST_SERVE_ORIGIN`,
+  Neon pooled URL); `docs/DEPLOYMENT.md` (full runbook + Step-0 findings table + source URLs;
+  cross-refs `RELEASE_CHECKLIST.md` for the live webhook/migration/browser steps, not
+  duplicated).
+- Verified: `api.index:app` imports cleanly; backend `pytest` **549 passed, 12 deselected**;
+  `ruff check` + `ruff format --check` clean on the new file; frontend `tsc --noEmit` clean.
+
 ## 2026-07-20 — docs: consolidate all future/deferred ideas into docs/FUTURE.md
 Gathered every not-yet-built idea scattered across `PROGRESS.md`/`WORKLOG.md` (markers:
 TODO, deferred, follow-up, deliberately NOT, out of scope, kept simple) into one grouped,

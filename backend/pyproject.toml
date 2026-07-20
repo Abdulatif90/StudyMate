@@ -3,6 +3,13 @@ name = "studymate-backend"
 version = "0.1.0"
 requires-python = ">=3.12"
 
+# --- Vercel deploy (see docs/DEPLOYMENT.md) ---
+# Pins the single Python-runtime entrypoint so Vercel uses exactly `api/index.py`'s
+# re-exported FastAPI `app` (avoids any ambiguity with other auto-detected entrypoints
+# like `app/main.py`). Ignored entirely by local tooling / `uvicorn app.main:app`.
+[tool.vercel]
+entrypoint = "api.index:app"
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
