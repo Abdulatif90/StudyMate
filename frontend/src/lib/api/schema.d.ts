@@ -58,6 +58,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/subjects/{subject_id}/documents/presign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Presign Document
+         * @description Step 1 of the presigned direct-to-R2 upload flow: validate write access + the
+         *     file type, return a short-lived presigned PUT URL the browser uploads straight to R2
+         *     with. The file never traverses this function (bypassing Vercel's ~4.5 MB body cap),
+         *     so uploads up to the 20 MB limit work. No row is created yet — see the confirm step.
+         */
+        post: operations["presign_document_subjects__subject_id__documents_presign_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/subjects/{subject_id}/documents/{document_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Document
+         * @description Step 3: the browser has PUT the file to R2 — finalize it. HEADs the object to
+         *     prove it landed and to enforce the 20 MB cap here (the presigned PUT couldn't), then
+         *     creates the `pending` row and enqueues the same Inngest processing as a normal
+         *     upload. Over-size → 413 (object deleted); missing object → 409; bad type → 415.
+         */
+        post: operations["confirm_document_subjects__subject_id__documents__document_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/subjects/{subject_id}/documents/{document_id}": {
         parameters: {
             query?: never;
@@ -764,10 +810,7 @@ export interface components {
             description?: string | null;
             /** Due At */
             due_at?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
+            /** Created At */
             created_at: string;
         };
         /**
@@ -822,10 +865,7 @@ export interface components {
             assignment_id: string;
             /** Owner Id */
             owner_id: string;
-            /**
-             * Completed At
-             * Format: date-time
-             */
+            /** Completed At */
             completed_at: string;
             /** Score */
             score?: number | null;
@@ -873,10 +913,7 @@ export interface components {
             subject_id: string;
             /** Title */
             title: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
+            /** Created At */
             created_at: string;
         };
         /** ConversationTurnRead */
@@ -892,10 +929,7 @@ export interface components {
             answer: string;
             /** Sources */
             sources: components["schemas"]["SourceChunk"][];
-            /**
-             * Created At
-             * Format: date-time
-             */
+            /** Created At */
             created_at: string;
         };
         /** ConversationWithTurns */
@@ -912,13 +946,61 @@ export interface components {
             subject_id: string;
             /** Title */
             title: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
+            /** Created At */
             created_at: string;
             /** Turns */
             turns: components["schemas"]["ConversationTurnRead"][];
+        };
+        /**
+         * DocumentConfirmRequest
+         * @description Sent after the browser's direct `PUT` to R2 succeeds. The same metadata as the
+         *     presign request — used to re-derive the object key, enforce the size limit (via a
+         *     HEAD on the uploaded object), and create the `Document` row. Creating the row here
+         *     (not at presign) means an abandoned/failed upload never leaves a stuck `pending`
+         *     row.
+         */
+        DocumentConfirmRequest: {
+            /** Filename */
+            filename: string;
+            /** Content Type */
+            content_type: string;
+            /**
+             * Language
+             * @default en
+             */
+            language: string;
+        };
+        /**
+         * DocumentPresignRequest
+         * @description Ask for a presigned direct-to-R2 upload URL. Carries only metadata (never the
+         *     bytes) — the file itself goes straight from the browser to R2, so a large file
+         *     never has to traverse the backend function (bypassing Vercel's ~4.5 MB body cap).
+         *     `content_type` must be one StudyMate can parse. The uploader's UI locale is sent
+         *     later, at confirm (where the row is actually created), not here.
+         */
+        DocumentPresignRequest: {
+            /** Filename */
+            filename: string;
+            /** Content Type */
+            content_type: string;
+        };
+        /**
+         * DocumentPresignResponse
+         * @description The presigned upload URL plus the ids the client needs to `PUT` the file and then
+         *     call confirm. `object_key` is returned for transparency/debugging; the confirm step
+         *     re-derives it server-side from `owner_id`+`document_id`+`filename` and never trusts a
+         *     client-supplied key.
+         */
+        DocumentPresignResponse: {
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /** Object Key */
+            object_key: string;
+            /** Upload Url */
+            upload_url: string;
         };
         /** DocumentRead */
         DocumentRead: {
@@ -939,10 +1021,7 @@ export interface components {
             status: components["schemas"]["DocumentStatus"];
             /** Summary */
             summary: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
+            /** Created At */
             created_at: string;
         };
         /**
@@ -1009,17 +1088,11 @@ export interface components {
             ease_factor: number;
             /** Interval Days */
             interval_days: number;
-            /**
-             * Due At
-             * Format: date-time
-             */
+            /** Due At */
             due_at: string;
             /** Last Reviewed At */
             last_reviewed_at: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
+            /** Created At */
             created_at: string;
         };
         /** HTTPValidationError */
@@ -1169,10 +1242,7 @@ export interface components {
             subject_id: string;
             /** Title */
             title: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
+            /** Created At */
             created_at: string;
         };
         /** QuizWithQuestions */
@@ -1189,10 +1259,7 @@ export interface components {
             subject_id: string;
             /** Title */
             title: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
+            /** Created At */
             created_at: string;
             /** Questions */
             questions: components["schemas"]["QuizQuestionRead"][];
@@ -1299,10 +1366,7 @@ export interface components {
             name: string;
             /** Org Id */
             org_id?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
+            /** Created At */
             created_at: string;
         };
         /**
@@ -1504,6 +1568,77 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": components["schemas"]["Body_create_document_subjects__subject_id__documents_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    presign_document_subjects__subject_id__documents_presign_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subject_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentPresignRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentPresignResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_document_subjects__subject_id__documents__document_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subject_id: string;
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentConfirmRequest"];
             };
         };
         responses: {
