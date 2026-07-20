@@ -23,7 +23,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
-from sqlmodel import Session, select
+from sqlmodel import Session, delete, select
 
 from app.core.org import OrgContext
 from app.modules.billing.models import GenerationKind
@@ -258,27 +258,47 @@ def delete_quiz(
     *,
     commit: bool = True,
 ) -> bool:
-    """Delete a quiz and its questions. Returns `False` (router → 404) when the quiz
-    doesn't exist, isn't owned by `owner_id`, or isn't in `subject_id` — same
-    owner+subject scoping as `get_quiz`. OWNER-only: a student can't delete a teacher's
-    shared quiz (they get the same 404 as a missing quiz).
+    """Delete a quiz and EVERY row that FK-references it — its questions, its quiz
+    attempts, and any assignments that link it (with their submissions) — then the `Quiz`
+    row. Returns `False` (router → 404) when the quiz doesn't exist, isn't owned by
+    `owner_id`, or isn't in `subject_id` — same owner+subject scoping as `get_quiz`.
+    OWNER-only: a student can't delete a teacher's shared quiz (they get the same 404 as a
+    missing quiz).
 
-    Questions are deleted and **flushed** before the `Quiz` row: there's no ORM-level
+    Children are deleted and **flushed** before the `Quiz` row: there's no ORM-level
     `relationship()`/cascade in this codebase, so SQLAlchemy won't order the deletes for
-    you — without the flush it can emit `DELETE FROM quizzes` before `DELETE FROM
-    quiz_questions` and hit the FK constraint. This is the same flush-before-parent rule
-    that surfaced as a real bug in `delete_conversation`/`delete_document` before.
+    you — without the flush it can emit `DELETE FROM quizzes` before the child deletes and
+    hit an FK constraint. This is the same flush-before-parent rule that surfaced as a real
+    bug in `delete_conversation`/`delete_document` before — and again here in prod, where a
+    quiz referenced by an `assignment` or by `quiz_attempts` 500'd the delete (and the
+    subject-delete cascade through it) on `assignments_quiz_id_fkey` /
+    `quiz_attempts_quiz_id_fkey`.
+
+    The referencing rows are cleaned by `quiz_id` alone, NOT owner-scoped: a quiz attempt
+    belongs to the STUDENT who took it and an assignment to the teacher who set it, so
+    scoping their deletion to the quiz owner would leave another member's rows behind to
+    trip the FK — the same "clean ALL owners' children" reasoning as `delete_subject`.
 
     `commit=False` (used by `subjects.service.delete_subject`, cascading a whole
     subject's deletion in one transaction): flushes instead of committing, so the
     caller's own commit/rollback governs this delete too.
     """
+    # Deferred import (same reason as subjects.service's cascade imports): the assignments
+    # module imports subjects.service at import time, so a top-level import here would risk
+    # a cycle. By call time every module has finished initializing.
+    from app.modules.assignments.service import delete_assignments_for_quiz
+
     quiz = get_quiz(session, owner_id, subject_id, quiz_id)
     if quiz is None:
         return False
 
     for question in list_questions(session, owner_id, quiz_id):
         session.delete(question)
+    # Delete the rows that FK-reference this quiz before the quiz itself: assignments (+
+    # their submissions, handled inside the helper) and quiz attempts. Each is flushed in
+    # FK-safe order so the `DELETE FROM quizzes` below can't violate a foreign key.
+    delete_assignments_for_quiz(session, quiz_id)
+    session.exec(delete(QuizAttempt).where(QuizAttempt.quiz_id == quiz_id))
     session.flush()
     session.delete(quiz)
     if commit:

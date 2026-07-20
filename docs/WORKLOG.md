@@ -2,6 +2,44 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-21 — fix(quiz): delete assignments + attempts referencing a quiz before deleting it (fixes subject-delete 500)
+
+Production bug (verified from a real Vercel traceback): `DELETE /subjects/{id}` 500'd when
+the subject held a quiz that an `assignment` or a `quiz_attempt` referenced — two real FK
+violations observed (`assignments_quiz_id_fkey`, `quiz_attempts_quiz_id_fkey`).
+
+- *Root cause:* this codebase uses NO DB `ON DELETE CASCADE` and NO ORM `relationship()`
+  cascade (deliberate — see `subjects.service.delete_subject`), so every parent delete must
+  clean its children first, in FK-safe order, each `flush()`ed. `quiz.service.delete_quiz`
+  (the single source of truth for quiz deletion, used by both `DELETE …/quizzes/{id}` and the
+  subject-delete cascade) was written before assignments/quiz_attempts existed: it deleted
+  only the quiz + its questions, so flushing the quiz DELETE violated the FKs from
+  `assignments.quiz_id` and `quiz_attempts.quiz_id`. The subject delete cascades through
+  `delete_quiz`, so it 500'd too.
+- *FK audit (grepped every `foreign_key="quizzes.id"` / `quiz_id`):* the rows referencing
+  `quizzes.id` are `quiz_questions` (already handled), `quiz_attempts` (no children), and
+  `assignments` (nullable `quiz_id`; child `assignment_submissions` via `assignment_id`).
+  Separately, `assignments.subject_id` references the subject DIRECTLY — so an assignment with
+  NO quiz link would still trip `assignments_subject_id_fkey` on the subject delete; that path
+  was unfixed too.
+- *Fix:*
+  - `assignments.service` gains cascade-only helpers `delete_assignments_for_quiz(quiz_id)` and
+    `delete_assignments_for_subject(subject_id)` (each deletes submissions then the assignments,
+    flush-ordered, no commit) — the assignments module owns its own FK-safe ordering, same
+    spirit as the `list_all_*_for_subject` enumerators.
+  - `quiz.service.delete_quiz` now deletes questions, then the quiz's assignments (via the
+    helper) and its `quiz_attempts`, each flushed, BEFORE the quiz row. Referencing rows are
+    cleaned by `quiz_id` alone (an attempt belongs to the student, an assignment to the teacher)
+    — the same "clean ALL owners' children" reasoning as `delete_subject`.
+  - `subjects.service.delete_subject` adds `delete_assignments_for_subject(subject_id)` before
+    the final subject DELETE, sweeping any bare (quiz-less) assignment over the subject.
+- *Tests:* `backend/tests/test_quiz_delete_cascade.py` (new, 2 tests) — deleting a quiz that
+  has an assignment (+ submission) and a quiz attempt succeeds and removes all referencing
+  rows; deleting a subject containing such a quiz PLUS a bare assignment succeeds end-to-end.
+  The module turns SQLite foreign keys ON (`PRAGMA foreign_keys=ON`) so it actually reproduces
+  the Postgres `IntegrityError` — both tests fail pre-fix, pass post-fix.
+- *Checks:* backend `pytest` **561 passed**, `ruff` clean.
+
 ## 2026-07-21 — fix: three user-reported bugs (billing double-activate, summary language, mobile navbar)
 
 Three separate user-reported bugs, each reproduced before fixing.
