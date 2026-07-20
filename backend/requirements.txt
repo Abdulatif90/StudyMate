@@ -1,3 +1,6 @@
+# NOTE: keep this list in sync with `[project.dependencies]` in pyproject.toml — Vercel
+# installs from pyproject.toml, local dev + the docs/DEPLOYMENT.md §8 fallback host use this.
+
 # Web framework
 fastapi>=0.115
 uvicorn[standard]>=0.30

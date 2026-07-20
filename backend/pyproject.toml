@@ -3,6 +3,35 @@ name = "studymate-backend"
 version = "0.1.0"
 requires-python = ">=3.12"
 
+# Runtime dependencies. MUST stay in sync with `requirements.txt` (the source used by
+# local dev — `pip install -r requirements.txt` — and the fallback host in
+# docs/DEPLOYMENT.md §8). Vercel's Python runtime, when a `pyproject.toml` with a
+# `[project]` table is present, installs from `[project.dependencies]` and IGNORES
+# `requirements.txt` — so without this list Vercel installs nothing and the function
+# crashes at import (`ModuleNotFoundError: No module named 'inngest'`). Keep both lists
+# identical; if you add a dep to one, add it to the other.
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic-settings>=2.5",
+    "python-dotenv>=1.0",
+    "sqlmodel>=0.0.22",
+    "psycopg2-binary>=2.9",
+    "alembic>=1.13",
+    "pyjwt[crypto]>=2.9",
+    "python-multipart>=0.0.12",
+    "pypdf>=5.0",
+    "python-docx>=1.1",
+    "pillow>=10.0",
+    "cohere>=5.0",
+    "pgvector>=0.3",
+    "anthropic>=0.110",
+    "inngest>=0.5",
+    "boto3>=1.34",
+    "polar-sdk>=0.31",
+    "sentry-sdk>=2.0",
+]
+
 # --- Vercel deploy (see docs/DEPLOYMENT.md) ---
 # Pins the single Python-runtime entrypoint so Vercel uses exactly `api/index.py`'s
 # re-exported FastAPI `app` (avoids any ambiguity with other auto-detected entrypoints
