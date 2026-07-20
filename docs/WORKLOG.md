@@ -2,6 +2,25 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-20 — fix: assignments submitter names + team page fit-to-viewport (UI polish)
+Two small frontend fixes, no new i18n keys. Commit: `fix(frontend): show submitter names on
+assignments + fit Clerk org UI to viewport`.
+
+- **`assignments/page.tsx`.** The teacher's "Submissions received" list rendered the raw Clerk
+  `submission.owner_id` (e.g. `user_3GYg…`). Now renders `getMemberName(submission.owner_id)` —
+  the same prop already used in the roster section — so it shows a human name via
+  `resolveMemberName` (full name → identifier → shortened-id fallback; ex-members resolve to a
+  short id, never crash). No new test: `rosterMemberName.test.ts` already covers
+  `resolveMemberName`, and the page follows the codebase's no-direct-component-test precedent.
+- **`team/page.tsx`.** `<OrganizationProfile/>` / `<CreateOrganization/>` were wrapped in
+  `overflow-x-auto`, producing a horizontal scrollbar on narrow viewports. Replaced with a
+  `w-full` wrapper + a shared `appearance` prop constraining Clerk's Core 2 element keys
+  (`rootBox: "w-full flex justify-center"`, `cardBox: "w-full max-w-full"`) so the card reflows
+  to fit instead of overflowing. Element-key hierarchy verified against Clerk docs for
+  `@clerk/nextjs` 7.5.18 (Core 2: `rootBox` = outer wrapper, `cardBox` wraps `card` + `footer`).
+  No-browser change — visual fit to be confirmed live by the overseer's user.
+- Tests: frontend `vitest run` 245 passed (58 files), `tsc --noEmit` clean, `eslint` clean.
+
 ## 2026-07-20 — Release checklist + full automated verification pass (Phase 7 wrap)
 No new user-facing feature — consolidated every deferred blocker into one actionable doc
 and ran the full automated verification. Commit: `docs: consolidate deferred blockers into

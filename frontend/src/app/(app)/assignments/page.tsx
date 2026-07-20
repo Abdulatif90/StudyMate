@@ -147,7 +147,9 @@ function TeacherAssignmentCard({
                   key={submission.id}
                   className="flex items-center justify-between gap-2 text-sm"
                 >
-                  <span className="truncate text-foreground">{submission.owner_id}</span>
+                  <span className="truncate text-foreground">
+                    {getMemberName(submission.owner_id)}
+                  </span>
                   <span className="shrink-0 text-xs text-muted-foreground">
                     {new Date(submission.completed_at).toLocaleDateString()}
                     {submission.score != null

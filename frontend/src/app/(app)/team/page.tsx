@@ -18,6 +18,17 @@ import { useTranslations } from "next-intl";
  * Clerk components inherit locale from `<ClerkProvider localization>` (already wired
  * in the root layout via `resolveClerkLocalization`), so they follow the app locale.
  */
+// Constrain Clerk's self-contained card to the content pane so it reflows to fit
+// instead of overflowing (its default width exceeds a 360px viewport). Core 2
+// element keys: `rootBox` = outer wrapper, `cardBox` = the card container that
+// holds `card` + `footer` (verified against Clerk docs for @clerk/nextjs 7.x).
+const fitAppearance = {
+  elements: {
+    rootBox: "w-full flex justify-center",
+    cardBox: "w-full max-w-full",
+  },
+} as const;
+
 export default function TeamPage() {
   const t = useTranslations("Team");
   const { isLoaded, organization } = useOrganization();
@@ -41,14 +52,14 @@ export default function TeamPage() {
           {t("loading")}
         </p>
       ) : organization ? (
-        // OrganizationProfile is a wide, self-contained card — let it scroll on narrow
-        // screens rather than force the content pane to grow horizontally.
-        <div className="overflow-x-auto">
-          <OrganizationProfile routing="hash" />
+        // OrganizationProfile is a wide, self-contained card — constrain it to the
+        // content pane width so it reflows to fit instead of forcing horizontal scroll.
+        <div className="w-full">
+          <OrganizationProfile routing="hash" appearance={fitAppearance} />
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <CreateOrganization routing="hash" />
+        <div className="w-full">
+          <CreateOrganization routing="hash" appearance={fitAppearance} />
         </div>
       )}
     </div>
