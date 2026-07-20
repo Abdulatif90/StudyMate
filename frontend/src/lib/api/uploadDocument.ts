@@ -1,6 +1,7 @@
 import type { Client } from "openapi-fetch";
 import type { components, paths } from "./schema";
 import { inferContentType } from "@/lib/inferContentType";
+import { MAX_UPLOAD_SIZE_BYTES } from "@/lib/uploadLimits";
 
 type DocumentRead = components["schemas"]["DocumentRead"];
 type ApiClient = Client<paths>;
@@ -15,7 +16,7 @@ type ApiClient = Client<paths>;
 export class UploadError extends Error {
   constructor(
     readonly status: number,
-    readonly kind: "presign" | "put" | "confirm",
+    readonly kind: "size" | "presign" | "put" | "confirm",
     /** The parsed error body from our API (used to render the 402 upgrade prompt). */
     readonly body?: unknown,
   ) {
@@ -82,6 +83,16 @@ export async function uploadDocument(
 ): Promise<DocumentRead> {
   const contentType = inferContentType(params.file);
   const filename = params.file.name || "untitled";
+
+  // Client-side size guard — reject BEFORE any network call (before presign) so a file
+  // over the cap is never PUT to R2 only to be rejected by the backend's confirm-step
+  // HEAD check with a 413, wasting the whole upload. Thrown as status 413 so the caller
+  // maps it to exactly the same "too large" copy as a server-side 413. The backend check
+  // stays as the authoritative guard; this is a UX shortcut. See lib/uploadLimits.ts,
+  // which MUST stay in sync with documents/service.MAX_UPLOAD_SIZE_BYTES.
+  if (params.file.size > MAX_UPLOAD_SIZE_BYTES) {
+    throw new UploadError(413, "size");
+  }
 
   const presign = await api.POST("/subjects/{subject_id}/documents/presign", {
     params: { path: { subject_id: params.subjectId } },
