@@ -938,6 +938,27 @@ four locales) noting photos/scans are read via OCR.
     chunks, answer grounded with correct citations from both on-topic documents.
     Cleaned up via real `DELETE` calls; Neon confirmed clean afterward.
 
+- [x] **Presigned direct-to-R2 upload** — fixes large-file upload on Vercel (bytes no longer
+  stream through the backend function, so Vercel's ~4.5 MB serverless body cap no longer
+  limits uploads; the full 20 MB app limit works). Root cause: the old `POST
+  .../documents` multipart route did `await file.read()` and passed the bytes through the
+  function, so any file 4.5–20 MB 413'd at the Vercel edge before reaching the function (the
+  browser saw a CORS error — the edge 413 has no CORS header). New two-step flow:
+  `POST /subjects/{id}/documents/presign` (validate write access/plan/type → short-lived
+  presigned R2 `PutObject` URL, **no DB row yet**) → browser `PUT`s the file straight to R2
+  → `POST /subjects/{id}/documents/{id}/confirm` (HEAD the object to enforce the 20 MB cap —
+  over → delete object + 413, missing → 409 — then create the `pending` row and enqueue the
+  SAME Inngest job). `MAX_UPLOAD_SIZE_BYTES` stays the single source of truth (enforced at
+  confirm). Old multipart route kept (works <4.5 MB, still used by tests) but the frontend no
+  longer uses it. `r2_client` gained `generate_presigned_put_url` + `head_object_size`; no
+  new dependency (boto3 already present). Frontend: `lib/api/uploadDocument.ts` (presign →
+  XHR PUT with progress → confirm, typed `UploadError`) + `lib/inferContentType.ts`; the
+  subject-detail page uses the new flow with a live progress bar; typed API client
+  regenerated. **Required MANUAL step:** the R2 bucket needs a CORS policy allowing browser
+  `PUT` from the frontend origin — exact JSON in `RELEASE_CHECKLIST.md` §A2 (cross-ref'd from
+  `DEPLOYMENT.md` §0). Backend **559 passed / 12 deselected** (+10), frontend **254 passed /
+  60 files** (+9), `ruff`/`tsc`/`eslint` clean.
+
 ## Phase 2 — Quiz
 - [x] Quiz generation via Claude **tool-use structured output** (DECISIONS.md #5 — quiz
   JSON from a validated tool call, never `json.loads` on prose). First structured-output

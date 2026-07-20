@@ -27,6 +27,19 @@ questions were checked against Vercel's current docs (July 2026), not from memor
 - Inngest document processing — split across Inngest steps; each step is its own short
   invocation.
 
+> **Large-file upload — the one Vercel limit we DID hit, now resolved.** Vercel serverless
+> functions cap the request body at **~4.5 MB**, so streaming an upload *through* the backend
+> function 413'd at the edge for any file between 4.5 MB and the 20 MB app limit (the browser
+> saw it as a CORS error — the edge 413 carries no CORS header). Fixed **without leaving
+> Vercel**: document upload now uses **presigned direct-to-R2 upload** — the browser `PUT`s the
+> file straight to Cloudflare R2 via a short-lived presigned URL (`POST
+> /subjects/{id}/documents/presign` → PUT to R2 → `POST /subjects/{id}/documents/{id}/confirm`,
+> which HEADs the object to enforce the 20 MB cap and enqueues the same Inngest job). The bytes
+> never traverse the function, so the 4.5 MB cap no longer applies and the full 20 MB limit
+> works. **This requires a one-time R2 bucket CORS policy** (the browser PUT is cross-origin) —
+> see `RELEASE_CHECKLIST.md` **§A2** for the exact policy JSON and the manual dashboard step;
+> the fallback in §8 is *not* needed for this.
+
 > **Fallback (documented for honesty, but NOT required):** if streaming or the ingest job
 > ever proved unviable on Vercel's Python runtime, the recommended fallback is to keep the
 > **frontend on Vercel** and move the **FastAPI backend to a long-running host**
