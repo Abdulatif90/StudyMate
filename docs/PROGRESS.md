@@ -2635,6 +2635,20 @@ four locales) noting photos/scans are read via OCR.
   — plus the roster section (increment above): "N of M submitted", the Not
   submitted/Submitted name lists, and the 503/502 graceful inline notes.
 
+- [x] **Three user-reported bug fixes (2026-07-21)** — see `docs/WORKLOG.md` for full
+  root-cause detail. (1) *Billing double-activate:* only one checkout ever fired, but the
+  global `checkout.isPending` disabled every plan card at once, so one click visibly locked
+  both upgrade buttons — fixed with a per-card `isThisPending` (only the clicked card shows
+  Redirecting…/disables). (2) *Summary language:* plumbing + `language_name` mapping were
+  already correct; Claude Haiku just didn't reliably honor a system-only "respond in X"
+  instruction against a foreign-language document — strengthened the system prompt and
+  restated the target language in the user message (`_build_user_message`), model unchanged.
+  (3) *Mobile navbar overflow below ~667px:* the mobile top bar's org-switcher/theme/language
+  controls now collapse into the dropdown menu below `md` (inline only at md–lg), keeping
+  desktop untouched. Tests: `frontend/src/components/billing-page.test.tsx` (new),
+  `app-shell.test.tsx` (+1), `backend/tests/test_summarization.py` (updated). Backend 559
+  passed / ruff clean; frontend 257 passed / tsc + eslint clean.
+
 ## Blockers / needs from user
 > **All deferred blockers are now consolidated (grouped + de-duplicated, each as an
 > actionable step) in [`docs/RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) — the single

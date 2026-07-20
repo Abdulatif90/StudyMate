@@ -2,6 +2,61 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-21 — fix: three user-reported bugs (billing double-activate, summary language, mobile navbar)
+
+Three separate user-reported bugs, each reproduced before fixing.
+
+**Bug 1 — Billing: clicking one plan's upgrade "activated" both upgrade buttons.**
+- *Root cause (reproduced via a real BillingPage render test):* only ONE checkout mutation
+  ever fired (verified — one `POST /billing/checkout` with the clicked plan), so the report
+  was a visual shared-state artifact, not a double request. `ctaDisabled={!canCheckout ||
+  checkout.isPending}` used the GLOBAL `checkout.isPending`, so the moment one plan's checkout
+  went in-flight EVERY plan card's button disabled/greyed at once — the user read the other
+  card reacting to their click as "both buttons activated".
+- *Fix:* derive a per-card `isThisPending = checkout.isPending && checkout.variables ===
+  candidate` and use it for both the label ("Redirecting…") and `ctaDisabled`. Now only the
+  clicked card shows the pending/redirecting state; the other upgrade stays enabled and
+  unchanged. Backend checkout untouched.
+- *Test:* `frontend/src/components/billing-page.test.tsx` (new, 2 tests) — clicking one plan
+  fires exactly one checkout with the right plan; the pending state shows only on the clicked
+  card while the other upgrade button stays enabled (this second assertion fails pre-fix).
+
+**Bug 2 — Auto-summary came out in the document's language, not the selected UI language.**
+- *Root cause:* the plumbing was already correct end-to-end (frontend `locale` →
+  `confirm` body → `document.language` → `summarize_document(text, document.language)`), and
+  `language_name()` maps all four supported locales (en/uz/ko/ru) correctly — so neither (a)
+  the mapping nor the plumbing was at fault. The remaining cause is (b): Claude Haiku
+  (`claude-haiku-4-5`) doesn't reliably obey a SYSTEM-only "respond in X" instruction when the
+  document's own dominant language pulls the other way.
+- *Fix (simplest best-practice — strengthen the prompt, keep the model):* made the system
+  instruction emphatic ("CRITICAL OUTPUT-LANGUAGE REQUIREMENT … every word MUST be in {name}
+  … do not mirror the excerpt's language"), and — the key change for a small model — restated
+  the required output language in the USER turn too, right after the excerpt it must not copy
+  the language of (`_build_user_message`). Model/params unchanged. Note: live cross-language
+  behavior can't be asserted offline (no live LLM in tests); the offline test guards the
+  plumbing + that both the system prompt AND user message carry the correct target-language
+  instruction, which is the reproducible, testable part.
+- *Test:* `backend/tests/test_summarization.py` updated — asserts the target language appears
+  in BOTH `system` and the user message, that the source language name doesn't leak as the
+  target, and that the excerpt is still capped at `MAX_INPUT_CHARS` inside the wrapped user
+  message. `test_language.py` mapping tests already covered (a) and stay green.
+
+**Bug 4 — Mobile navbar didn't fit below ~667px.**
+- *Root cause:* `MobileTopBar` (shown below `lg`) packed brand + five controls
+  (OrganizationSwitcher, ThemeToggle, LanguageSwitcher, UserButton, menu button) into one row;
+  the wide org switcher + the rest overflowed on narrow phones.
+- *Fix (per docs/FRONTEND.md — mobile-first, semantic tokens):* the three low-priority utility
+  controls (org switcher / theme / language) are now inline only from `md` up (`hidden
+  md:flex`); below `md` they collapse into the existing dropdown menu (`md:hidden` section),
+  leaving only brand + user button + menu in the top-bar row so nothing overflows at 320–667px.
+  Kept as plain controls (not menu items) so toggling theme/language doesn't close the menu.
+  Desktop (`lg`+, the sidebar) is untouched — `MobileTopBar` is `lg:hidden`.
+- *Test:* `frontend/src/components/app-shell.test.tsx` (+1) — opening the dropdown exposes the
+  nav destinations AND the collapsed theme toggle, language switcher, and org switcher.
+
+**Checks:** backend `pytest` **559 passed**, `ruff` clean. Frontend `vitest` **257 passed**
+(61 files), `tsc --noEmit` clean, `eslint` clean.
+
 ## 2026-07-21 — feat(documents): presigned direct-to-R2 upload (fixes >4.5 MB uploads on Vercel)
 
 **Problem.** Vercel serverless functions cap the request body at ~4.5 MB. Upload streamed the
