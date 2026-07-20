@@ -147,6 +147,7 @@
     "askLink": "질문",
     "uploadTitle": "문서 업로드",
     "uploading": "업로드하는 중…",
+    "acceptHint": "지원 파일: PDF, Word(.docx), 텍스트, 이미지(JPG, PNG, WebP). 손글씨나 인쇄된 노트 사진과 스캔한 PDF는 OCR로 인식됩니다.",
     "processingHint": "처리(파싱, 분할, 임베딩)는 백그라운드에서 진행됩니다 — 새 문서는 준비될 때까지 \"대기 중\"으로 표시됩니다.",
     "loadError": "문서를 불러오지 못했습니다.",
     "empty": "아직 문서가 없습니다 — 위에서 업로드하세요.",

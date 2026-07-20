@@ -2,6 +2,42 @@
 
 Log of completed work (newest first). Each entry: what was done, tests, commit.
 
+## 2026-07-20 — OCR: scanned-PDF pages + friendly upload accept-types hint (Phase 7)
+Closes the two OCR follow-up TODOs. Commit: `feat(documents): OCR scanned-PDF pages via
+Claude vision + upload accept-types hint (Phase 7)`.
+
+- **(a) Scanned-PDF OCR (backend).** `documents/parsing.py::_extract_pdf` now, when a PDF's
+  text layer is empty (a scanned/photographed PDF), extracts its embedded page images and
+  runs each through the SAME `ocr.extract_text_from_image` Claude-vision path used for
+  image uploads; the transcribed text feeds the existing chunk→embed→summarize pipeline
+  unchanged. A vision/API failure raises `DocumentParseError`, so a failed OCR degrades
+  exactly like a failed parse (status failed, zero chunks) — the invariant `process_document`
+  already enforces. Page/image count is bounded (`_MAX_OCR_PAGES`/`_MAX_OCR_IMAGES` = 20)
+  and each image is downscaled to Claude's recommended max edge (1568px) before sending.
+- **Dependency choice (decision).** Added **Pillow only** (`pillow>=10.0`) — a lightweight
+  pip wheel, NOT a system binary — which backs pypdf's embedded-image decoding. This covers
+  the common scanned-PDF shape (one full-page image per page). Full-page RASTERIZATION of a
+  vector PDF that has neither a text layer nor embedded page images would need a heavy
+  binary (poppler / PyMuPDF); that is **deliberately not added**, kept behind a capability
+  check (`_extract_page_images` returns [] if images can't be decoded → the PDF yields no
+  text, ready + zero chunks, exactly as before) and recorded as a deferred requirement in
+  the new `docs/RELEASE_CHECKLIST.md`.
+- **(b) Upload accept-types hint (frontend).** The subject-detail upload `<input>` now also
+  `accept`s image types (`.jpg/.jpeg/.png/.webp` + their media types) — it previously
+  filtered images OUT of the picker even though the backend accepts them — and shows a
+  friendly supported-types hint below it (`SubjectDetail.acceptHint`), noting photos and
+  scans are read via OCR. i18n key mirrored across all four locales (en/uz/ko/ru);
+  `messages.test.ts` parity stays green.
+- Tests: new `tests/test_parsing.py` (6, offline — Claude vision mocked, embedded-image
+  extraction runs for real against a Pillow-built image-only PDF): text-layer PDF is never
+  OCR'd, a scanned PDF OCRs its page image(s) (single + multi-page join), OCR failure →
+  `DocumentParseError`, a text-less PDF with no images → empty (no OCR), and the
+  capability-off path (`_image_file_to_png` returns None) → empty. `tests/test_documents.py`
+  (+2): a scanned PDF processes to ready + chunks, and a scanned PDF whose OCR fails →
+  failed + zero chunks. Backend full suite: **536 passed, 12 deselected** (was 528);
+  `ruff check` + `ruff format --check` clean. Frontend: `tsc` clean, `eslint` clean, vitest
+  green (unchanged count — the change is an `accept` attr + a static hint string).
+
 ## 2026-07-20 — Telegram: answer over the user's OWN uploaded materials (Phase 7)
 A linked chat can now ask about its own subjects, not just the web. Closes the Telegram
 "answer over OWN materials" follow-up TODO. Backend-only (no new HTTP endpoint, so no

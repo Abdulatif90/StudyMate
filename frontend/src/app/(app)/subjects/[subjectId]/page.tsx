@@ -205,13 +205,14 @@ export default function SubjectDetailPage() {
           <Input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+            accept=".pdf,.docx,.txt,.jpg,.jpeg,.png,.webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,image/jpeg,image/png,image/webp"
             disabled={uploadDocument.isPending}
             onChange={(event) => {
               const file = event.target.files?.[0];
               if (file) uploadDocument.mutate(file);
             }}
           />
+          <p className="mt-2 text-xs text-muted-foreground">{t("SubjectDetail.acceptHint")}</p>
           {uploadDocument.isPending && (
             <p className="mt-2 text-sm text-muted-foreground">{t("SubjectDetail.uploading")}</p>
           )}

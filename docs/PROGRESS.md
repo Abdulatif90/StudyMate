@@ -56,9 +56,20 @@ user's OWN private subjects — never another user's, never an org subject they'
 member of. `/research <query>` still gives an explicit web answer; a linked user with no
 subjects yet falls back to web research; with subjects but none selected the bot prompts
 them to pick. Phase 8 (mobile app, PWA or native) is deferred — revisit later. OCR
-follow-up TODOs: OCR of scanned-PDF *pages* (a text-less PDF still parses to zero text
-today, it isn't image-OCR'd), and a friendly frontend accept-types hint (the existing
-upload UI already accepts any file, so images work now — this is just UX polish).
+follow-up TODOs **now DONE**: (a) **scanned-PDF OCR** — a text-less PDF (pages are embedded
+images, no text layer) now has its embedded page images extracted (pypdf + Pillow) and run
+through the SAME Claude-vision OCR path as image uploads, feeding the existing
+chunk→embed→summarize pipeline; a failed OCR degrades exactly like a failed parse (status
+failed, zero chunks). Dependency choice: **Pillow only** (a lightweight pip wheel, no
+system binary) — it decodes the embedded page images, covering the common scanned-PDF case
+(one image per page). Full-page **rasterization** of a vector PDF with neither a text layer
+nor embedded images would need a heavy binary (poppler / PyMuPDF) and is **deliberately NOT
+added** — behind a capability check (if Pillow/decoding is unavailable the PDF simply
+yields no text, ready + zero chunks, as before) and recorded as a deferred requirement in
+`docs/RELEASE_CHECKLIST.md`. (b) **Frontend accept-types hint** — the upload input now also
+`accept`s image types (it previously filtered them out despite the backend accepting them)
+and shows a friendly supported-types hint (`SubjectDetail.acceptHint`, mirrored across all
+four locales) noting photos/scans are read via OCR.
 
 ## Done
 - [x] Repo skeleton + `.gitignore`

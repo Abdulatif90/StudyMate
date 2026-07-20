@@ -147,6 +147,7 @@
     "askLink": "Ask",
     "uploadTitle": "Upload a document",
     "uploading": "Uploading…",
+    "acceptHint": "Supported files: PDF, Word (.docx), text, and images (JPG, PNG, WebP). Photos of handwritten or printed notes and scanned PDFs are read with OCR.",
     "processingHint": "Processing (parsing, chunking, embedding) runs in the background — a new document shows as \"pending\" until it's ready.",
     "loadError": "Couldn't load documents.",
     "empty": "No documents yet — upload one above.",

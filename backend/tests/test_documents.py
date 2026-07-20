@@ -336,6 +336,62 @@ def test_process_ocrs_an_image_into_chunks(monkeypatch):
     assert _chunk_texts(_TEST_USER, created["id"]) == ["transcribed page text"]
 
 
+def test_process_ocrs_a_scanned_pdf_into_chunks(monkeypatch):
+    """A text-less (scanned) PDF — pages are embedded images, no text layer — is now
+    OCR'd page-by-page via the SAME Claude-vision path as image uploads, and its text
+    flows through the chunk/embed pipeline → status ready, chunks present."""
+    from PIL import Image
+
+    from app.modules.documents import ocr
+
+    monkeypatch.setattr(
+        ocr, "extract_text_from_image", lambda image_bytes, content_type: "scanned page text"
+    )
+
+    # A real image-only PDF (Pillow embeds the image, adds no text layer).
+    image = Image.new("RGB", (300, 200), (255, 255, 255))
+    pdf_buffer = io.BytesIO()
+    image.save(pdf_buffer, format="PDF")
+
+    subject_id = _create_subject()
+    files = {"file": ("scanned.pdf", io.BytesIO(pdf_buffer.getvalue()), "application/pdf")}
+    created = client.post(f"/subjects/{subject_id}/documents", files=files).json()
+    assert created["status"] == "pending"
+
+    document = _process(_TEST_USER, created["id"])
+
+    assert document.status.value == "ready"
+    assert _chunk_texts(_TEST_USER, created["id"]) == ["scanned page text"]
+
+
+def test_process_marks_scanned_pdf_failed_when_ocr_fails(monkeypatch):
+    """A scanned PDF whose OCR fails degrades exactly like a failed parse: status failed,
+    zero chunks (the original upload request still succeeded)."""
+    from PIL import Image
+
+    from app.modules.documents import ocr
+    from app.modules.documents.parsing import DocumentParseError
+
+    def _raise(image_bytes, content_type):
+        raise DocumentParseError("vision API exploded")
+
+    monkeypatch.setattr(ocr, "extract_text_from_image", _raise)
+
+    image = Image.new("RGB", (300, 200), (255, 255, 255))
+    pdf_buffer = io.BytesIO()
+    image.save(pdf_buffer, format="PDF")
+
+    subject_id = _create_subject()
+    files = {"file": ("scanned.pdf", io.BytesIO(pdf_buffer.getvalue()), "application/pdf")}
+    created = client.post(f"/subjects/{subject_id}/documents", files=files).json()
+    assert created["status"] == "pending"
+
+    document = _process(_TEST_USER, created["id"])
+
+    assert document.status.value == "failed"
+    assert _chunks(_TEST_USER, created["id"]) == []
+
+
 def test_process_marks_image_failed_when_ocr_fails(monkeypatch):
     """A failed OCR degrades exactly like a failed PDF parse: status failed, zero chunks
     — while the original upload request itself already succeeded (returned pending)."""

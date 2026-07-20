@@ -18,6 +18,11 @@ pyjwt[crypto]>=2.9
 python-multipart>=0.0.12
 pypdf>=5.0
 python-docx>=1.1
+# Pillow backs pypdf's embedded-image decoding, used to OCR scanned (text-less) PDF pages
+# via Claude vision (documents/parsing.py). A lightweight pip wheel — NOT a system binary
+# like poppler; full-page rasterization of vector PDFs (which WOULD need poppler/PyMuPDF)
+# is a deferred requirement, see docs/RELEASE_CHECKLIST.md.
+pillow>=10.0
 
 # Embeddings (Cohere) + pgvector column type
 cohere>=5.0
