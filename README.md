@@ -1,5 +1,7 @@
 # StudyMate
 
+https://studymate-web-psi.vercel.app/
+
 **An education RAG SaaS where students upload their own materials and get cited Q&A,
 auto-summaries, quizzes, flashcards (SM-2 spaced repetition), and progress tracking —
 multilingual, built for global students.**
